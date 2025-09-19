@@ -27,6 +27,7 @@ export default function TestForm() {
         body: JSON.stringify({
           checkout_id,
           email,
+          customer_email: email,
           name,
           product_name: product,
           checkout_url: checkoutUrl
