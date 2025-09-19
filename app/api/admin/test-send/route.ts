@@ -7,13 +7,28 @@ import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
 
 const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
 
-const payloadSchema = z.object({
-  checkout_id: z.string().min(1),
-  email: z.string().email(),
-  name: z.string().optional().nullable(),
-  product_name: z.string().optional().nullable(),
-  checkout_url: z.string().url(),
-});
+const payloadSchema = z
+  .object({
+    checkout_id: z.string().min(1),
+    email: z.string().email().optional(),
+    customer_email: z.string().email().optional(),
+    name: z.string().optional().nullable(),
+    product_name: z.string().optional().nullable(),
+    checkout_url: z.string().url(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.email && !data.customer_email) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Campo email ou customer_email é obrigatório.',
+        path: ['email'],
+      });
+    }
+  })
+  .transform(({ customer_email: customerEmail, ...rest }) => ({
+    ...rest,
+    email: (rest.email ?? customerEmail)!,
+  }));
 
 async function ensureTestRecord(
   supabase: ReturnType<typeof getSupabaseAdmin>,
