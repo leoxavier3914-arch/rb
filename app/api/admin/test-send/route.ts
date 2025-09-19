@@ -1,94 +1,218 @@
-import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
+import { cookies } from 'next/headers';
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { resolveDiscountCode, resolveExpiration } from '../../../../lib/cryptoId';
+import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
 
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
 
-  if (!url || !key) {
-    return null;
+const payloadSchema = z.object({
+  checkout_id: z.string().min(1),
+  email: z.string().email(),
+  name: z.string().optional().nullable(),
+  product_name: z.string().optional().nullable(),
+  checkout_url: z.string().url(),
+});
+
+function ensureEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Variável de ambiente ${name} não configurada.`);
   }
-
-  return createClient(url, key);
+  return value;
 }
 
-const EMAILJS_ENDPOINT = "https://api.emailjs.com/api/v1.0/email/send";
+async function ensureTestRecord(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  params: {
+    id: string;
+    email: string;
+    name: string | null;
+    productName: string | null;
+    checkoutUrl: string;
+    discountCode: string | null;
+    expiresAt: string | null;
+  },
+) {
+  const { error } = await supabase
+    .from('abandoned_carts')
+    .upsert(
+      {
+        id: params.id,
+        customer_email: params.email,
+        customer_name: params.name,
+        product_id: null,
+        product_name: params.productName,
+        checkout_url: params.checkoutUrl,
+        status: 'pending',
+        discount_code: params.discountCode,
+        expires_at: params.expiresAt,
+        last_event: 'manual.test.created',
+      },
+      { onConflict: 'id' },
+    );
 
-export async function POST(req: NextRequest) {
-  const adminTokenCookie = cookies().get("admin_token")?.value;
-  if (!adminTokenCookie || adminTokenCookie !== process.env.ADMIN_TOKEN) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (error) {
+    throw error;
+  }
+}
+
+async function markTestAsSent(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  params: { id: string; discountCode: string | null; expiresAt: string | null; sentAt: string },
+) {
+  const { error } = await supabase
+    .from('abandoned_carts')
+    .update({
+      status: 'sent',
+      discount_code: params.discountCode,
+      expires_at: params.expiresAt,
+      last_event: 'manual.test.sent',
+      last_reminder_at: params.sentAt,
+    })
+    .eq('id', params.id);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function markTestAsError(supabase: ReturnType<typeof getSupabaseAdmin>, id: string) {
+  const { error } = await supabase
+    .from('abandoned_carts')
+    .update({
+      status: 'error',
+      last_event: 'manual.test.failed',
+      last_reminder_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const adminToken = process.env.ADMIN_TOKEN;
+  const cookieToken = cookies().get('admin_token')?.value;
+
+  if (!adminToken || cookieToken !== adminToken) {
+    return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
 
-  const body = await req.json().catch(() => ({}));
-  const checkout_id = String(body?.checkout_id || "");
-  const email = String(body?.email || "");
-  const name = String(body?.name || "");
-  const product_name = String(body?.product_name || "Seu produto");
-  const checkout_url = String(body?.checkout_url || "");
-
-  if (!checkout_id || !email || !checkout_url) {
-    return NextResponse.json({ error: "Campos obrigatórios faltando" }, { status: 400 });
+  let json: unknown;
+  try {
+    json = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase não configurado" }, { status: 500 });
+  const parsed = payloadSchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Payload inválido', details: parsed.error.flatten() }, { status: 400 });
   }
 
-  // idempotência manual: se já houver, não envia de novo
-  const { data: exists } = await supabase
-    .from("abandoned_emails")
-    .select("id")
-    .eq("checkout_id", checkout_id)
-    .maybeSingle();
-  if (exists) {
-    return NextResponse.json({ ok: true, alreadySent: true });
+  let supabase: ReturnType<typeof getSupabaseAdmin>;
+  try {
+    supabase = getSupabaseAdmin();
+  } catch (error) {
+    console.error('[kiwify-hub] configuração do Supabase ausente', error);
+    return NextResponse.json({ error: 'Serviço indisponível.' }, { status: 500 });
   }
 
-  const discount_code = process.env.DEFAULT_DISCOUNT_CODE || "";
-  const expire_hours = process.env.DEFAULT_EXPIRE_HOURS || "24";
-  const unsubscribe_url = "https://romeikebeauty.example/unsubscribe";
+  const { checkout_id: checkoutId, email, name, product_name: productName, checkout_url: checkoutUrl } = parsed.data;
 
-  const template_params = {
-    name,
-    product_name,
-    checkout_url,
-    discount_code,
-    expire_hours,
-    unsubscribe_url,
+  const discountCode = resolveDiscountCode();
+  const expiresAt = discountCode ? resolveExpiration(undefined) : null;
+
+  try {
+    await ensureTestRecord(supabase, {
+      id: checkoutId,
+      email,
+      name: name ?? null,
+      productName: productName ?? null,
+      checkoutUrl,
+      discountCode,
+      expiresAt,
+    });
+  } catch (error) {
+    console.error('[kiwify-hub] erro ao registrar teste', error);
+    return NextResponse.json({ error: 'Não foi possível registrar o teste.' }, { status: 500 });
+  }
+
+  let serviceId: string;
+  let templateId: string;
+  let publicKey: string;
+  try {
+    serviceId = ensureEnv('EMAILJS_SERVICE_ID');
+    templateId = ensureEnv('EMAILJS_TEMPLATE_ID');
+    publicKey = ensureEnv('EMAILJS_PUBLIC_KEY');
+  } catch (error) {
+    console.error('[kiwify-hub] configuração do EmailJS ausente', error);
+    try {
+      await markTestAsError(supabase, checkoutId);
+    } catch (updateError) {
+      console.error('[kiwify-hub] falha ao marcar teste como erro', updateError);
+    }
+    return NextResponse.json({ error: 'Serviço de e-mail indisponível.' }, { status: 500 });
+  }
+
+  const templateParams = {
+    to_email: email,
+    to_name: name ?? 'Cliente',
+    product_name: productName ?? 'Produto Kiwify',
+    checkout_url: checkoutUrl,
+    discount_code: discountCode ?? '',
+    expires_at: expiresAt,
   };
 
-  // Enviar via EmailJS
-  const res = await fetch(EMAILJS_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      service_id: process.env.EMAILJS_SERVICE_ID,
-      template_id: process.env.EMAILJS_TEMPLATE_ID,
-      user_id: process.env.EMAILJS_PUBLIC_KEY,
-      template_params,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    return NextResponse.json({ error: "EmailJS fail", details: err }, { status: 500 });
+  let response: Response;
+  try {
+    response = await fetch(EMAILJS_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        service_id: serviceId,
+        template_id: templateId,
+        user_id: publicKey,
+        template_params: templateParams,
+      }),
+    });
+  } catch (error) {
+    console.error('[kiwify-hub] erro de rede ao enviar teste', error);
+    try {
+      await markTestAsError(supabase, checkoutId);
+    } catch (updateError) {
+      console.error('[kiwify-hub] falha ao marcar teste como erro', updateError);
+    }
+    return NextResponse.json({ error: 'Falha ao enviar e-mail.' }, { status: 502 });
   }
 
-  // Gravar no Supabase
-  await supabase.from("abandoned_emails").insert({
-    checkout_id,
-    email,
-    product_name,
-    checkout_url,
-    payload: {
-      lead: { email, name },
-      product: { name: product_name },
-      from: "admin-test"
+  if (!response.ok) {
+    const message = await response.text();
+    console.error('[kiwify-hub] erro ao enviar teste', response.status, message);
+    try {
+      await markTestAsError(supabase, checkoutId);
+    } catch (updateError) {
+      console.error('[kiwify-hub] falha ao marcar teste como erro', updateError);
     }
-  });
+    return NextResponse.json({ error: 'Falha ao enviar e-mail.' }, { status: 502 });
+  }
 
-  return NextResponse.json({ ok: true, sent: true });
+  const sentAt = new Date().toISOString();
+  try {
+    await markTestAsSent(supabase, {
+      id: checkoutId,
+      discountCode,
+      expiresAt,
+      sentAt,
+    });
+  } catch (error) {
+    console.error('[kiwify-hub] erro ao atualizar teste enviado', error);
+    return NextResponse.json({ error: 'E-mail enviado, mas não foi possível atualizar o registro.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, id: checkoutId, status: 'sent', discountCode, expiresAt });
 }
