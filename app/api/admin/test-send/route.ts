@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { resolveDiscountCode, resolveExpiration } from '../../../../lib/cryptoId';
+import { getEmailJsConfig } from '../../../../lib/emailJsConfig';
 import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
 
 const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
@@ -13,14 +14,6 @@ const payloadSchema = z.object({
   product_name: z.string().optional().nullable(),
   checkout_url: z.string().url(),
 });
-
-function ensureEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Variável de ambiente ${name} não configurada.`);
-  }
-  return value;
-}
 
 async function ensureTestRecord(
   supabase: ReturnType<typeof getSupabaseAdmin>,
@@ -144,9 +137,7 @@ export async function POST(request: NextRequest) {
   let templateId: string;
   let publicKey: string;
   try {
-    serviceId = ensureEnv('EMAILJS_SERVICE_ID');
-    templateId = ensureEnv('EMAILJS_TEMPLATE_ID');
-    publicKey = ensureEnv('EMAILJS_PUBLIC_KEY');
+    ({ serviceId, templateId, publicKey } = getEmailJsConfig());
   } catch (error) {
     console.error('[kiwify-hub] configuração do EmailJS ausente', error);
     try {

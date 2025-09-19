@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { resolveDiscountCode, resolveExpiration } from '../../../../lib/cryptoId';
+import { getEmailJsConfig } from '../../../../lib/emailJsConfig';
+import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
 
 const resendSchema = z.object({
   id: z.string(),
@@ -13,14 +14,6 @@ const resendSchema = z.object({
 });
 
 const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
-
-function ensureEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Variável de ambiente ${name} não configurada.`);
-  }
-  return value;
-}
 
 export async function POST(request: NextRequest) {
   const adminToken = process.env.ADMIN_TOKEN;
@@ -70,9 +63,7 @@ export async function POST(request: NextRequest) {
   let templateId: string;
   let publicKey: string;
   try {
-    serviceId = ensureEnv('EMAILJS_SERVICE_ID');
-    templateId = ensureEnv('EMAILJS_TEMPLATE_ID');
-    publicKey = ensureEnv('EMAILJS_PUBLIC_KEY');
+    ({ serviceId, templateId, publicKey } = getEmailJsConfig());
   } catch (error) {
     console.error('[kiwify-hub] configuração do EmailJS ausente', error);
     return NextResponse.json({ error: 'Serviço de e-mail indisponível.' }, { status: 500 });
