@@ -6,7 +6,7 @@ import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
 
 const resendSchema = z.object({
   id: z.string(),
-  email: z.string().email().optional(),
+  email: z.string().email().optional().nullable(),
   name: z.string().optional().nullable(),
   checkoutUrl: z.string().url().optional().nullable(),
   discountCode: z.string().optional().nullable(),
