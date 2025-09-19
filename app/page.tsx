@@ -51,7 +51,7 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
-      .from('abandoned_carts')
+      .from('abandoned_emails')
       .select('*')
       .order('updated_at', { ascending: false })
       .limit(50);

@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
   const recordId = data.id?.trim() || createCryptoId(identifierSeed);
 
   const { error } = await supabase
-    .from('abandoned_carts')
+    .from('abandoned_emails')
     .upsert(
       {
         id: recordId,
