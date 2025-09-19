@@ -28,7 +28,7 @@ async function ensureTestRecord(
   },
 ) {
   const { error } = await supabase
-    .from('abandoned_carts')
+    .from('abandoned_emails')
     .upsert(
       {
         id: params.id,
@@ -55,7 +55,7 @@ async function markTestAsSent(
   params: { id: string; discountCode: string | null; expiresAt: string | null; sentAt: string },
 ) {
   const { error } = await supabase
-    .from('abandoned_carts')
+    .from('abandoned_emails')
     .update({
       status: 'sent',
       discount_code: params.discountCode,
@@ -72,7 +72,7 @@ async function markTestAsSent(
 
 async function markTestAsError(supabase: ReturnType<typeof getSupabaseAdmin>, id: string) {
   const { error } = await supabase
-    .from('abandoned_carts')
+    .from('abandoned_emails')
     .update({
       status: 'error',
       last_event: 'manual.test.failed',

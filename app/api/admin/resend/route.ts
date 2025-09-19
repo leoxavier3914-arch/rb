@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: record, error: fetchError } = await supabase
-    .from('abandoned_carts')
+    .from('abandoned_emails')
     .select('*')
     .eq('id', id)
     .single();
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { error: updateError } = await supabase
-    .from('abandoned_carts')
+    .from('abandoned_emails')
     .update({
       status: 'sent',
       discount_code: resolvedDiscount,
