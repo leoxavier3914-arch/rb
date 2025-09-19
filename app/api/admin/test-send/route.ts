@@ -7,13 +7,24 @@ import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
 
 const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
 
-const payloadSchema = z.object({
-  checkout_id: z.string().min(1),
-  email: z.string().email(),
-  name: z.string().optional().nullable(),
-  product_name: z.string().optional().nullable(),
-  checkout_url: z.string().url(),
-});
+const payloadSchema = z
+  .object({
+    checkout_id: z.string().min(1),
+    email: z.string().email().optional().nullable(),
+    customer_email: z.string().email().optional().nullable(),
+    name: z.string().optional().nullable(),
+    product_name: z.string().optional().nullable(),
+    checkout_url: z.string().url(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.email && !data.customer_email) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'E-mail obrigatório.',
+        path: ['email'],
+      });
+    }
+  });
 
 async function ensureTestRecord(
   supabase: ReturnType<typeof getSupabaseAdmin>,
@@ -113,7 +124,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Serviço indisponível.' }, { status: 500 });
   }
 
-  const { checkout_id: checkoutId, email, name, product_name: productName, checkout_url: checkoutUrl } = parsed.data;
+  const {
+    checkout_id: checkoutId,
+    email: payloadEmail,
+    customer_email: payloadCustomerEmail,
+    name,
+    product_name: productName,
+    checkout_url: checkoutUrl,
+  } = parsed.data;
+
+  const normalizedEmail = (payloadEmail ?? payloadCustomerEmail ?? '').trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    return NextResponse.json({ error: 'E-mail obrigatório.' }, { status: 400 });
+  }
 
   const discountCode = resolveDiscountCode();
   const expiresAt = discountCode ? resolveExpiration(undefined) : null;
@@ -121,7 +145,7 @@ export async function POST(request: NextRequest) {
   try {
     await ensureTestRecord(supabase, {
       id: checkoutId,
-      email,
+      email: normalizedEmail,
       name: name ?? null,
       productName: productName ?? null,
       checkoutUrl,
@@ -149,7 +173,7 @@ export async function POST(request: NextRequest) {
   }
 
   const templateParams = {
-    to_email: email,
+    to_email: normalizedEmail,
     to_name: name ?? 'Cliente',
     product_name: productName ?? 'Produto Kiwify',
     checkout_url: checkoutUrl,
