@@ -2,16 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    return null;
+  }
+
+  return createClient(url, key);
+}
 
 const EMAILJS_ENDPOINT = "https://api.emailjs.com/api/v1.0/email/send";
 
 export async function POST(req: NextRequest) {
-  const adm = cookies().get("adm")?.value;
-  if (!adm || adm !== process.env.ADMIN_TOKEN) {
+  const adminTokenCookie = cookies().get("admin_token")?.value;
+  if (!adminTokenCookie || adminTokenCookie !== process.env.ADMIN_TOKEN) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -24,6 +30,11 @@ export async function POST(req: NextRequest) {
 
   if (!checkout_id || !email || !checkout_url) {
     return NextResponse.json({ error: "Campos obrigatórios faltando" }, { status: 400 });
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase não configurado" }, { status: 500 });
   }
 
   // idempotência manual: se já houver, não envia de novo

@@ -5,8 +5,10 @@ import TestForm from "../../components/TestForm";
 export const dynamic = "force-dynamic";
 
 export default function TestPage() {
-  const adm = cookies().get("adm")?.value;
-  if (!adm || adm !== process.env.ADMIN_TOKEN) redirect("/login");
+  const adminTokenCookie = cookies().get("admin_token")?.value;
+  if (!adminTokenCookie || adminTokenCookie !== process.env.ADMIN_TOKEN) {
+    redirect("/login");
+  }
 
   return (
     <main className="mx-auto max-w-lg p-6">
