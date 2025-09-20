@@ -45,7 +45,10 @@ export async function POST(req: Request) {
     id
   ).toString();
 
-  const payload = {
+  const rawPayload =
+    body && typeof body === 'object' ? body : { note: 'manual.test', raw: String(body ?? '') };
+
+  const row = {
     id,
     event_id: id,
     email, // ✅ NOT NULL — sempre preenchido
@@ -63,14 +66,15 @@ export async function POST(req: Request) {
     source: 'manual.test.created',
     sent_at: null as any,
     updated_at: now.toISOString(),
+    payload: rawPayload,
   };
 
-  const { error } = await supabase.from('abandoned_emails').insert(payload);
+  const { error } = await supabase.from('abandoned_emails').insert(row);
 
   if (error) {
-    console.error('[kiwify-hub] erro ao registrar teste', error, { payload });
+    console.error('[kiwify-hub] erro ao registrar teste', error, { payload: row });
     return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id, email, schedule_at: payload.schedule_at });
+  return NextResponse.json({ ok: true, id, email, schedule_at: row.schedule_at });
 }
