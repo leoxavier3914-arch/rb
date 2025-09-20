@@ -36,12 +36,22 @@ export async function POST(req: Request) {
   const hours = Number(process.env.DEFAULT_EXPIRE_HOURS ?? '24');
   const scheduleAt = new Date(now.getTime() + hours * 3600 * 1000);
 
+  // Deriva checkoutId (usa o do body se vier; senão usamos o próprio id do teste)
+  const checkoutId = (
+    body.checkout_id ??
+    body.purchase_id ??
+    body.order_id ??
+    body.id ??
+    id
+  ).toString();
+
   const payload = {
     id,
     event_id: id,
     email, // ✅ NOT NULL — sempre preenchido
     product_title: (body.product_title ?? body.product ?? 'Catálogo Editável - Cílios').toString(),
     checkout_url: (body.checkout_url ?? 'https://pay.kiwify.com.br/SEU_LINK').toString(),
+    checkout_id: checkoutId,
     created_at: now.toISOString(),
     paid: false as const,
     paid_at: null as any,
