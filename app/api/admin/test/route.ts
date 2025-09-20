@@ -23,12 +23,16 @@ export async function POST(req: Request) {
 
   // Aceita email vindo como "email" ou "customer_email"; usa TEST_EMAIL como fallback
   const emailFromForm = (body.email ?? body.customer_email ?? '').toString().trim();
-  const email = emailFromForm || (process.env.TEST_EMAIL ?? '').trim();
+  const email =
+    emailFromForm ||
+    (process.env.TEST_EMAIL ?? '').trim();
 
   // validação simples de e-mail
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return NextResponse.json({ ok: false, error: 'email_invalido_ou_ausente' }, { status: 400 });
   }
+
+  console.log('[admin/test] email resolvido =', email, 'bodyKeys =', Object.keys(body || {}));
 
   const id = randomUUID();
   const now = new Date();
@@ -51,14 +55,14 @@ export async function POST(req: Request) {
   const row = {
     id,
     event_id: id,
-    email, // ✅ NOT NULL — sempre preenchido
+    email: email,
     product_title: (body.product_title ?? body.product ?? 'Catálogo Editável - Cílios').toString(),
     checkout_url: (body.checkout_url ?? 'https://pay.kiwify.com.br/SEU_LINK').toString(),
     checkout_id: checkoutId,
     created_at: now.toISOString(),
     paid: false as const,
     paid_at: null as any,
-    customer_email: email, // espelha pra manter consistência
+    customer_email: email,
     customer_name: (body.name ?? 'Cliente Teste').toString(),
     status: 'pending' as const,
     discount_code: (body.discount_code ?? process.env.DEFAULT_DISCOUNT_CODE ?? null) as any,
@@ -69,12 +73,21 @@ export async function POST(req: Request) {
     payload: rawPayload,
   };
 
-  const { error } = await supabase.from('abandoned_emails').insert(row);
+  if (!row.email) {
+    console.error('[admin/test] row.email ausente!', row);
+    return NextResponse.json({ ok: false, error: 'email_vazio_no_payload' }, { status: 500 });
+  }
+
+  const { data, error } = await supabase
+    .from('abandoned_emails')
+    .insert(row)
+    .select('id,email,customer_email')
+    .single();
 
   if (error) {
-    console.error('[kiwify-hub] erro ao registrar teste', error, { payload: row });
+    console.error('[kiwify-hub] erro ao registrar teste', error, { row });
     return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id, email, schedule_at: row.schedule_at });
+  return NextResponse.json({ ok: true, id: data.id, email: data.email, schedule_at: row.schedule_at });
 }
