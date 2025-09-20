@@ -3,7 +3,7 @@ export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import * as emailjs from '@emailjs/nodejs';
+import emailjs from '@emailjs/nodejs';
 import * as crypto from 'crypto';
 
 // --- EmailJS (Strict Mode: precisa PUBLIC + PRIVATE) ---
@@ -134,6 +134,10 @@ export async function POST(req: Request) {
           product_title: data.product_title,
           checkout_url: data.checkout_url,
           schedule_at: new Date(data.schedule_at).toLocaleString('pt-BR'),
+        },
+        {
+          publicKey: EMAIL_PUBLIC,
+          privateKey: EMAIL_PRIVATE,
         }
       );
     }
