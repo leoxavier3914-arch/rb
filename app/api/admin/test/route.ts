@@ -47,7 +47,6 @@ export async function POST(req: Request) {
     paid_at: null as any,
     customer_email: email, // espelha pra manter consistência
     customer_name: (body.name ?? 'Cliente Teste').toString(),
-    customer_phone: (body.phone ?? null) as any,
     status: 'pending' as const,
     discount_code: (body.discount_code ?? process.env.DEFAULT_DISCOUNT_CODE ?? null) as any,
     schedule_at: scheduleAt.toISOString(),
