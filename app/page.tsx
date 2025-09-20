@@ -1,3 +1,4 @@
+// app/page.tsx
 import Card from '../components/Card';
 import Badge, { type BadgeVariant } from '../components/Badge';
 import Table from '../components/Table';
@@ -14,6 +15,7 @@ const STATUS_LABEL: Record<BadgeVariant, string> = {
   converted: 'Convertido',
   error: 'Erro',
 };
+
 const badgeVariants = new Set<BadgeVariant>(['pending', 'sent', 'converted', 'error']);
 
 type AbandonedCart = {
@@ -24,29 +26,63 @@ type AbandonedCart = {
   product_id: string | null;
   status: string;
   discount_code: string | null;
-  expires_at: string | null;
+  expires_at: string | null;        // schedule_at / expires_at
   last_event: string | null;
-  last_reminder_at: string | null;
+  last_reminder_at: string | null;  // sent_at
   created_at: string | null;
   updated_at: string | null;
 };
 
-// --------- Correção de horário (parse PG timestamp) ----------
+/* ===================== PARSE DE HORÁRIO (Postgres → Date) ===================== */
+/** Aceita:
+ *  - "YYYY-MM-DD HH:MM:SS.mmmmmm+00"
+ *  - "YYYY-MM-DD HH:MM:SS.mmm+0000"
+ *  - "YYYY-MM-DD HH:MM:SS.mmm+00:00"
+ *  - "YYYY-MM-DD HH:MM:SSZ"
+ *  - sem offset → assume UTC
+ */
 function parsePgTimestamp(value?: string | null): Date | null {
   if (!value) return null;
   let s = String(value).trim();
-  s = s.replace(' ', 'T');            // "YYYY-MM-DDTHH:MM:SS..."
-  s = s.replace(/(\.\d{3})\d+/, '$1'); // micros → millis
-  if (!/[Zz]|[+\-]\d{2}:?\d{2}$/.test(s)) s += 'Z';
+
+  // 1) vira ISO: espaço → 'T'
+  s = s.replace(' ', 'T');
+
+  // 2) micros → millis (JS usa 3 dígitos)
+  s = s.replace(/(\.\d{3})\d+/, '$1');
+
+  // 3) normaliza timezone no final da string
+  //    casa +HH, +HHMM, +HH:MM ou Z (ou nada)
+  const tzMatch = s.match(/([+\-]\d{2})(?::?(\d{2}))?$/);
+  if (tzMatch) {
+    const sign = tzMatch[1][0];      // '+' | '-'
+    const hh = tzMatch[1].slice(1);  // HH
+    const mm = tzMatch[2] ?? '00';   // MM (se ausente)
+    if (hh === '00' && mm === '00') {
+      // +00, +0000, +00:00 → Z (UTC)
+      s = s.replace(/([+\-]\d{2})(?::?(\d{2}))?$/, 'Z');
+    } else {
+      // força formato +HH:MM
+      s = s.replace(/([+\-]\d{2})(?::?(\d{2}))?$/, `${sign}${hh}:${mm}`);
+    }
+  } else if (!/[Zz]$/.test(s)) {
+    // sem offset e sem Z → assume UTC
+    s += 'Z';
+  }
+
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
 }
+
 function formatDate(value: string | null) {
   const d = parsePgTimestamp(value);
   if (!d) return '—';
-  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(d);
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(d); // mostra no fuso do dispositivo
 }
-// -------------------------------------------------------------
+/* ============================================================================== */
 
 function getBadgeVariant(status: string): BadgeVariant {
   return badgeVariants.has(status as BadgeVariant) ? (status as BadgeVariant) : 'error';
@@ -58,11 +94,13 @@ const clean = (v: any) => {
 };
 
 async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
-  noStore();
+  noStore(); // evita cache do lado do servidor
+
   try {
     const supabase = getSupabaseAdmin();
 
-    // usa select('*') para não quebrar se o schema variar
+    // usamos select('*') para não quebrar se o esquema variar;
+    // ordena por updated_at desc (fallback: created_at no render)
     const { data, error } = await supabase
       .from('abandoned_emails')
       .select('*')
@@ -84,8 +122,6 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
         id: String(r.id),
         customer_email: clean(r.customer_email) || clean(r.email) || '',
         customer_name: clean(r.customer_name) || null,
-        // aceita tanto product_name (se existir na sua tabela) quanto product_title,
-        // e cai para o payload
         product_name:
           clean(r.product_name) ||
           clean(r.product_title) ||
@@ -93,9 +129,7 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
           null,
         product_id: r.product_id ?? null,
         status: r.status || 'pending',
-        // cupom: aceita discount_code ou coupon
-        discount_code: clean(r.discount_code) || clean(r.coupon) || null,
-        // expiração/agendamento: aceita expires_at ou schedule_at
+        discount_code: clean(r.discount_code) || clean((p as any)?.coupon) || null,
         expires_at: r.expires_at ?? r.schedule_at ?? null,
         last_event: r.last_event ?? null,
         last_reminder_at: r.sent_at ?? r.last_reminder_at ?? null,
@@ -124,7 +158,7 @@ function computeMetrics(carts: AbandonedCart[]) {
 export default async function Home() {
   noStore();
 
-  // auth por cookie
+  // auth simples por cookie
   const adminToken = process.env.ADMIN_TOKEN;
   const token = cookies().get('admin_token');
   if (!adminToken || !token || token.value !== adminToken) {
@@ -158,6 +192,7 @@ export default async function Home() {
             {metrics.expired > 0 ? `${metrics.expired} link(s) expirados` : 'Todos os links ativos'}
           </Badge>
         </div>
+
         <Table
           columns={[
             {
@@ -165,26 +200,44 @@ export default async function Home() {
               header: 'Cliente',
               render: (item) => (
                 <div className="flex flex-col">
-                  <span className="font-medium text-white">{item.customer_name ?? 'Nome não informado'}</span>
+                  <span className="font-medium text-white">
+                    {item.customer_name ?? 'Nome não informado'}
+                  </span>
                   <span className="text-xs text-slate-400">{item.customer_email}</span>
                 </div>
               ),
             },
-            { key: 'product_name', header: 'Produto', render: (i) => i.product_name ?? '—' },
+            {
+              key: 'product_name',
+              header: 'Produto',
+              render: (item) => item.product_name ?? '—',
+            },
             {
               key: 'status',
               header: 'Status',
-              render: (i) => {
-                const variant = getBadgeVariant(i.status);
-                return <Badge variant={variant}>{STATUS_LABEL[variant] ?? i.status}</Badge>;
+              render: (item) => {
+                const variant = getBadgeVariant(item.status);
+                return <Badge variant={variant}>{STATUS_LABEL[variant] ?? item.status}</Badge>;
               },
             },
-            { key: 'discount_code', header: 'Cupom', render: (i) => i.discount_code ?? '—' },
-            { key: 'expires_at', header: 'Expira em', render: (i) => formatDate(i.expires_at) },
-            { key: 'updated_at', header: 'Atualizado em', render: (i) => formatDate(i.updated_at ?? i.created_at) },
+            {
+              key: 'discount_code',
+              header: 'Cupom',
+              render: (item) => item.discount_code ?? '—',
+            },
+            {
+              key: 'expires_at',
+              header: 'Expira em',
+              render: (item) => formatDate(item.expires_at),
+            },
+            {
+              key: 'updated_at',
+              header: 'Atualizado em',
+              render: (item) => formatDate(item.updated_at ?? item.created_at),
+            },
           ]}
           data={carts}
-          getRowKey={(i) => i.id}
+          getRowKey={(item) => item.id}
           emptyMessage="Nenhum evento encontrado. Aguarde o primeiro webhook da Kiwify."
         />
       </section>
