@@ -12,7 +12,10 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 // ==== ENVS OPCIONAIS ====
 const DEFAULT_EXPIRE_HOURS =
   Number((process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()) || 24;
+
+// Se você configurar a assinatura da Kiwify:
 const KIWIFY_WEBHOOK_SECRET = (process.env.KIWIFY_WEBHOOK_SECRET ?? '').trim();
+// Se quiser bloquear quando a assinatura não bater:
 const STRICT_SIGNATURE =
   (process.env.KIWIFY_STRICT_SIGNATURE ?? 'false').toLowerCase() === 'true';
 
@@ -103,27 +106,37 @@ function findNameDeep(obj: any): string | null {
   return found;
 }
 
-// ====== PATCH: produto (aceita product_name, offer_name, listas, fallback) ======
+// ====== PATCH DEFINITIVO: produto sem confundir com nome do cliente ======
 function findProductNameDeep(obj: any): string | null {
-  // 1) caminhos diretos (inclui offer_name)
-  const byKey = pickByKeys(
+  // 1) Preferência alta: campos explícitos de produto/offer
+  const preferred = pickByKeys(
     obj,
-    ['product_name','offer_name','title','product_title','item_title','name','course_name','plan_name'],
+    ['product_name', 'offer_name', 'product_title', 'item_title', 'course_name', 'plan_name'],
     (v) => typeof v === 'string' && v.trim().length > 0
   );
-  if (byKey) return String(byKey).trim();
+  if (preferred) return String(preferred).trim();
 
   // 2) product.{title|name}
-  const product = pickByKeys(obj, ['product'], (v) => typeof v === 'object');
-  if (product) {
-    if (typeof (product as any).title === 'string' && (product as any).title.trim())
-      return (product as any).title.trim();
-    if (typeof (product as any).name === 'string' && (product as any).name.trim())
-      return (product as any).name.trim();
-  }
+  let found: string | null = null;
+  deepWalk(obj, (k, v, path) => {
+    if (typeof v !== 'string' || !v.trim()) return false;
+    const key = k.toLowerCase();
+    const p = path.join('.').toLowerCase();
 
-  // 3) listas comuns
-  const listKeys = ['order_items','items','products','order_products','line_items','purchases','courses'];
+    // Só aceita name/title se o caminho indicar produto/itens (evita cart.name, customer.name, etc.)
+    const looksLikeProductPath =
+      /(^|\.)(product|products|item|items|order_items|line_items|order_products)(\.|$)/i.test(p);
+
+    if (looksLikeProductPath && (key === 'title' || key === 'name')) {
+      found = v.trim();
+      return true;
+    }
+    return false;
+  });
+  if (found) return found;
+
+  // 3) Fallback em arrays comuns (primeiro título/nome de item)
+  const listKeys = ['order_items', 'items', 'products', 'order_products', 'line_items', 'purchases', 'courses'];
   for (const lk of listKeys) {
     const arr = pickByKeys(obj, [lk], (v) => Array.isArray(v)) as any[] | null;
     if (arr && arr.length) {
@@ -139,37 +152,21 @@ function findProductNameDeep(obj: any): string | null {
     }
   }
 
-  // 4) regex genérica: /(product|course|offer|item|plan).*(name|title)/i
-  let found: string | null = null;
-  const keyRe = /(product|course|offer|item|plan).*(name|title)/i;
-  deepWalk(obj, (k, v) => {
-    if (typeof v === 'string' && v.trim().length > 0 && keyRe.test(k)) {
-      if (!/customer|buyer|user/i.test(k)) {
-        found = v.trim();
-        return true;
-      }
-    }
-    return false;
-  });
-  if (found) return found;
-
-  // 5) fallback (testes)
+  // 4) Indicativos (nunca 'name' genérico)
   const alt = pickByKeys(
     obj,
-    ['product_type','plan_type','order_ref'],
+    ['product_type', 'plan_type', 'order_ref'],
     (v) => typeof v === 'string' && v.trim().length > 0
   );
-  if (alt) return String(alt).trim();
-
-  return null;
+  return alt ? String(alt).trim() : null;
 }
 
-// ====== PATCH: checkout_url (monta a partir de checkout_link) ======
+// ====== checkout_url (monta a partir de checkout_link se precisar) ======
 function findCheckoutUrlDeep(obj: any): string | null {
   // URL direta
   const byKey = pickByKeys(
     obj,
-    ['checkout_url','payment_link','url'],
+    ['checkout_url', 'payment_link', 'url'],
     (v) => typeof v === 'string' && v.startsWith('http')
   );
   if (byKey) return String(byKey);
@@ -182,7 +179,7 @@ function findCheckoutUrlDeep(obj: any): string | null {
   // código curto -> URL
   const code = pickByKeys(
     obj,
-    ['checkout_link','link','code'],
+    ['checkout_link', 'link', 'code'],
     (v) => typeof v === 'string' && /^[A-Za-z0-9]{5,20}$/.test(v)
   );
   if (code) return `https://pay.kiwify.com.br/${String(code)}`;
@@ -202,7 +199,7 @@ function findCheckoutUrlDeep(obj: any): string | null {
 function findDiscountDeep(obj: any): string | null {
   const byKey = pickByKeys(
     obj,
-    ['discount_code','coupon','coupon_code','voucher','promo_code'],
+    ['discount_code', 'coupon', 'coupon_code', 'voucher', 'promo_code'],
     (v) => typeof v === 'string' && v.trim().length > 0
   );
   return byKey ? String(byKey).trim() : null;
@@ -211,7 +208,7 @@ function findDiscountDeep(obj: any): string | null {
 function findCheckoutIdDeep(obj: any): string {
   const byKey = pickByKeys(
     obj,
-    ['checkout_id','purchase_id','order_id','cart_id','id','order_ref'],
+    ['checkout_id', 'purchase_id', 'order_id', 'cart_id', 'id', 'order_ref'],
     (v) => v !== null && v !== undefined
   );
   return byKey != null ? String(byKey) : crypto.randomUUID();
@@ -242,7 +239,7 @@ export async function POST(req: Request) {
     else body = raw ? JSON.parse(raw) : {};
   } catch { body = { raw }; }
 
-  // log leve
+  // log leve (útil em produção)
   try {
     const sampleHeaders = Object.fromEntries(
       Array.from(req.headers.entries())
@@ -253,7 +250,7 @@ export async function POST(req: Request) {
     console.log('[kiwify-webhook] hit', { ct, hasBody: !!raw, rootKeys, sampleHeaders });
   } catch {}
 
-  // 2) assinatura (header OU ?signature=)
+  // 2) assinatura (header OU ?signature=) — se você usa secret
   if (KIWIFY_WEBHOOK_SECRET) {
     const providedRaw =
       req.headers.get('x-kiwify-signature') ||
@@ -297,7 +294,10 @@ export async function POST(req: Request) {
     now.getTime() + DEFAULT_EXPIRE_HOURS * 3600 * 1000
   ).toISOString();
 
-  console.log('[kiwify-webhook] parsed', { email, name, productTitle, checkoutUrl, discountCode: discountCode ?? null });
+  console.log('[kiwify-webhook] parsed', {
+    email, name, productTitle,
+    checkoutUrl, discountCode: discountCode ?? null
+  });
 
   // 4) Upsert no Supabase
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
