@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -25,6 +26,12 @@ const payloadSchema = z
       });
     }
   });
+
+function resolveRecordId(value: string) {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(value) ? value : randomUUID();
+}
 
 async function ensureTestRecord(
   supabase: ReturnType<typeof getSupabaseAdmin>,
@@ -133,6 +140,8 @@ export async function POST(request: NextRequest) {
     checkout_url: checkoutUrl,
   } = parsed.data;
 
+  const recordId = resolveRecordId(checkoutId);
+
   const normalizedEmail = (payloadEmail ?? payloadCustomerEmail ?? '').trim().toLowerCase();
 
   if (!normalizedEmail) {
@@ -144,7 +153,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await ensureTestRecord(supabase, {
-      id: checkoutId,
+      id: recordId,
       email: normalizedEmail,
       name: name ?? null,
       productName: productName ?? null,
@@ -165,7 +174,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[kiwify-hub] configuração do EmailJS ausente', error);
     try {
-      await markTestAsError(supabase, checkoutId);
+      await markTestAsError(supabase, recordId);
     } catch (updateError) {
       console.error('[kiwify-hub] falha ao marcar teste como erro', updateError);
     }
@@ -198,7 +207,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[kiwify-hub] erro de rede ao enviar teste', error);
     try {
-      await markTestAsError(supabase, checkoutId);
+      await markTestAsError(supabase, recordId);
     } catch (updateError) {
       console.error('[kiwify-hub] falha ao marcar teste como erro', updateError);
     }
@@ -209,7 +218,7 @@ export async function POST(request: NextRequest) {
     const message = await response.text();
     console.error('[kiwify-hub] erro ao enviar teste', response.status, message);
     try {
-      await markTestAsError(supabase, checkoutId);
+      await markTestAsError(supabase, recordId);
     } catch (updateError) {
       console.error('[kiwify-hub] falha ao marcar teste como erro', updateError);
     }
@@ -219,7 +228,7 @@ export async function POST(request: NextRequest) {
   const sentAt = new Date().toISOString();
   try {
     await markTestAsSent(supabase, {
-      id: checkoutId,
+      id: recordId,
       discountCode,
       expiresAt,
       sentAt,
@@ -229,5 +238,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'E-mail enviado, mas não foi possível atualizar o registro.' }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id: checkoutId, status: 'sent', discountCode, expiresAt });
+  return NextResponse.json({ ok: true, id: recordId, status: 'sent', discountCode, expiresAt });
 }

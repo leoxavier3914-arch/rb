@@ -8,19 +8,23 @@ export default function TestForm() {
   const [checkoutUrl, setCheckoutUrl] = useState("https://pay.kiwify.com.br/SEU_LINK");
   const [status, setStatus] = useState<string | null>(null);
 
-  function randomId() {
-    // ck_ + 16 chars
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let s = "ck_";
-    for (let i = 0; i < 16; i++) s += chars[Math.floor(Math.random() * chars.length)];
-    return s;
+  function generateCheckoutId() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus("Enviando...");
 
-    const checkout_id = randomId();
+    const checkout_id = generateCheckoutId();
     try {
       const res = await fetch("/api/admin/test-send", {
         method: "POST",
@@ -36,7 +40,7 @@ export default function TestForm() {
       });
       const data = await res.json();
       if (res.ok) {
-        setStatus(`OK: enviado (checkout_id: ${checkout_id})`);
+        setStatus(`OK: enviado (registro: ${data?.id ?? checkout_id})`);
       } else {
         setStatus(`Erro: ${data?.error || "desconhecido"}`);
       }
