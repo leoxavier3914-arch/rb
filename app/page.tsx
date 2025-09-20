@@ -6,7 +6,6 @@ import { getSupabaseAdmin } from '../lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
-import LocalTime from '../components/LocalTime';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,9 +32,58 @@ type AbandonedCart = {
   updated_at: string | null;
 };
 
+/* ========= Normalização UTC do timestamp do Postgres =========
+   Aceita:
+   - "YYYY-MM-DD HH:MM:SS.mmmmmm+00"
+   - "YYYY-MM-DD HH:MM:SS.mmm+0000"
+   - "YYYY-MM-DD HH:MM:SS.mmm+00:00"
+   - "YYYY-MM-DD HH:MM:SSZ"
+   - sem offset → assume UTC
+*/
+function parsePgTimestamp(value?: string | null): Date | null {
+  if (!value) return null;
+  let s = String(value).trim();
+
+  // 1) ISO-like
+  s = s.replace(' ', 'T');
+
+  // 2) micros → millis (3 dígitos)
+  s = s.replace(/(\.\d{3})\d+/, '$1');
+
+  // 3) normaliza timezone final
+  const tz = s.match(/([+\-]\d{2})(?::?(\d{2}))?$/);
+  if (tz) {
+    const sign = tz[1][0];
+    const hh = tz[1].slice(1);
+    const mm = tz[2] ?? '00';
+    if (hh === '00' && mm === '00') {
+      s = s.replace(/([+\-]\d{2})(?::?(\d{2}))?$/, 'Z'); // +00 / +0000 / +00:00 → Z
+    } else {
+      s = s.replace(/([+\-]\d{2})(?::?(\d{2}))?$/, `${sign}${hh}:${mm}`); // força +HH:MM
+    }
+  } else if (!/[Zz]$/.test(s)) {
+    s += 'Z'; // sem offset → assume UTC
+  }
+
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// Formata SEMPRE no fuso de São Paulo (consistente p/ todos os devices)
+function formatSaoPaulo(value: string | null) {
+  const d = parsePgTimestamp(value);
+  if (!d) return '—';
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'America/Sao_Paulo',
+  }).format(d);
+}
+
 function getBadgeVariant(status: string): BadgeVariant {
   return badgeVariants.has(status as BadgeVariant) ? (status as BadgeVariant) : 'error';
 }
+
 const clean = (v: any) => {
   const s = typeof v === 'string' ? v.trim() : '';
   return s && s !== '-' && s !== '—' ? s : '';
@@ -45,6 +93,8 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
   noStore();
   try {
     const supabase = getSupabaseAdmin();
+
+    // select('*') para não quebrar se o schema variar
     const { data, error } = await supabase
       .from('abandoned_emails')
       .select('*')
@@ -57,6 +107,7 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
     }
 
     const rows = (data ?? []) as any[];
+
     return rows.map((r): AbandonedCart => {
       const p = (r?.payload ?? {}) as Record<string, any>;
       const productFromPayload = clean(p.product_name) || clean(p.offer_name) || '';
@@ -73,8 +124,10 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
         product_id: r.product_id ?? null,
         status: r.status || 'pending',
         discount_code: clean(r.discount_code) || clean((p as any)?.coupon) || null,
+        // expiração/agendamento: aceita expires_at ou schedule_at
         expires_at: r.expires_at ?? r.schedule_at ?? null,
         last_event: r.last_event ?? null,
+        // quando foi enviado pela última vez (se houver)
         last_reminder_at: r.sent_at ?? r.last_reminder_at ?? null,
         created_at: r.created_at ?? null,
         updated_at: r.updated_at ?? null,
@@ -91,14 +144,12 @@ function computeMetrics(carts: AbandonedCart[]) {
   const pending = carts.filter((i) => i.status === 'pending').length;
   const sent = carts.filter((i) => i.status === 'sent').length;
   const converted = carts.filter((i) => i.status === 'converted').length;
+
   const expired = carts.filter((i) => {
-    // no server a gente não formata; a verificação de expirado usa Date diretamente
-    const raw = i.expires_at;
-    if (!raw) return false;
-    // reutiliza o normalizador do componente no client? Aqui mantemos simples:
-    const d = new Date(String(raw).replace(' ', 'T'));
-    return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
+    const d = parsePgTimestamp(i.expires_at);
+    return !!d && d.getTime() < Date.now();
   }).length;
+
   return { total, pending, sent, converted, expired };
 }
 
@@ -164,16 +215,8 @@ export default async function Home() {
               },
             },
             { key: 'discount_code', header: 'Cupom', render: (i) => i.discount_code ?? '—' },
-            {
-              key: 'expires_at',
-              header: 'Expira em',
-              render: (i) => <LocalTime value={i.expires_at} />,
-            },
-            {
-              key: 'updated_at',
-              header: 'Atualizado em',
-              render: (i) => <LocalTime value={i.updated_at ?? i.created_at} />,
-            },
+            { key: 'expires_at', header: 'Expira em', render: (i) => formatSaoPaulo(i.expires_at) },
+            { key: 'updated_at', header: 'Atualizado em', render: (i) => formatSaoPaulo(i.updated_at ?? i.created_at) },
           ]}
           data={carts}
           getRowKey={(i) => i.id}
