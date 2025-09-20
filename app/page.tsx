@@ -6,6 +6,7 @@ import { getSupabaseAdmin } from '../lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
+import LocalTime from '../components/LocalTime';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,6 @@ const STATUS_LABEL: Record<BadgeVariant, string> = {
   converted: 'Convertido',
   error: 'Erro',
 };
-
 const badgeVariants = new Set<BadgeVariant>(['pending', 'sent', 'converted', 'error']);
 
 type AbandonedCart = {
@@ -33,74 +33,18 @@ type AbandonedCart = {
   updated_at: string | null;
 };
 
-/* ===================== PARSE DE HORÁRIO (Postgres → Date) ===================== */
-/** Aceita:
- *  - "YYYY-MM-DD HH:MM:SS.mmmmmm+00"
- *  - "YYYY-MM-DD HH:MM:SS.mmm+0000"
- *  - "YYYY-MM-DD HH:MM:SS.mmm+00:00"
- *  - "YYYY-MM-DD HH:MM:SSZ"
- *  - sem offset → assume UTC
- */
-function parsePgTimestamp(value?: string | null): Date | null {
-  if (!value) return null;
-  let s = String(value).trim();
-
-  // 1) vira ISO: espaço → 'T'
-  s = s.replace(' ', 'T');
-
-  // 2) micros → millis (JS usa 3 dígitos)
-  s = s.replace(/(\.\d{3})\d+/, '$1');
-
-  // 3) normaliza timezone no final da string
-  //    casa +HH, +HHMM, +HH:MM ou Z (ou nada)
-  const tzMatch = s.match(/([+\-]\d{2})(?::?(\d{2}))?$/);
-  if (tzMatch) {
-    const sign = tzMatch[1][0];      // '+' | '-'
-    const hh = tzMatch[1].slice(1);  // HH
-    const mm = tzMatch[2] ?? '00';   // MM (se ausente)
-    if (hh === '00' && mm === '00') {
-      // +00, +0000, +00:00 → Z (UTC)
-      s = s.replace(/([+\-]\d{2})(?::?(\d{2}))?$/, 'Z');
-    } else {
-      // força formato +HH:MM
-      s = s.replace(/([+\-]\d{2})(?::?(\d{2}))?$/, `${sign}${hh}:${mm}`);
-    }
-  } else if (!/[Zz]$/.test(s)) {
-    // sem offset e sem Z → assume UTC
-    s += 'Z';
-  }
-
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function formatDate(value: string | null) {
-  const d = parsePgTimestamp(value);
-  if (!d) return '—';
-  return new Intl.DateTimeFormat('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(d); // mostra no fuso do dispositivo
-}
-/* ============================================================================== */
-
 function getBadgeVariant(status: string): BadgeVariant {
   return badgeVariants.has(status as BadgeVariant) ? (status as BadgeVariant) : 'error';
 }
-
 const clean = (v: any) => {
   const s = typeof v === 'string' ? v.trim() : '';
   return s && s !== '-' && s !== '—' ? s : '';
 };
 
 async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
-  noStore(); // evita cache do lado do servidor
-
+  noStore();
   try {
     const supabase = getSupabaseAdmin();
-
-    // usamos select('*') para não quebrar se o esquema variar;
-    // ordena por updated_at desc (fallback: created_at no render)
     const { data, error } = await supabase
       .from('abandoned_emails')
       .select('*')
@@ -113,7 +57,6 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
     }
 
     const rows = (data ?? []) as any[];
-
     return rows.map((r): AbandonedCart => {
       const p = (r?.payload ?? {}) as Record<string, any>;
       const productFromPayload = clean(p.product_name) || clean(p.offer_name) || '';
@@ -149,8 +92,12 @@ function computeMetrics(carts: AbandonedCart[]) {
   const sent = carts.filter((i) => i.status === 'sent').length;
   const converted = carts.filter((i) => i.status === 'converted').length;
   const expired = carts.filter((i) => {
-    const d = parsePgTimestamp(i.expires_at);
-    return !!d && d.getTime() < Date.now();
+    // no server a gente não formata; a verificação de expirado usa Date diretamente
+    const raw = i.expires_at;
+    if (!raw) return false;
+    // reutiliza o normalizador do componente no client? Aqui mantemos simples:
+    const d = new Date(String(raw).replace(' ', 'T'));
+    return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
   }).length;
   return { total, pending, sent, converted, expired };
 }
@@ -207,37 +154,29 @@ export default async function Home() {
                 </div>
               ),
             },
-            {
-              key: 'product_name',
-              header: 'Produto',
-              render: (item) => item.product_name ?? '—',
-            },
+            { key: 'product_name', header: 'Produto', render: (i) => i.product_name ?? '—' },
             {
               key: 'status',
               header: 'Status',
-              render: (item) => {
-                const variant = getBadgeVariant(item.status);
-                return <Badge variant={variant}>{STATUS_LABEL[variant] ?? item.status}</Badge>;
+              render: (i) => {
+                const variant = getBadgeVariant(i.status);
+                return <Badge variant={variant}>{STATUS_LABEL[variant] ?? i.status}</Badge>;
               },
             },
-            {
-              key: 'discount_code',
-              header: 'Cupom',
-              render: (item) => item.discount_code ?? '—',
-            },
+            { key: 'discount_code', header: 'Cupom', render: (i) => i.discount_code ?? '—' },
             {
               key: 'expires_at',
               header: 'Expira em',
-              render: (item) => formatDate(item.expires_at),
+              render: (i) => <LocalTime value={i.expires_at} />,
             },
             {
               key: 'updated_at',
               header: 'Atualizado em',
-              render: (item) => formatDate(item.updated_at ?? item.created_at),
+              render: (i) => <LocalTime value={i.updated_at ?? i.created_at} />,
             },
           ]}
           data={carts}
-          getRowKey={(item) => item.id}
+          getRowKey={(i) => i.id}
           emptyMessage="Nenhum evento encontrado. Aguarde o primeiro webhook da Kiwify."
         />
       </section>
