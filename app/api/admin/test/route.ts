@@ -1,7 +1,7 @@
 // app/api/admin/test/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { randomUUID } from 'crypto';
+import * as crypto from 'crypto';
 
 export async function POST(req: Request) {
   // Supabase admin (Service Role)
@@ -21,40 +21,37 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({} as any));
 
-  // Aceita email vindo como "email" ou "customer_email"; usa TEST_EMAIL como fallback
   const emailFromForm = (body.email ?? body.customer_email ?? '').toString().trim();
-  const email =
-    emailFromForm ||
-    (process.env.TEST_EMAIL ?? '').trim();
+  const email = emailFromForm || (process.env.TEST_EMAIL ?? '').trim();
 
-  // validação simples de e-mail
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    console.warn('[admin/test] email inválido/ausente. bodyKeys=', Object.keys(body || {}));
     return NextResponse.json({ ok: false, error: 'email_invalido_ou_ausente' }, { status: 400 });
   }
 
-  console.log('[admin/test] email resolvido =', email, 'bodyKeys =', Object.keys(body || {}));
+  const rawHours = (process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim();
+  let hours = Number(rawHours);
+  if (!Number.isFinite(hours) || hours <= 0) hours = 24;
 
-  const id = randomUUID();
   const now = new Date();
+  const scheduleAtISO = new Date(now.getTime() + hours * 3600 * 1000).toISOString();
 
-  const hours = Number(process.env.DEFAULT_EXPIRE_HOURS ?? '24');
-  const scheduleAt = new Date(now.getTime() + hours * 3600 * 1000);
+  console.log('[admin/test] hours=', hours, 'scheduleAt=', scheduleAtISO);
 
-  // Deriva checkoutId (usa o do body se vier; senão usamos o próprio id do teste)
   const checkoutId = (
     body.checkout_id ??
     body.purchase_id ??
     body.order_id ??
     body.id ??
-    id
+    crypto.randomUUID()
   ).toString();
 
   const rawPayload =
     body && typeof body === 'object' ? body : { note: 'manual.test', raw: String(body ?? '') };
 
   const row = {
-    id,
-    event_id: id,
+    id: crypto.randomUUID(),
+    event_id: undefined as any, // MANTENHA ou REMOVA; se sua tabela tem event_id, troque para: event_id: this.id
     email: email,
     product_title: (body.product_title ?? body.product ?? 'Catálogo Editável - Cílios').toString(),
     checkout_url: (body.checkout_url ?? 'https://pay.kiwify.com.br/SEU_LINK').toString(),
@@ -62,26 +59,29 @@ export async function POST(req: Request) {
     created_at: now.toISOString(),
     paid: false as const,
     paid_at: null as any,
+    payload: rawPayload,
     customer_email: email,
     customer_name: (body.name ?? 'Cliente Teste').toString(),
     status: 'pending' as const,
     discount_code: (body.discount_code ?? process.env.DEFAULT_DISCOUNT_CODE ?? null) as any,
-    schedule_at: scheduleAt.toISOString(),
+    schedule_at: scheduleAtISO,
     source: 'manual.test.created',
-    sent_at: null as any,
     updated_at: now.toISOString(),
-    payload: rawPayload,
   };
 
   if (!row.email) {
     console.error('[admin/test] row.email ausente!', row);
     return NextResponse.json({ ok: false, error: 'email_vazio_no_payload' }, { status: 500 });
   }
+  if (!row.schedule_at) {
+    console.error('[admin/test] row.schedule_at ausente!', row);
+    return NextResponse.json({ ok: false, error: 'schedule_at_missing' }, { status: 500 });
+  }
 
   const { data, error } = await supabase
     .from('abandoned_emails')
     .insert(row)
-    .select('id,email,customer_email')
+    .select('id,email,customer_email,schedule_at')
     .single();
 
   if (error) {
@@ -89,5 +89,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id: data.id, email: data.email, schedule_at: row.schedule_at });
+  return NextResponse.json({ ok: true, id: data.id, email: data.email, schedule_at: data.schedule_at });
 }
