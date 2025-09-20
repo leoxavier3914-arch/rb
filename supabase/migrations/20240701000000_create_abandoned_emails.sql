@@ -14,6 +14,7 @@ create table if not exists public.abandoned_emails (
   updated_at timestamptz not null default now()
 );
 
+ 
 alter table public.abandoned_emails
   add column if not exists customer_email text;
 
@@ -99,6 +100,8 @@ alter table public.abandoned_emails
 alter table public.abandoned_emails
   alter column updated_at set not null;
 
+
+ 
 create or replace function public.handle_updated_at()
 returns trigger
 language plpgsql
