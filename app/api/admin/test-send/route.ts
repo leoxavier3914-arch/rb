@@ -37,6 +37,7 @@ async function ensureTestRecord(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   params: {
     id: string;
+    checkoutId: string;
     email: string;
     name: string | null;
     productName: string | null;
@@ -50,6 +51,7 @@ async function ensureTestRecord(
     .upsert(
       {
         id: params.id,
+        checkout_id: params.checkoutId,
         customer_email: params.email,
         customer_name: params.name,
         product_id: null,
@@ -154,6 +156,7 @@ export async function POST(request: NextRequest) {
   try {
     await ensureTestRecord(supabase, {
       id: recordId,
+      checkoutId,
       email: normalizedEmail,
       name: name ?? null,
       productName: productName ?? null,
