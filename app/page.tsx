@@ -1,182 +1,84 @@
-import Card from '../components/Card';
-import Badge, { type BadgeVariant } from '../components/Badge';
-import Table from '../components/Table';
-import { getSupabaseAdmin } from '../lib/supabaseAdmin';
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+// app/api/admin/cron/dispatch/route.ts
+export const runtime = 'nodejs';
 
-const STATUS_LABEL: Record<BadgeVariant, string> = {
-  pending: 'Pendente',
-  sent: 'E-mail enviado',
-  converted: 'Convertido',
-  error: 'Erro',
-};
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import * as emailjs from '@emailjs/nodejs';
 
-const badgeVariants = new Set<BadgeVariant>(['pending', 'sent', 'converted', 'error']);
+const SUPABASE_URL = process.env.SUPABASE_URL!;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const ADMIN_TOKEN = (process.env.ADMIN_TOKEN ?? '').trim();
 
-type AbandonedCart = {
-  id: string;
-  customer_email: string;
-  customer_name: string | null;
-  product_name: string | null;
-  product_id: string | null;
-  status: string;
-  discount_code: string | null;
-  expires_at: string | null;
-  last_event: string | null;
-  last_reminder_at: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-};
+const EMAIL_PUBLIC   = process.env.EMAILJS_PUBLIC_KEY!;
+const EMAIL_PRIVATE  = process.env.EMAILJS_PRIVATE_KEY || ''; // se Strict Mode off, pode ficar vazio
+const EMAIL_SERVICE  = process.env.EMAILJS_SERVICE_ID!;
+const EMAIL_TEMPLATE = process.env.EMAILJS_TEMPLATE_ID!;
+const EXPIRE_HOURS   = Number((process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()) || 24;
 
-/** ======= CORREÇÃO DE HORÁRIO ======= */
-/** Converte timestamp do Postgres ("YYYY-MM-DD HH:MM:SS.mmmmmm+00") para Date confiável */
-function parsePgTimestamp(value?: string | null): Date | null {
-  if (!value) return null;
-  let s = String(value).trim();
+// init EmailJS (Strict Mode se tiver PRIVATE)
+emailjs.init(EMAIL_PRIVATE ? { publicKey: EMAIL_PUBLIC, privateKey: EMAIL_PRIVATE } : { publicKey: EMAIL_PUBLIC });
 
-  // troca espaço por 'T' para virar ISO
-  s = s.replace(' ', 'T');
+export async function POST(req: Request) {
+  // proteção simples por token
+  const header = req.headers.get('authorization') || '';
+  const token = header.replace(/^Bearer\s+/i, '');
+  if (ADMIN_TOKEN && token !== ADMIN_TOKEN) {
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  }
 
-  // reduz microssegundos para milissegundos (JS lida com 3 dígitos)
-  s = s.replace(/(\.\d{3})\d+/, '$1');
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
 
-  // se não vier com Z nem offset, assume UTC
-  if (!/[Zz]|[+\-]\d{2}:?\d{2}$/.test(s)) s += 'Z';
+  // busca até 20 pendentes “vencidos”
+  const { data: rows, error } = await supabase
+    .from('abandoned_emails')
+    .select('id,email,customer_name,product_title,checkout_url,discount_code,schedule_at')
+    .eq('status', 'pending')
+    .lte('schedule_at', new Date().toISOString())
+    .limit(20);
 
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+  if (error) {
+    console.error('[cron/dispatch] select error', error);
+    return NextResponse.json({ ok: false, error }, { status: 500 });
+  }
 
-function formatDate(value: string | null) {
-  const d = parsePgTimestamp(value);
-  if (!d) return '—';
-  return new Intl.DateTimeFormat('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(d);
-}
-/** ======= FIM DA CORREÇÃO ======= */
+  if (!rows || rows.length === 0) {
+    return NextResponse.json({ ok: true, sent: 0 });
+  }
 
-function getBadgeVariant(status: string): BadgeVariant {
-  return badgeVariants.has(status as BadgeVariant) ? (status as BadgeVariant) : 'error';
-}
+  let sent = 0;
+  for (const r of rows) {
+    try {
+      await emailjs.send(
+        EMAIL_SERVICE,
+        EMAIL_TEMPLATE,
+        {
+          to_email: r.email,                            // To Email do template
+          title: 'Finalize sua compra • Romeike Beauty',// Subject usa {{title}}
+          name: r.customer_name ?? 'Cliente',           // {{name}}
+          product_name: r.product_title,                // {{product_name}}
+          discount_code: r.discount_code ?? 'RB10',     // {{discount_code}}
+          expire_hours: String(EXPIRE_HOURS),           // {{expire_hours}}
+          checkout_url: r.checkout_url,                 // {{checkout_url}}
+          email: r.email,                               // Reply-To usa {{email}}
+        }
+      );
 
-async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
-  try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from('abandoned_emails')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(50);
+      // marca como enviado
+      const { error: upErr } = await supabase
+        .from('abandoned_emails')
+        .update({ status: 'sent', sent_at: new Date().toISOString() })
+        .eq('id', r.id);
 
-    if (error) {
-      console.error('[kiwify-hub] erro ao consultar carrinhos', error);
-      return [];
+      if (upErr) throw upErr;
+
+      sent++;
+    } catch (err) {
+      console.error('[cron/dispatch] send error for id', r.id, err);
+      // opcional: marcar como 'failed' ou re-tentar depois
     }
-
-    return (data as AbandonedCart[]) ?? [];
-  } catch (error) {
-    console.error('[kiwify-hub] supabase indisponível', error);
-    return [];
-  }
-}
-
-function computeMetrics(carts: AbandonedCart[]) {
-  const total = carts.length;
-  const pending = carts.filter((item) => item.status === 'pending').length;
-  const sent = carts.filter((item) => item.status === 'sent').length;
-  const converted = carts.filter((item) => item.status === 'converted').length;
-  const expired = carts.filter((item) => {
-    if (!item.expires_at) return false;
-    return parsePgTimestamp(item.expires_at)!.getTime() < Date.now();
-  }).length;
-
-  return { total, pending, sent, converted, expired };
-}
-
-export default async function Home() {
-  const adminToken = process.env.ADMIN_TOKEN;
-  const token = cookies().get('admin_token');
-
-  if (!adminToken || !token || token.value !== adminToken) {
-    redirect('/login');
   }
 
-  const carts = await fetchAbandonedCarts();
-  const metrics = computeMetrics(carts);
-
-  return (
-    <main className="flex flex-1 flex-col gap-10 pb-10">
-      <header className="space-y-2">
-        <p className="text-sm font-semibold uppercase tracking-widest text-brand">Kiwify Hub</p>
-        <h1 className="text-3xl font-bold">Carrinhos abandonados</h1>
-        <p className="max-w-3xl text-sm text-slate-400">
-          Visualize os eventos recebidos pela webhook da Kiwify e envie manualmente um novo lembrete com desconto.
-        </p>
-      </header>
-
-      <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <Card title="Total de registros" value={metrics.total} description="Últimos 50 carrinhos recebidos" />
-        <Card title="Pendentes" value={metrics.pending} description="Aguardando envio de e-mail" />
-        <Card title="E-mails enviados" value={metrics.sent} description="Lembretes já disparados" />
-        <Card title="Convertidos" value={metrics.converted} description="Clientes que finalizaram a compra" />
-      </section>
-
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Últimos eventos</h2>
-          <Badge variant={metrics.expired > 0 ? 'error' : 'pending'}>
-            {metrics.expired > 0 ? `${metrics.expired} link(s) expirados` : 'Todos os links ativos'}
-          </Badge>
-        </div>
-        <Table
-          columns={[
-            {
-              key: 'customer_name',
-              header: 'Cliente',
-              render: (item) => (
-                <div className="flex flex-col">
-                  <span className="font-medium text-white">{item.customer_name ?? 'Nome não informado'}</span>
-                  <span className="text-xs text-slate-400">{item.customer_email}</span>
-                </div>
-              ),
-            },
-            {
-              key: 'product_name',
-              header: 'Produto',
-              render: (item) => item.product_name ?? '—',
-            },
-            {
-              key: 'status',
-              header: 'Status',
-              render: (item) => {
-                const variant = getBadgeVariant(item.status);
-                return <Badge variant={variant}>{STATUS_LABEL[variant] ?? item.status}</Badge>;
-              },
-            },
-            {
-              key: 'discount_code',
-              header: 'Cupom',
-              render: (item) => item.discount_code ?? '—',
-            },
-            {
-              key: 'expires_at',
-              header: 'Expira em',
-              render: (item) => formatDate(item.expires_at),
-            },
-            {
-              key: 'updated_at',
-              header: 'Atualizado em',
-              render: (item) => formatDate(item.updated_at ?? item.created_at),
-            },
-          ]}
-          data={carts}
-          getRowKey={(item) => item.id}
-          emptyMessage="Nenhum evento encontrado. Aguarde o primeiro webhook da Kiwify."
-        />
-      </section>
-    </main>
-  );
+  return NextResponse.json({ ok: true, sent });
 }
