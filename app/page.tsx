@@ -53,7 +53,7 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
     const { data, error } = await supabase
       .from('abandoned_emails')
       .select('*')
-      .order('updated_at', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(50);
 
     if (error) {
