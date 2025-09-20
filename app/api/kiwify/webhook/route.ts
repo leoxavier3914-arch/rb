@@ -1,109 +1,161 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
-import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
-import { createCryptoId, resolveDiscountCode, resolveExpiration } from '../../../../lib/cryptoId';
+// app/api/kiwify/webhook/route.ts
+export const runtime = 'nodejs';
 
-const payloadSchema = z.object({
-  event: z.string(),
-  data: z.object({
-    id: z.string().optional().nullable(),
-    email: z.string().email(),
-    name: z.string().optional().nullable(),
-    product_id: z.string().optional().nullable(),
-    product_name: z.string().optional().nullable(),
-    checkout_url: z.string().url().optional().nullable(),
-    discount_code: z.string().optional().nullable(),
-    expires_in: z.union([z.number(), z.string()]).optional().nullable(),
-  }),
-});
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import * as crypto from 'crypto';
 
-function extractToken(request: NextRequest) {
-  const headerToken = request.headers.get('x-kiwify-token') ?? request.headers.get('x-webhook-token');
-  if (headerToken) {
-    return headerToken;
+// ⚙️ envs necessárias
+const SUPABASE_URL = process.env.SUPABASE_URL!;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const DEFAULT_EXPIRE_HOURS = Number((process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()) || 24;
+
+// (opcional) se a Kiwify expõe um secret pra assinar webhooks, ponha aqui
+const KIWIFY_WEBHOOK_SECRET = (process.env.KIWIFY_WEBHOOK_SECRET ?? '').trim();
+
+function safeGetEmail(payload: any): string | null {
+  const tryPaths = [
+    'email',
+    'customer_email',
+    'buyer.email',
+    'customer.email',
+    'user.email',
+    'data.email',
+  ];
+  for (const p of tryPaths) {
+    const val = p.split('.').reduce((acc: any, k) => (acc ? acc[k] : undefined), payload);
+    if (typeof val === 'string' && /\S+@\S+\.\S+/.test(val)) return val;
   }
-  const authorization = request.headers.get('authorization');
-  if (authorization?.startsWith('Bearer ')) {
-    return authorization.slice(7).trim();
-  }
-  return request.nextUrl.searchParams.get('token');
+  return null;
 }
 
-function normalizeStatus(event: string) {
-  const normalized = event.toLowerCase();
-  if (normalized.includes('purchase') || normalized.includes('approved') || normalized.includes('sale')) {
-    return 'converted';
+function safeGetName(payload: any): string | null {
+  const tryPaths = [
+    'name',
+    'customer_name',
+    'buyer.name',
+    'customer.name',
+    'user.name',
+    'data.name',
+  ];
+  for (const p of tryPaths) {
+    const val = p.split('.').reduce((acc: any, k) => (acc ? acc[k] : undefined), payload);
+    if (typeof val === 'string' && val.trim()) return val.trim();
   }
-  if (normalized.includes('error') || normalized.includes('fail')) {
-    return 'error';
-  }
-  if (normalized.includes('email') || normalized.includes('sent')) {
-    return 'sent';
-  }
-  return 'pending';
+  return null;
 }
 
-export async function POST(request: NextRequest) {
-  const expectedToken = process.env.KIWIFY_WEBHOOK_TOKEN;
-  const providedToken = extractToken(request);
+function safeGetProductName(payload: any): string | null {
+  const tryPaths = [
+    'product_name',
+    'product.title',
+    'item.title',
+    'items.0.title',
+    'data.product_name',
+  ];
+  for (const p of tryPaths) {
+    const val = p.split('.').reduce((acc: any, k) => (acc ? acc[k] : undefined), payload);
+    if (typeof val === 'string' && val.trim()) return val.trim();
+  }
+  return null;
+}
 
-  if (!expectedToken || !providedToken || providedToken !== expectedToken) {
-    return NextResponse.json({ error: 'Assinatura inválida.' }, { status: 401 });
+function safeGetCheckoutUrl(payload: any): string | null {
+  const tryPaths = [
+    'checkout_url',
+    'payment_link',
+    'url',
+    'links.checkout',
+    'item.checkout_url',
+    'items.0.checkout_url',
+  ];
+  for (const p of tryPaths) {
+    const val = p.split('.').reduce((acc: any, k) => (acc ? acc[k] : undefined), payload);
+    if (typeof val === 'string' && val.startsWith('http')) return val;
+  }
+  return null;
+}
+
+function safeGetDiscountCode(payload: any): string | null {
+  const tryPaths = ['discount_code', 'coupon', 'coupon_code', 'data.coupon'];
+  for (const p of tryPaths) {
+    const val = p.split('.').reduce((acc: any, k) => (acc ? acc[k] : undefined), payload);
+    if (typeof val === 'string' && val.trim()) return val.trim();
+  }
+  return null;
+}
+
+function safeGetCheckoutId(payload: any): string {
+  const tryPaths = [
+    'checkout_id', 'purchase_id', 'order_id', 'cart_id', 'id', 'data.id'
+  ];
+  for (const p of tryPaths) {
+    const val = p.split('.').reduce((acc: any, k) => (acc ? acc[k] : undefined), payload);
+    if (val) return String(val);
+  }
+  return crypto.randomUUID();
+}
+
+export async function POST(req: Request) {
+  // (opcional) verificação de assinatura — adapte se a Kiwify fornecer um header específico
+  if (KIWIFY_WEBHOOK_SECRET) {
+    const sig = req.headers.get('x-signature') || '';
+    // TODO: verifique hash HMAC(sig, body) se a Kiwify disponibilizar. Mantido como opcional.
+    if (!sig) {
+      return NextResponse.json({ ok: false, error: 'missing_signature' }, { status: 401 });
+    }
   }
 
-  let json: unknown;
-  try {
-    json = await request.json();
-  } catch (error) {
-    console.error('[kiwify-hub] JSON inválido', error);
-    return NextResponse.json({ error: 'Corpo inválido.' }, { status: 400 });
+  const body = await req.json().catch(() => ({} as any));
+
+  const email = safeGetEmail(body);
+  if (!email) {
+    return NextResponse.json({ ok: false, error: 'missing_email' }, { status: 400 });
   }
 
-  const parsed = payloadSchema.safeParse(json);
-  if (!parsed.success) {
-    return NextResponse.json({ error: 'Payload inválido', details: parsed.error.flatten() }, { status: 400 });
-  }
+  const name = safeGetName(body) ?? 'Cliente';
+  const productTitle = safeGetProductName(body) ?? 'Produto';
+  const checkoutUrl = safeGetCheckoutUrl(body) ?? null;
+  const discountCode = safeGetDiscountCode(body) ?? (process.env.DEFAULT_DISCOUNT_CODE ?? null);
 
-  const { event, data } = parsed.data;
+  const now = new Date();
+  const scheduleAt = new Date(now.getTime() + DEFAULT_EXPIRE_HOURS * 3600 * 1000).toISOString();
 
-  let supabase;
-  try {
-    supabase = getSupabaseAdmin();
-  } catch (error) {
-    console.error('[kiwify-hub] configuração do Supabase ausente', error);
-    return NextResponse.json({ error: 'Serviço indisponível.' }, { status: 500 });
-  }
+  const checkoutId = safeGetCheckoutId(body);
 
-  const expiresInNumber = typeof data.expires_in === 'string' ? Number.parseInt(data.expires_in, 10) : data.expires_in ?? undefined;
-  const discountCode = resolveDiscountCode(data.discount_code ?? undefined);
-  const expiresAt = discountCode ? resolveExpiration(expiresInNumber ?? undefined) : null;
-  const status = normalizeStatus(event);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
 
-  const identifierSeed = `${data.email}:${data.product_id ?? data.product_name ?? event}`;
-  const recordId = data.id?.trim() || createCryptoId(identifierSeed);
+  // Upsert por checkout_id para idempotência
+  const row = {
+    id: crypto.randomUUID(),
+    email,
+    product_title: productTitle,
+    checkout_url: checkoutUrl,
+    checkout_id: checkoutId,          // UNIQUE recomendado
+    created_at: now.toISOString(),
+    paid: false,
+    paid_at: null as any,
+    payload: body,                    // mantém o raw do webhook
+    customer_email: email,
+    customer_name: name,
+    status: 'pending' as const,       // cron vai enviar depois
+    discount_code: discountCode,
+    schedule_at: scheduleAt,
+    source: 'kiwify.webhook',
+    updated_at: now.toISOString(),
+    // sent_at: null
+  };
 
   const { error } = await supabase
     .from('abandoned_emails')
-    .upsert(
-      {
-        id: recordId,
-        customer_email: data.email,
-        customer_name: data.name ?? null,
-        product_id: data.product_id ?? null,
-        product_name: data.product_name ?? null,
-        checkout_url: data.checkout_url ?? null,
-        status,
-        discount_code: discountCode,
-        expires_at: expiresAt,
-        last_event: event,
-      },
-      { onConflict: 'id' },
-    );
+    .upsert(row, { onConflict: 'checkout_id' });
 
   if (error) {
-    console.error('[kiwify-hub] erro ao salvar evento', error);
-    return NextResponse.json({ error: 'Não foi possível registrar o evento.' }, { status: 500 });
+    console.error('[kiwify-webhook] upsert error', error, { row });
+    return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id: recordId, status });
+  return NextResponse.json({ ok: true });
 }
