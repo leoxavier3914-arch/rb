@@ -10,6 +10,14 @@ export default function TestPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  function generateCheckoutId() {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+      return crypto.randomUUID();
+    }
+
+    return `manual-test-${Date.now()}`;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
@@ -22,22 +30,19 @@ export default function TestPage() {
     try {
       setLoading(true);
 
-      // Token admin salvo no login (se houver)
-      const token =
-        localStorage.getItem('rb_admin_token') ||
-        localStorage.getItem('ADMIN_TOKEN') ||
-        '';
+      const checkoutId = generateCheckoutId();
 
-      const res = await fetch('/api/admin/test', {
+      const res = await fetch('/api/admin/test-send', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          email,                 // ✅ chave correta
+          checkout_id: checkoutId,
+          email,
+          customer_email: email,
           name,
-          product_title: product,
+          product_name: product,
           checkout_url: checkoutUrl,
         }),
       });
@@ -49,7 +54,12 @@ export default function TestPage() {
         return;
       }
 
-      setMsg(`OK! Agendado para ${new Date(data.schedule_at).toLocaleString()}`);
+      if (data?.discountCode) {
+        setMsg(`OK! E-mail enviado (cupom ${data.discountCode})`);
+        return;
+      }
+
+      setMsg('OK! E-mail enviado.');
     } catch (err) {
       console.error(err);
       setMsg('Erro inesperado ao enviar o teste.');
