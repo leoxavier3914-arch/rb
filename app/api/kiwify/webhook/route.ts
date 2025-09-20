@@ -59,14 +59,13 @@ function pickByKeys(
 }
 
 function findEmailDeep(obj: any): string | null {
-  // 1) chaves comuns
   const byKey = pickByKeys(
     obj,
     ['email', 'customer_email', 'buyer_email', 'user_email', 'mail'],
     (v) => typeof v === 'string' && EMAIL_RE.test(v)
   );
   if (byKey) return String(byKey);
-  // 2) qualquer string que pareça email
+
   let found: string | null = null;
   deepWalk(obj, (_k, v) => {
     if (typeof v === 'string' && EMAIL_RE.test(v)) {
@@ -86,7 +85,7 @@ function findNameDeep(obj: any): string | null {
     (v) => typeof v === 'string' && v.trim().length > 0
   );
   if (byKey) return String(byKey).trim();
-  // fallback: primeira string “não e-mail” curta
+
   let found: string | null = null;
   deepWalk(obj, (k, v) => {
     if (
@@ -104,26 +103,59 @@ function findNameDeep(obj: any): string | null {
 }
 
 function findProductNameDeep(obj: any): string | null {
+  // caminhos simples
   const byKey = pickByKeys(
     obj,
     ['product_name', 'title', 'product_title', 'item_title'],
     (v) => typeof v === 'string' && v.trim().length > 0
   );
   if (byKey) return String(byKey).trim();
+
   // produto.title clássico
   const product = pickByKeys(obj, ['product'], (v) => typeof v === 'object');
-  if (product && typeof (product as any).title === 'string')
-    return (product as any).title;
-  // primeiro "title" que aparecer
-  let found: string | null = null;
-  deepWalk(obj, (k, v) => {
-    if (k.toLowerCase() === 'title' && typeof v === 'string' && v.trim().length > 0) {
-      found = v.trim();
-      return true;
+  if (product) {
+    if (typeof (product as any).title === 'string' && (product as any).title.trim())
+      return (product as any).title.trim();
+    if (typeof (product as any).name === 'string' && (product as any).name.trim())
+      return (product as any).name.trim();
+  }
+
+  // listas comuns
+  const listKeys = [
+    'order_items',
+    'items',
+    'products',
+    'order_products',
+    'line_items',
+    'purchases',
+    'courses',
+  ];
+  for (const lk of listKeys) {
+    const arr = pickByKeys(obj, [lk], (v) => Array.isArray(v)) as any[] | null;
+    if (arr && arr.length) {
+      for (const it of arr) {
+        if (!it) continue;
+        if (typeof it.title === 'string' && it.title.trim()) return it.title.trim();
+        if (typeof it.name === 'string' && it.name.trim()) return it.name.trim();
+        if (it.product) {
+          if (typeof it.product.title === 'string' && it.product.title.trim())
+            return it.product.title.trim();
+          if (typeof it.product.name === 'string' && it.product.name.trim())
+            return it.product.name.trim();
+        }
+      }
     }
-    return false;
-  });
-  return found;
+  }
+
+  // último recurso: product_type (comum em payloads de teste)
+  const productType = pickByKeys(
+    obj,
+    ['product_type', 'plan_type'],
+    (v) => typeof v === 'string' && v.trim().length > 0
+  );
+  if (productType) return String(productType).trim();
+
+  return null;
 }
 
 function findCheckoutUrlDeep(obj: any): string | null {
@@ -133,11 +165,11 @@ function findCheckoutUrlDeep(obj: any): string | null {
     (v) => typeof v === 'string' && v.startsWith('http')
   );
   if (byKey) return String(byKey);
-  // links.checkout
+
   const links = pickByKeys(obj, ['links'], (v) => typeof v === 'object');
   if (links && typeof (links as any).checkout === 'string')
     return (links as any).checkout;
-  // qualquer http, prioriza domínios kiwify
+
   let best: string | null = null;
   deepWalk(obj, (_k, v) => {
     if (typeof v === 'string' && v.startsWith('http')) {
@@ -258,7 +290,7 @@ export async function POST(req: Request) {
   }
 
   const name = findNameDeep(body) ?? 'Cliente';
-  const productTitle = findProductNameDeep(body) ?? 'Produto';
+  const productTitle = findProductNameDeep(body) ?? 'Carrinho (Kiwify)';
   const checkoutUrl = findCheckoutUrlDeep(body);
   const discountCode =
     findDiscountDeep(body) ?? (process.env.DEFAULT_DISCOUNT_CODE ?? null);
@@ -268,6 +300,14 @@ export async function POST(req: Request) {
   const scheduleAt = new Date(
     now.getTime() + DEFAULT_EXPIRE_HOURS * 3600 * 1000
   ).toISOString();
+
+  console.log('[kiwify-webhook] parsed', {
+    email,
+    name,
+    productTitle,
+    checkoutUrl,
+    discountCode: discountCode ?? null,
+  });
 
   // 4) Upsert no Supabase
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
