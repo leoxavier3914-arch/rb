@@ -8,149 +8,135 @@ import * as crypto from 'crypto';
 // ---- Envs
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const DEFAULT_EXPIRE_HOURS =
-  Number((process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()) || 24;
+const DEFAULT_EXPIRE_HOURS = Number((process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()) || 24;
 
 const KIWIFY_WEBHOOK_SECRET = (process.env.KIWIFY_WEBHOOK_SECRET ?? '').trim();
-// Se quiser bloquear em caso de assinatura inválida, ligue esta env com "true"
-const STRICT_SIGNATURE =
-  (process.env.KIWIFY_STRICT_SIGNATURE ?? 'false').toLowerCase() === 'true';
+const STRICT_SIGNATURE = (process.env.KIWIFY_STRICT_SIGNATURE ?? 'false').toLowerCase() === 'true';
 
-// ---- Utils (extração resiliente)
-function safeGetEmail(payload: any): string | null {
-  const tryPaths = [
-    'email',
-    'customer_email',
-    'buyer.email',
-    'customer.email',
-    'user.email',
-    'data.email',
-  ];
-  for (const p of tryPaths) {
-    const v = p.split('.').reduce((a: any, k) => (a ? a[k] : undefined), payload);
-    if (typeof v === 'string' && /\S+@\S+\.\S+/.test(v)) return v;
-  }
-  return null;
-}
+// ---- Helpers
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
-function safeGetName(payload: any): string | null {
-  const tryPaths = [
-    'name',
-    'customer_name',
-    'buyer.name',
-    'customer.name',
-    'user.name',
-    'data.name',
-  ];
-  for (const p of tryPaths) {
-    const v = p.split('.').reduce((a: any, k) => (a ? a[k] : undefined), payload);
-    if (typeof v === 'string' && v.trim()) return v.trim();
-  }
-  return null;
-}
-
-function safeGetProductName(payload: any): string | null {
-  const tryPaths = [
-    'product_name',
-    'product.title',
-    'item.title',
-    'items.0.title',
-    'data.product_name',
-  ];
-  for (const p of tryPaths) {
-    const v = p.split('.').reduce((a: any, k) => (a ? a[k] : undefined), payload);
-    if (typeof v === 'string' && v.trim()) return v.trim();
-  }
-  return null;
-}
-
-function safeGetCheckoutUrl(payload: any): string | null {
-  const tryPaths = [
-    'checkout_url',
-    'payment_link',
-    'url',
-    'links.checkout',
-    'item.checkout_url',
-    'items.0.checkout_url',
-  ];
-  for (const p of tryPaths) {
-    const v = p.split('.').reduce((a: any, k) => (a ? a[k] : undefined), payload);
-    if (typeof v === 'string' && v.startsWith('http')) return v;
-  }
-  return null;
-}
-
-function safeGetDiscountCode(payload: any): string | null {
-  const tryPaths = ['discount_code', 'coupon', 'coupon_code', 'data.coupon'];
-  for (const p of tryPaths) {
-    const v = p.split('.').reduce((a: any, k) => (a ? a[k] : undefined), payload);
-    if (typeof v === 'string' && v.trim()) return v.trim();
-  }
-  return null;
-}
-
-function safeGetCheckoutId(payload: any): string {
-  const tryPaths = [
-    'checkout_id',
-    'purchase_id',
-    'order_id',
-    'cart_id',
-    'id',
-    'data.id',
-  ];
-  for (const p of tryPaths) {
-    const v = p.split('.').reduce((a: any, k) => (a ? a[k] : undefined), payload);
-    if (v !== undefined && v !== null) return String(v);
-  }
-  return crypto.randomUUID();
-}
-
-// ---- Assinatura
-function normalizeSig(sig: string) {
-  return sig.startsWith('sha256=') ? sig.slice(7) : sig;
-}
-function safeEq(a: string, b: string) {
-  const A = Buffer.from(a);
-  const B = Buffer.from(b);
-  if (A.length !== B.length) return false;
-  try {
-    return crypto.timingSafeEqual(A, B);
-  } catch {
+function deepWalk(obj: any, visit: (k: string, v: any, path: string[]) => boolean, path: string[] = []): boolean {
+  if (obj === null || obj === undefined) return false;
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) if (deepWalk(obj[i], visit, [...path, String(i)])) return true;
     return false;
   }
+  if (typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj)) if (visit(k, v, [...path, k]) || deepWalk(v, visit, [...path, k])) return true;
+    return false;
+  }
+  return false;
+}
+
+function pickByKeys(obj: any, keys: string[], test?: (v: any) => boolean): any | null {
+  let found: any = null;
+  deepWalk(obj, (k, v) => {
+    if (keys.some(key => k.toLowerCase() === key) && (test ? test(v) : v != null)) { found = v; return true; }
+    return false;
+  });
+  return found;
+}
+
+function findEmailDeep(obj: any): string | null {
+  // 1) chaves comuns
+  const byKey = pickByKeys(obj, ['email', 'customer_email', 'buyer_email', 'user_email', 'mail'], v => typeof v === 'string' && EMAIL_RE.test(v));
+  if (byKey) return String(byKey);
+  // 2) qualquer string que pareça email
+  let found: string | null = null;
+  deepWalk(obj, (_k, v) => {
+    if (typeof v === 'string' && EMAIL_RE.test(v)) { found = v; return true; }
+    return false;
+  });
+  return found;
+}
+
+function findNameDeep(obj: any): string | null {
+  const keys = ['name', 'customer_name', 'buyer_name', 'full_name', 'username'];
+  const byKey = pickByKeys(obj, keys, v => typeof v === 'string' && v.trim());
+  if (byKey) return String(byKey).trim();
+  // fallback: primeira string “não e-mail” curta
+  let found: string | null = null;
+  deepWalk(obj, (k, v) => {
+    if (typeof v === 'string' && k.toLowerCase().includes('name') && !EMAIL_RE.test(v) && v.trim()) { found = v.trim(); return true; }
+    return false;
+  });
+  return found;
+}
+
+function findProductNameDeep(obj: any): string | null {
+  const byKey = pickByKeys(obj, ['product_name', 'title', 'product_title', 'item_title'], v => typeof v === 'string' && v.trim());
+  if (byKey) return String(byKey).trim();
+  // produto.title clássico
+  const product = pickByKeys(obj, ['product'], v => typeof v === 'object');
+  if (product && typeof (product as any).title === 'string') return (product as any).title;
+  // primeiro "title" que aparecer
+  let found: string | null = null;
+  deepWalk(obj, (k, v) => {
+    if (k.toLowerCase() === 'title' && typeof v === 'string' && v.trim()) { found = v.trim(); return true; }
+    return false;
+  });
+  return found;
+}
+
+function findCheckoutUrlDeep(obj: any): string | null {
+  const byKey = pickByKeys(obj, ['checkout_url', 'payment_link', 'url'], v => typeof v === 'string' && v.startsWith('http'));
+  if (byKey) return String(byKey);
+  // links.checkout
+  const links = pickByKeys(obj, ['links'], v => typeof v === 'object');
+  if (links && typeof (links as any).checkout === 'string') return (links as any).checkout;
+  // qualquer http, prioriza domínios kiwify
+  let best: string | null = null;
+  deepWalk(obj, (_k, v) => {
+    if (typeof v === 'string' && v.startsWith('http')) {
+      if (/kiwify\.com\.br|pay\.kiwify/i.test(v)) { best = v; return true; }
+      if (!best) best = v;
+    }
+    return false;
+  });
+  return best;
+}
+
+function findDiscountDeep(obj: any): string | null {
+  const byKey = pickByKeys(obj, ['discount_code', 'coupon', 'coupon_code', 'voucher', 'promo_code'], v => typeof v === 'string' && v.trim());
+  return byKey ? String(byKey).trim() : null;
+}
+
+function findCheckoutIdDeep(obj: any): string {
+  const byKey = pickByKeys(obj, ['checkout_id', 'purchase_id', 'order_id', 'cart_id', 'id'], v => v !== null && v !== undefined);
+  return byKey != null ? String(byKey) : crypto.randomUUID();
+}
+
+function normalizeSig(sig: string) { return sig.startsWith('sha256=') ? sig.slice(7) : sig; }
+function safeEq(a: string, b: string) {
+  const A = Buffer.from(a); const B = Buffer.from(b);
+  if (A.length !== B.length) return false;
+  try { return crypto.timingSafeEqual(A, B); } catch { return false; }
 }
 
 export async function POST(req: Request) {
   const url = new URL(req.url);
   const ct = (req.headers.get('content-type') || '').toLowerCase();
 
-  // 1) Lê RAW e parseia body (JSON ou form)
+  // 1) RAW + parse (JSON / form)
   const raw = await req.text();
   let body: any = {};
   try {
-    if (ct.includes('application/json')) {
-      body = raw ? JSON.parse(raw) : {};
-    } else if (ct.includes('application/x-www-form-urlencoded')) {
-      body = Object.fromEntries(new URLSearchParams(raw));
-    } else {
-      // tenta JSON; se não, guarda bruto
-      body = raw ? JSON.parse(raw) : {};
-    }
-  } catch {
-    body = { raw };
-  }
+    if (ct.includes('application/json')) body = raw ? JSON.parse(raw) : {};
+    else if (ct.includes('application/x-www-form-urlencoded')) body = Object.fromEntries(new URLSearchParams(raw));
+    else body = raw ? JSON.parse(raw) : {};
+  } catch { body = { raw }; }
 
-  // Log leve (ajuda no debug sem vazar conteúdo)
+  // log leve
   try {
     const sampleHeaders = Object.fromEntries(
-      Array.from(req.headers.entries())
-        .filter(([k]) => /^x-|content-|user-agent|accept/i.test(k))
-        .slice(0, 12)
+      Array.from(req.headers.entries()).filter(([k]) => /^x-|content-|user-agent|accept/i.test(k)).slice(0, 12)
     );
-    console.log('[kiwify-webhook] hit', { ct, hasBody: !!raw, sampleHeaders });
+    const rootKeys = Object.keys(body || {}).slice(0, 12);
+    console.log('[kiwify-webhook] hit', { ct, hasBody: !!raw, rootKeys, sampleHeaders });
   } catch {}
 
-  // 2) Verifica assinatura (se houver SECRET)
+  // 2) assinatura (header OU query)
   if (KIWIFY_WEBHOOK_SECRET) {
     const providedRaw =
       req.headers.get('x-kiwify-signature') ||
@@ -159,74 +145,56 @@ export async function POST(req: Request) {
       '';
     if (!providedRaw) {
       console.warn('[kiwify-webhook] missing signature');
-      return NextResponse.json(
-        { ok: false, error: 'missing_signature' },
-        { status: 401 }
-      );
+      return NextResponse.json({ ok: false, error: 'missing_signature' }, { status: 401 });
     }
-
-    // Calcula HMAC em hex e base64 e aceita qualquer um dos formatos
-    const hmac = crypto.createHmac('sha256', KIWIFY_WEBHOOK_SECRET).update(raw, 'utf8');
-    const expectedHex = hmac.digest('hex');
-    // se precisar comparar também base64:
+    const h = crypto.createHmac('sha256', KIWIFY_WEBHOOK_SECRET).update(raw, 'utf8');
+    const expectedHex = h.digest('hex');
     const expectedB64 = Buffer.from(expectedHex, 'hex').toString('base64');
-
     const provided = normalizeSig(providedRaw);
-
-    const ok =
-      safeEq(provided, expectedHex) ||
-      safeEq(provided, expectedB64);
-
+    const ok = safeEq(provided, expectedHex) || safeEq(provided, expectedB64);
     if (!ok) {
       const msg = '[kiwify-webhook] signature mismatch';
       if (STRICT_SIGNATURE) {
         console.warn(msg + ' (blocking)');
-        return NextResponse.json(
-          { ok: false, error: 'invalid_signature' },
-          { status: 401 }
-        );
+        return NextResponse.json({ ok: false, error: 'invalid_signature' }, { status: 401 });
       } else {
         console.warn(msg + ' (continuing; STRICT_SIGNATURE=false)');
       }
     }
   }
 
-  // 3) Extrai campos
-  const email = safeGetEmail(body);
+  // 3) Extrai campos (com fallback profundo)
+  let email =
+    pickByKeys(body, ['email', 'customer_email'], v => typeof v === 'string' && EMAIL_RE.test(v)) as string | null;
+  if (!email) email = findEmailDeep(body);
+
   if (!email) {
-    return NextResponse.json(
-      { ok: false, error: 'missing_email' },
-      { status: 400 }
-    );
+    console.warn('[kiwify-webhook] missing_email after deep scan');
+    return NextResponse.json({ ok: false, error: 'missing_email' }, { status: 400 });
   }
-  const name = safeGetName(body) ?? 'Cliente';
-  const productTitle = safeGetProductName(body) ?? 'Produto';
-  const checkoutUrl = safeGetCheckoutUrl(body) ?? null;
-  const discountCode =
-    safeGetDiscountCode(body) ?? (process.env.DEFAULT_DISCOUNT_CODE ?? null);
+
+  const name = findNameDeep(body) ?? 'Cliente';
+  const productTitle = findProductNameDeep(body) ?? 'Produto';
+  const checkoutUrl = findCheckoutUrlDeep(body);
+  const discountCode = findDiscountDeep(body) ?? (process.env.DEFAULT_DISCOUNT_CODE ?? null);
+  const checkoutId = findCheckoutIdDeep(body);
 
   const now = new Date();
-  const scheduleAt = new Date(
-    now.getTime() + DEFAULT_EXPIRE_HOURS * 3600 * 1000
-  ).toISOString();
+  const scheduleAt = new Date(now.getTime() + DEFAULT_EXPIRE_HOURS * 3600 * 1000).toISOString();
 
-  const checkoutId = safeGetCheckoutId(body);
-
-  // 4) Insere/atualiza no Supabase
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false },
-  });
+  // 4) Upsert no Supabase
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
   const row = {
     id: crypto.randomUUID(),
     email,
     product_title: productTitle,
     checkout_url: checkoutUrl,
-    checkout_id: checkoutId, // de preferência UNIQUE
+    checkout_id: checkoutId,
     created_at: now.toISOString(),
     paid: false,
     paid_at: null as any,
-    payload: body, // guarda o raw para auditoria
+    payload: body,
     customer_email: email,
     customer_name: name,
     status: 'pending' as const,
@@ -234,12 +202,9 @@ export async function POST(req: Request) {
     schedule_at: scheduleAt,
     source: 'kiwify.webhook',
     updated_at: now.toISOString(),
-    // sent_at: null (pendente)
   };
 
-  const { error } = await supabase
-    .from('abandoned_emails')
-    .upsert(row, { onConflict: 'checkout_id' });
+  const { error } = await supabase.from('abandoned_emails').upsert(row, { onConflict: 'checkout_id' });
 
   if (error) {
     console.error('[kiwify-webhook] upsert error', error, { rowPreview: { email: row.email, checkout_id: row.checkout_id } });
