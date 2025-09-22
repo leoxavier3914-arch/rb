@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
 
   const templateParams = {
     to_email: email ?? record.customer_email,
+    name: name ?? record.customer_name ?? 'Cliente',
     product_name: record.product_name ?? 'Produto Kiwify',
     checkout_url: checkoutUrl ?? record.checkout_url ?? '',
     discount_code: resolvedDiscount ?? '',
