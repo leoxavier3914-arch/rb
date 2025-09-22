@@ -14,6 +14,10 @@ const EMAIL_PUBLIC   = process.env.EMAILJS_PUBLIC_KEY!;
 const EMAIL_PRIVATE  = process.env.EMAILJS_PRIVATE_KEY || ''; // se Strict Mode off, pode ficar vazio
 const EMAIL_SERVICE  = process.env.EMAILJS_SERVICE_ID!;
 const EMAIL_TEMPLATE = process.env.EMAILJS_TEMPLATE_ID!;
+const DEFAULT_DELAY_HOURS =
+  Number(
+    (process.env.DEFAULT_DELAY_HOURS ?? process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()
+  ) || 24;
 const EXPIRE_HOURS   = Number((process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()) || 24;
 
 // init EmailJS (Strict Mode se tiver PRIVATE)
@@ -32,11 +36,22 @@ export async function POST(req: Request) {
   });
 
   // busca até 20 pendentes “vencidos”
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const legacyThreshold = new Date(
+    now.getTime() - DEFAULT_DELAY_HOURS * 3600 * 1000
+  ).toISOString();
+
   const { data: rows, error } = await supabase
     .from('abandoned_emails')
-    .select('id,email,customer_name,product_title,checkout_url,discount_code,schedule_at')
+    .select(
+      'id,email,customer_name,product_title,checkout_url,discount_code,schedule_at,created_at'
+    )
     .eq('status', 'pending')
-    .lte('schedule_at', new Date().toISOString())
+    .or(
+      `schedule_at.lte.${nowIso},and(schedule_at.is.null,created_at.lte.${legacyThreshold})`
+    )
+    .order('schedule_at', { ascending: true, nullsFirst: true })
     .limit(20);
 
   if (error) {

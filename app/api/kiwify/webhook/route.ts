@@ -10,8 +10,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 // ==== ENVS OPCIONAIS ====
-const DEFAULT_EXPIRE_HOURS =
-  Number((process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()) || 24;
+const DEFAULT_DELAY_HOURS =
+  Number(
+    (process.env.DEFAULT_DELAY_HOURS ?? process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()
+  ) || 24;
 
 // Se você configurar a assinatura da Kiwify:
 const KIWIFY_WEBHOOK_SECRET = (process.env.KIWIFY_WEBHOOK_SECRET ?? '').trim();
@@ -291,7 +293,7 @@ export async function POST(req: Request) {
 
   const now = new Date();
   const scheduleAt = new Date(
-    now.getTime() + DEFAULT_EXPIRE_HOURS * 3600 * 1000
+    now.getTime() + DEFAULT_DELAY_HOURS * 3600 * 1000
   ).toISOString();
 
   console.log('[kiwify-webhook] parsed', {
