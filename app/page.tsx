@@ -1,7 +1,6 @@
 // app/page.tsx
 import Card from '../components/Card';
-import Badge from '../components/Badge';
-import AbandonedCartsTable from '../components/AbandonedCartsTable';
+import AbandonedCartsSection from '../components/AbandonedCartsSection';
 import { getSupabaseAdmin } from '../lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -114,16 +113,7 @@ export default async function Home() {
         <Card title="Convertidos" value={metrics.converted} description="Clientes que finalizaram a compra" />
       </section>
 
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Eventos recebidos</h2>
-          <Badge variant={metrics.expired > 0 ? 'error' : 'pending'}>
-            {metrics.expired > 0 ? `${metrics.expired} link(s) expirados` : 'Todos os links ativos'}
-          </Badge>
-        </div>
-
-        <AbandonedCartsTable carts={carts} />
-      </section>
+      <AbandonedCartsSection carts={carts} expiredCount={metrics.expired} />
     </main>
   );
 }
