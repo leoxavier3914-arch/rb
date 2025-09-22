@@ -55,13 +55,17 @@ export async function POST(req: Request) {
   }
 
   // Calcula schedule_at robusto
-  const rawHours = (process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim();
-  let hours = Number(rawHours);
-  if (!Number.isFinite(hours) || hours <= 0) hours = 24;
+  const rawDelay = (
+    process.env.DEFAULT_DELAY_HOURS ??
+    process.env.DEFAULT_EXPIRE_HOURS ??
+    '24'
+  ).trim();
+  let delayHours = Number(rawDelay);
+  if (!Number.isFinite(delayHours) || delayHours <= 0) delayHours = 24;
 
   const now = new Date();
-  const scheduleAtISO = new Date(now.getTime() + hours * 3600 * 1000).toISOString();
-  console.log('[admin/test] hours=', hours, 'scheduleAt=', scheduleAtISO);
+  const scheduleAtISO = new Date(now.getTime() + delayHours * 3600 * 1000).toISOString();
+  console.log('[admin/test] delayHours=', delayHours, 'scheduleAt=', scheduleAtISO);
 
   // checkout_id com fallbacks
   const checkoutId = (

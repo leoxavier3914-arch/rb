@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-const rawHours = Number(process.env.DEFAULT_EXPIRE_HOURS ?? '48');
+const rawHours = Number((process.env.DEFAULT_EXPIRE_HOURS ?? '48').trim());
 const FALLBACK_HOURS = Number.isFinite(rawHours) ? rawHours : 48;
 
 export function createCryptoId(seed: string): string {
