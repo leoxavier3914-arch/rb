@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import * as emailjs from '@emailjs/nodejs';
+import { applyDiscountToCheckoutUrl } from '../../../../../lib/checkout';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -50,6 +51,7 @@ export async function POST(req: Request) {
   let sent = 0;
   for (const r of rows) {
     try {
+      const discountCode = r.discount_code ?? 'RB10';
       await emailjs.send(
         EMAIL_SERVICE,
         EMAIL_TEMPLATE,
@@ -58,9 +60,9 @@ export async function POST(req: Request) {
           title: 'Finalize sua compra • Romeike Beauty',// Subject usa {{title}}
           name: r.customer_name ?? 'Cliente',           // {{name}}
           product_name: r.product_title,                // {{product_name}}
-          discount_code: r.discount_code ?? 'RB10',     // {{discount_code}}
+          discount_code: discountCode,                  // {{discount_code}}
           expire_hours: String(EXPIRE_HOURS),           // {{expire_hours}}
-          checkout_url: r.checkout_url,                 // {{checkout_url}}
+          checkout_url: applyDiscountToCheckoutUrl(r.checkout_url, discountCode),
           email: r.email,                               // Reply-To usa {{email}}
         }
       );

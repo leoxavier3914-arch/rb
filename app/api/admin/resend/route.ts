@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { resolveDiscountCode, resolveExpiration } from '../../../../lib/cryptoId';
 import { getEmailJsConfig } from '../../../../lib/emailJsConfig';
 import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
+import { applyDiscountToCheckoutUrl } from '../../../../lib/checkout';
 
 const resendSchema = z.object({
   id: z.string(),
@@ -72,11 +73,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Serviço de e-mail indisponível.' }, { status: 500 });
   }
 
+  const resolvedCheckoutUrl = applyDiscountToCheckoutUrl(
+    checkoutUrl ?? record.checkout_url ?? '',
+    resolvedDiscount,
+  );
+
   const templateParams = {
     to_email: email ?? record.customer_email,
     name: name ?? record.customer_name ?? 'Cliente',
     product_name: record.product_name ?? 'Produto Kiwify',
-    checkout_url: checkoutUrl ?? record.checkout_url ?? '',
+    checkout_url: resolvedCheckoutUrl,
     discount_code: resolvedDiscount ?? '',
     expires_at: expiresAt,
   };
