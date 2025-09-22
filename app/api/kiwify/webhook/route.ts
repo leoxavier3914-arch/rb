@@ -220,6 +220,226 @@ function findCheckoutIdDeep(obj: any): string {
   return byKey != null ? String(byKey) : crypto.randomUUID();
 }
 
+function interpretBoolean(value: any): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'sim', 'pago', 'aprovado'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'não', 'nao', 'cancelado'].includes(normalized)) return false;
+  }
+  return null;
+}
+
+function normalizeTimestampInput(value: any): string | null {
+  if (!value && value !== 0) return null;
+  if (value instanceof Date) {
+    const iso = value.toISOString();
+    return Number.isNaN(Date.parse(iso)) ? null : iso;
+  }
+  if (typeof value === 'number') {
+    const ms = value > 10_000_000_000 ? value : value * 1000;
+    const date = new Date(ms);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const numeric = Number(trimmed);
+    if (!Number.isNaN(numeric) && trimmed.replace(/[^0-9]/g, '').length >= 10) {
+      const ms = numeric > 10_000_000_000 ? numeric : numeric * 1000;
+      const date = new Date(ms);
+      if (!Number.isNaN(date.getTime())) return date.toISOString();
+    }
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  return null;
+}
+
+function findPaidAtDeep(obj: any): string | null {
+  const keys = [
+    'paid_at',
+    'paidAt',
+    'payment_date',
+    'paymentDate',
+    'payment_at',
+    'paymentAt',
+    'approved_at',
+    'approvedAt',
+    'completed_at',
+    'completedAt',
+    'concluded_at',
+    'concludedAt',
+    'finished_at',
+    'finishedAt',
+    'confirmed_at',
+    'confirmedAt',
+    'captured_at',
+    'capturedAt',
+  ];
+  const raw = pickByKeys(obj, keys, (v) => v != null && v !== '');
+  return normalizeTimestampInput(raw);
+}
+
+const POSITIVE_STATUS_KEYWORDS = [
+  'approved',
+  'aprovado',
+  'aprovada',
+  'paid',
+  'pago',
+  'paga',
+  'completed',
+  'completo',
+  'completa',
+  'concluded',
+  'concluido',
+  'concluida',
+  'finished',
+  'finalizado',
+  'finalizada',
+  'captured',
+  'capturado',
+  'capturada',
+  'succeeded',
+  'success',
+  'sucesso',
+  'liquidado',
+  'liquidada',
+  'confirmed',
+  'confirmado',
+  'confirmada',
+  'credited',
+  'creditado',
+  'creditada',
+];
+
+const NEGATIVE_STATUS_KEYWORDS = [
+  'pending',
+  'pendente',
+  'aguardando',
+  'waiting',
+  'open',
+  'unpaid',
+  'cancelled',
+  'canceled',
+  'cancelado',
+  'cancelada',
+  'refused',
+  'rejected',
+  'rejeitado',
+  'rejeitada',
+  'failed',
+  'erro',
+  'error',
+  'chargeback',
+  'refunded',
+  'devolvido',
+  'estornado',
+  'analysis',
+  'analise',
+];
+
+function normalizeKeywordString(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9á-úà-ùãõç]+/gi, ' ')
+    .normalize('NFD')
+    .replace(/[^a-z0-9 ]/gi, '');
+}
+
+function hasKeyword(value: string, keywords: string[]): boolean {
+  const normalized = normalizeKeywordString(value);
+  if (!normalized) return false;
+  const tokens = new Set(normalized.split(' ').filter(Boolean));
+  for (const kw of keywords) {
+    if (tokens.has(kw)) return true;
+    if (normalized.includes(kw)) return true;
+  }
+  return false;
+}
+
+function extractPaymentMeta(body: any) {
+  const eventKeys = ['event', 'event_name', 'type', 'name', 'action'];
+  const statusKeys = [
+    'status',
+    'payment_status',
+    'order_status',
+    'sale_status',
+    'state',
+    'situation',
+    'current_status',
+  ];
+  const booleanKeys = [
+    'paid',
+    'is_paid',
+    'has_paid',
+    'payment_confirmed',
+    'is_concluded',
+    'is_approved',
+  ];
+
+  const seen = new Set<string>();
+  const statusCandidates: string[] = [];
+  let eventName: string | null = null;
+
+  for (const key of eventKeys) {
+    const value = pickByKeys(body, [key], (v) => typeof v === 'string' && v.trim().length > 0);
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!eventName) eventName = trimmed;
+    }
+  }
+
+  for (const key of statusKeys) {
+    const value = pickByKeys(body, [key], (v) => typeof v === 'string' && v.trim().length > 0);
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!seen.has(trimmed)) {
+        statusCandidates.push(trimmed);
+        seen.add(trimmed);
+      }
+    }
+  }
+
+  let paid = false;
+  let negative = false;
+
+  for (const candidate of [eventName, ...statusCandidates]) {
+    if (!candidate) continue;
+    if (hasKeyword(candidate, NEGATIVE_STATUS_KEYWORDS)) {
+      negative = true;
+    }
+    if (hasKeyword(candidate, POSITIVE_STATUS_KEYWORDS)) {
+      paid = true;
+    }
+  }
+
+  if (paid && negative) {
+    // Prefer explicit boolean flag when conflicting keywords appear
+    paid = false;
+  }
+
+  for (const key of booleanKeys) {
+    const value = pickByKeys(body, [key], (v) => v !== null && v !== undefined);
+    const interpreted = interpretBoolean(value);
+    if (interpreted === true) {
+      paid = true;
+      break;
+    }
+  }
+
+  const paidAt = paid ? findPaidAtDeep(body) : null;
+
+  return {
+    paid,
+    paidAt,
+    eventName,
+    statusHint: statusCandidates[0] ?? null,
+  } as const;
+}
+
 function normalizeSig(sig: string) {
   return sig.startsWith('sha256=') ? sig.slice(7) : sig;
 }
@@ -289,44 +509,93 @@ export async function POST(req: Request) {
     console.warn('[kiwify-webhook] missing_email after deep scan');
     return NextResponse.json({ ok: false, error: 'missing_email' }, { status: 400 });
   }
-  const name = findNameDeep(body) ?? 'Cliente';
-  const productTitle = findProductNameDeep(body) ?? 'Carrinho (Kiwify)';
-  const checkoutUrl  = findCheckoutUrlDeep(body);
-  const discountCode = findDiscountDeep(body) ?? (process.env.DEFAULT_DISCOUNT_CODE ?? null);
+  const nameFromPayload = findNameDeep(body);
+  const productTitleFromPayload = findProductNameDeep(body);
+  const checkoutUrlFromPayload = findCheckoutUrlDeep(body);
+  const discountCodeFromPayload = findDiscountDeep(body);
   const checkoutId   = findCheckoutIdDeep(body);
 
   const now = new Date();
-  const scheduleAt = new Date(
-    now.getTime() + DEFAULT_DELAY_HOURS * 3600 * 1000
-  ).toISOString();
-
-  console.log('[kiwify-webhook] parsed', {
-    email, name, productTitle,
-    checkoutUrl, discountCode: discountCode ?? null
-  });
 
   // 4) Upsert no Supabase
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
   });
 
+  const { data: existing, error: fetchError } = await supabase
+    .from('abandoned_emails')
+    .select(
+      'id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, customer_name, product_title'
+    )
+    .eq('checkout_id', checkoutId)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.warn('[kiwify-webhook] failed to load existing record', fetchError);
+  }
+
+  const name = nameFromPayload ?? existing?.customer_name ?? 'Cliente';
+  const productTitle =
+    productTitleFromPayload ?? existing?.product_title ?? 'Carrinho (Kiwify)';
+  const checkoutUrl = checkoutUrlFromPayload ?? existing?.checkout_url ?? null;
+  const discountCode =
+    discountCodeFromPayload ??
+    existing?.discount_code ??
+    (process.env.DEFAULT_DISCOUNT_CODE ?? null);
+
+  const scheduleAt =
+    existing?.schedule_at ??
+    new Date(now.getTime() + DEFAULT_DELAY_HOURS * 3600 * 1000).toISOString();
+
+  const paymentMeta = extractPaymentMeta(body);
+  const previouslyPaid = existing?.paid ?? false;
+  const paid = paymentMeta.paid || previouslyPaid;
+  const becamePaidNow = paymentMeta.paid && !previouslyPaid;
+  const paidAt = paid
+    ? paymentMeta.paidAt ??
+      existing?.paid_at ??
+      (becamePaidNow ? now.toISOString() : null)
+    : null;
+
+  const baseStatus =
+    existing?.status && existing.status !== 'converted'
+      ? existing.status
+      : 'pending';
+  const status = paid ? 'converted' : baseStatus;
+
+  const lastEvent =
+    paymentMeta.eventName ?? paymentMeta.statusHint ?? existing?.last_event ?? null;
+
+  console.log('[kiwify-webhook] parsed', {
+    email,
+    name,
+    productTitle,
+    checkoutUrl,
+    discountCode: discountCode ?? null,
+    paid,
+    paidAt,
+    status,
+    lastEvent,
+  });
+
   const row = {
-    id: crypto.randomUUID(),
+    id: existing?.id ?? crypto.randomUUID(),
     email,
     product_title: productTitle,
     checkout_url: checkoutUrl,
     checkout_id: checkoutId,
-    created_at: now.toISOString(),
-    paid: false,
-    paid_at: null as any,
+    created_at: existing?.created_at ?? now.toISOString(),
+    paid,
+    paid_at: paidAt,
     payload: body,
     customer_email: email,
     customer_name: name,
-    status: 'pending' as const,
+    status,
     discount_code: discountCode,
     schedule_at: scheduleAt,
-    source: 'kiwify.webhook',
+    source: existing?.source ?? 'kiwify.webhook',
     updated_at: now.toISOString(),
+    last_event: lastEvent,
   };
 
   const { error } = await supabase
