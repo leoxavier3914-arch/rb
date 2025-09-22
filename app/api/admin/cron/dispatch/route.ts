@@ -7,7 +7,11 @@ import * as emailjs from '@emailjs/nodejs';
 import { applyDiscountToCheckoutUrl } from '../../../../../lib/checkout';
 import { resolveDiscountCode } from '../../../../../lib/cryptoId';
 
-const SUPABASE_URL = process.env.SUPABASE_URL!;
+const SUPABASE_URL =
+  (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
+if (!SUPABASE_URL) {
+  throw new Error('Missing SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL');
+}
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ADMIN_TOKEN = (process.env.ADMIN_TOKEN ?? '').trim();
 

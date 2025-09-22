@@ -20,10 +20,11 @@ if (EMAIL_PUBLIC && EMAIL_PRIVATE) {
 
 export async function POST(req: Request) {
   // --- Env guards úteis (erros mais claros) ---
-  const supabaseUrl = process.env.SUPABASE_URL || '';
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const supabaseUrl =
+    (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
+  const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
   if (!supabaseUrl || !supabaseKey) {
-    console.error('[env] faltam SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY');
+    console.error('[env] faltam SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY');
     return NextResponse.json({ ok: false, error: 'env_missing_supabase' }, { status: 500 });
   }
 
