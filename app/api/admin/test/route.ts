@@ -130,7 +130,6 @@ export async function POST(req: Request) {
         EMAIL_TEMPLATE,
         {
           to_email: data.email,
-          to_name: data.customer_name ?? 'Cliente',
           product_title: data.product_title,
           checkout_url: data.checkout_url,
           schedule_at: new Date(data.schedule_at).toLocaleString('pt-BR'),
