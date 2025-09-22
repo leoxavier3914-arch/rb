@@ -16,18 +16,6 @@ type FeedbackState = {
   message: string;
 };
 
-function getCookie(name: string): string | null {
-  if (typeof document === 'undefined') return null;
-  const entry = document.cookie.split('; ').find((part) => part.startsWith(`${name}=`));
-  if (!entry) return null;
-  const value = entry.split('=').slice(1).join('=');
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
 export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps) {
   const [data, setData] = useState<AbandonedCart[]>(carts);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -73,11 +61,6 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
   const handleSendEmail = useCallback(
     async (item: AbandonedCart) => {
       if (sendingId) return;
-      const token = getCookie('admin_token');
-      if (!token) {
-        setFeedback((prev) => ({ ...prev, [item.id]: { type: 'error', message: 'Token administrativo ausente.' } }));
-        return;
-      }
 
       setSendingId(item.id);
       setFeedback((prev) => ({ ...prev, [item.id]: undefined }));
@@ -87,7 +70,6 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ id: item.id }),
         });

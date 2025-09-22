@@ -18,8 +18,11 @@ const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
 export async function POST(request: NextRequest) {
   const adminToken = process.env.ADMIN_TOKEN;
   const header = request.headers.get('authorization');
+  const cookieToken = request.cookies.get('admin_token')?.value;
 
-  if (!adminToken || header !== `Bearer ${adminToken}`) {
+  const isAuthorized = header === `Bearer ${adminToken}` || cookieToken === adminToken;
+
+  if (!adminToken || !isAuthorized) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
 
