@@ -90,8 +90,22 @@ def _build_payload(row: dict, creation_iso: Optional[str]) -> str:
     return json.dumps(payload, ensure_ascii=False) if payload else "{}"
 
 
+ 
+def _format_timestamp(value: datetime) -> str:
+    """Format datetimes for Postgres timestamp with time zone columns."""
+
+    # Supabase CSV importer espera o formato "YYYY-MM-DD HH:MM:SS+00".
+    # `strftime` com `%z` gera o deslocamento sem dois-pontos ("+0000"),
+    # que também é aceito pelo Postgres.
+    return value.strftime("%Y-%m-%d %H:%M:%S%z")
+
+
+def _generate_rows(reader: Iterable[dict[str, str]]) -> list[list[str]]:
+    now_formatted = _format_timestamp(datetime.now(timezone.utc))
+
 def _generate_rows(reader: Iterable[dict[str, str]]) -> list[list[str]]:
     now_iso = datetime.now(timezone.utc).isoformat()
+
     rows: list[list[str]] = []
 
     for row in reader:
@@ -131,8 +145,13 @@ def _generate_rows(reader: Iterable[dict[str, str]]) -> list[list[str]]:
             "kiwify",
             "false",
             "",
+ codex/retrieve-historical-abandoned-carts-bgxf1z
+            now_formatted,
+            now_formatted,
+
             now_iso,
             now_iso,
+ 
         ])
 
     return rows
