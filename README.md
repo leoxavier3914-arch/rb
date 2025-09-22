@@ -37,6 +37,7 @@ Acesse `/login` e informe o valor configurado em `ADMIN_TOKEN` para destravar o 
 2. Execute `POST /api/admin/test` informando um e-mail de teste e confirme no Supabase que o registro foi criado com `schedule_at ≈ agora + DEFAULT_DELAY_HOURS`.
 3. Aguarde o tempo configurado (ou ajuste manualmente o `schedule_at` para o passado) e chame `POST /api/admin/cron/dispatch`; o registro deve ser enviado apenas após o novo atraso.
 4. Valide no log/preview do EmailJS que o template continua exibindo "24 h" graças a `DEFAULT_EXPIRE_HOURS` enquanto o cron respeita o atraso configurado.
+5. Verifique na interface que registros com `source = 'kiwify.webhook'` (compras normais) não aparecem, enquanto carrinhos convertidos seguem visíveis.
 
 ## Scripts
 - `npm run dev`
