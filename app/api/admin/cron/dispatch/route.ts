@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import * as emailjs from '@emailjs/nodejs';
 import { applyDiscountToCheckoutUrl } from '../../../../../lib/checkout';
+import { resolveDiscountCode } from '../../../../../lib/cryptoId';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
   let sent = 0;
   for (const r of rows) {
     try {
-      const discountCode = r.discount_code ?? 'RB10';
+      const discountCode = resolveDiscountCode(r.discount_code);
       await emailjs.send(
         EMAIL_SERVICE,
         EMAIL_TEMPLATE,
