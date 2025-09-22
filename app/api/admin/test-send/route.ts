@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { resolveDiscountCode, resolveExpiration } from '../../../../lib/cryptoId';
 import { getEmailJsConfig } from '../../../../lib/emailJsConfig';
 import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
+import { applyDiscountToCheckoutUrl } from '../../../../lib/checkout';
 
 const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
 
@@ -152,6 +153,7 @@ export async function POST(request: NextRequest) {
 
   const discountCode = resolveDiscountCode();
   const expiresAt = discountCode ? resolveExpiration(undefined) : null;
+  const checkoutLink = applyDiscountToCheckoutUrl(checkoutUrl, discountCode);
 
   try {
     await ensureTestRecord(supabase, {
@@ -188,7 +190,7 @@ export async function POST(request: NextRequest) {
     to_email: normalizedEmail,
     name: name ?? 'Cliente',
     product_name: productName ?? 'Produto Kiwify',
-    checkout_url: checkoutUrl,
+    checkout_url: checkoutLink,
     discount_code: discountCode ?? '',
     expires_at: expiresAt,
   };

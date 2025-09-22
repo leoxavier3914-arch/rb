@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import emailjs from '@emailjs/nodejs';
 import * as crypto from 'crypto';
+import { applyDiscountToCheckoutUrl } from '../../../../lib/checkout';
 
 // --- EmailJS (Strict Mode: precisa PUBLIC + PRIVATE) ---
 const EMAIL_PUBLIC   = process.env.EMAILJS_PUBLIC_KEY!;
@@ -125,6 +126,8 @@ export async function POST(req: Request) {
     if (!EMAIL_PUBLIC || !EMAIL_PRIVATE || !EMAIL_SERVICE || !EMAIL_TEMPLATE) {
       console.warn('[emailjs] variáveis ausentes; pulando envio');
     } else {
+      const checkoutWithDiscount = applyDiscountToCheckoutUrl(row.checkout_url, row.discount_code as any);
+
       await emailjs.send(
         EMAIL_SERVICE,
         EMAIL_TEMPLATE,
@@ -132,7 +135,7 @@ export async function POST(req: Request) {
           to_email: data.email,
           name: data.customer_name ?? 'Cliente',
           product_title: data.product_title,
-          checkout_url: data.checkout_url,
+          checkout_url: checkoutWithDiscount,
           schedule_at: new Date(data.schedule_at).toLocaleString('pt-BR'),
         },
         {
