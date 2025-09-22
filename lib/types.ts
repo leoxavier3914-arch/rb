@@ -5,6 +5,8 @@ export type AbandonedCart = {
   product_name: string | null;
   product_id: string | null;
   status: string;
+  paid: boolean;
+  paid_at: string | null;
   discount_code: string | null;
   expires_at: string | null; // schedule_at / expires_at
   last_event: string | null;

@@ -38,6 +38,9 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
     return rows.map((r): AbandonedCart => {
       const p = (r?.payload ?? {}) as Record<string, any>;
       const productFromPayload = clean(p.product_name) || clean(p.offer_name) || '';
+      const paid = Boolean(r?.paid);
+      const baseStatus = r?.status || 'pending';
+      const normalizedStatus = paid ? 'converted' : baseStatus;
 
       return {
         id: String(r.id),
@@ -49,7 +52,9 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
           productFromPayload ||
           null,
         product_id: r.product_id ?? null,
-        status: r.status || 'pending',
+        status: normalizedStatus,
+        paid,
+        paid_at: r.paid_at ?? null,
         discount_code: clean(r.discount_code) || clean((p as any)?.coupon) || null,
         // expiração/agendamento: aceita expires_at ou schedule_at
         expires_at: r.expires_at ?? r.schedule_at ?? null,

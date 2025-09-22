@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import Badge from './Badge';
 import Table from './Table';
 import type { AbandonedCart } from '../lib/types';
@@ -24,13 +24,23 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Record<string, FeedbackState | undefined>>({});
   const [currentPage, setCurrentPage] = useState(1);
+  const [statusIndicatorId, setStatusIndicatorId] = useState<string | null>(null);
 
   useEffect(() => {
     setData(carts);
     setCurrentPage(1);
     setExpandedId(null);
     setFeedback({});
+    setStatusIndicatorId(null);
   }, [carts]);
+
+  const handleStatusIndicatorToggle = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, id: string) => {
+      event.stopPropagation();
+      setStatusIndicatorId((current) => (current === id ? null : id));
+    },
+    [],
+  );
 
   const columns = useMemo(
     () => [
@@ -38,9 +48,38 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
         key: 'customer_name' as const,
         header: 'Cliente',
         render: (item: AbandonedCart) => (
-          <div className="flex flex-col">
-            <span className="font-medium text-white">{item.customer_name ?? 'Nome não informado'}</span>
-            <span className="text-xs text-slate-400">{item.customer_email}</span>
+          <div className="flex items-start gap-3">
+            {item.status === 'sent' || item.status === 'converted' ? (
+              <div className="relative flex items-center">
+                <button
+                  type="button"
+                  onClick={(event) => handleStatusIndicatorToggle(event, item.id)}
+                  className="flex h-5 w-5 items-center justify-center rounded-full transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+                  aria-label={`Status do carrinho: ${item.status === 'converted' ? 'Convertido' : 'Aguardando'}`}
+                >
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      item.status === 'converted'
+                        ? 'bg-emerald-400 shadow-[0_0_0_2px_rgba(15,23,42,0.8)]'
+                        : 'bg-amber-400 shadow-[0_0_0_2px_rgba(15,23,42,0.8)]'
+                    }`}
+                  />
+                </button>
+
+                {statusIndicatorId === item.id ? (
+                  <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900/95 px-2 py-1 text-xs font-semibold text-white shadow-xl ring-1 ring-slate-700">
+                    <span className={item.status === 'converted' ? 'text-emerald-200' : 'text-amber-200'}>
+                      {item.status === 'converted' ? 'Convertido' : 'Aguardando'}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col">
+              <span className="font-medium text-white">{item.customer_name ?? 'Nome não informado'}</span>
+              <span className="text-xs text-slate-400">{item.customer_email}</span>
+            </div>
           </div>
         ),
       },
@@ -61,11 +100,12 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
         render: (i: AbandonedCart) => formatSaoPaulo(i.updated_at ?? i.created_at),
       },
     ],
-    [],
+    [handleStatusIndicatorToggle, statusIndicatorId],
   );
 
   const handleRowClick = useCallback((item: AbandonedCart) => {
     setExpandedId((current) => (current === item.id ? null : item.id));
+    setStatusIndicatorId(null);
   }, []);
 
   const handleSendEmail = useCallback(
@@ -103,7 +143,7 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
             row.id === item.id
               ? {
                   ...row,
-                  status: 'sent',
+                  status: row.paid ? 'converted' : 'sent',
                   discount_code: payload.discountCode ?? row.discount_code,
                   expires_at: payload.expiresAt ?? row.expires_at,
                   last_event: 'manual.email.sent',
@@ -146,6 +186,12 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
       setExpandedId(null);
     }
   }, [expandedId, paginatedData]);
+
+  useEffect(() => {
+    if (statusIndicatorId && !paginatedData.some((row) => row.id === statusIndicatorId)) {
+      setStatusIndicatorId(null);
+    }
+  }, [paginatedData, statusIndicatorId]);
 
   const pageStart = totalItems === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const pageEnd = totalItems === 0 ? 0 : Math.min(pageStart + paginatedData.length - 1, totalItems);
