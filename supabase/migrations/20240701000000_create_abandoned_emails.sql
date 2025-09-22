@@ -1,15 +1,24 @@
 create table if not exists public.abandoned_emails (
   id text primary key,
+  email text not null,
   customer_email text not null,
   customer_name text,
   product_id text,
   product_name text,
+  product_title text,
   checkout_url text,
+  checkout_id text not null,
   status text not null default 'pending',
   discount_code text,
   expires_at timestamptz,
+  schedule_at timestamptz,
+  sent_at timestamptz,
   last_event text,
   last_reminder_at timestamptz,
+  payload jsonb not null default '{}'::jsonb,
+  source text,
+  paid boolean not null default false,
+  paid_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -41,6 +50,16 @@ end
 $$;
 
 alter table public.abandoned_emails
+  add column if not exists email text;
+
+update public.abandoned_emails
+set email = coalesce(email, customer_email)
+where customer_email is not null;
+
+alter table public.abandoned_emails
+  alter column email set not null;
+
+alter table public.abandoned_emails
   add column if not exists customer_name text;
 
 alter table public.abandoned_emails
@@ -50,7 +69,19 @@ alter table public.abandoned_emails
   add column if not exists product_name text;
 
 alter table public.abandoned_emails
+  add column if not exists product_title text;
+
+update public.abandoned_emails
+set product_title = coalesce(product_title, product_name);
+
+alter table public.abandoned_emails
   add column if not exists checkout_url text;
+
+alter table public.abandoned_emails
+  add column if not exists checkout_id text;
+
+update public.abandoned_emails
+set checkout_id = coalesce(checkout_id, id);
 
 alter table public.abandoned_emails
   add column if not exists status text;
@@ -71,10 +102,49 @@ alter table public.abandoned_emails
   add column if not exists expires_at timestamptz;
 
 alter table public.abandoned_emails
+  add column if not exists schedule_at timestamptz;
+
+update public.abandoned_emails
+set schedule_at = coalesce(schedule_at, expires_at, created_at);
+
+alter table public.abandoned_emails
+  add column if not exists sent_at timestamptz;
+
+alter table public.abandoned_emails
   add column if not exists last_event text;
 
 alter table public.abandoned_emails
   add column if not exists last_reminder_at timestamptz;
+
+alter table public.abandoned_emails
+  add column if not exists payload jsonb;
+
+update public.abandoned_emails
+set payload = coalesce(payload, '{}'::jsonb);
+
+alter table public.abandoned_emails
+  alter column payload set default '{}'::jsonb;
+
+alter table public.abandoned_emails
+  alter column payload set not null;
+
+alter table public.abandoned_emails
+  add column if not exists source text;
+
+alter table public.abandoned_emails
+  add column if not exists paid boolean;
+
+update public.abandoned_emails
+set paid = coalesce(paid, false);
+
+alter table public.abandoned_emails
+  alter column paid set default false;
+
+alter table public.abandoned_emails
+  alter column paid set not null;
+
+alter table public.abandoned_emails
+  add column if not exists paid_at timestamptz;
 
 alter table public.abandoned_emails
   add column if not exists created_at timestamptz;
@@ -117,8 +187,14 @@ before update on public.abandoned_emails
 for each row
 execute procedure public.handle_updated_at();
 
+create unique index if not exists abandoned_emails_checkout_id_key
+  on public.abandoned_emails (checkout_id);
+
 create index if not exists abandoned_emails_customer_email_idx
   on public.abandoned_emails (lower(customer_email));
 
 create index if not exists abandoned_emails_status_idx
   on public.abandoned_emails (status);
+
+create index if not exists abandoned_emails_schedule_at_idx
+  on public.abandoned_emails (schedule_at);
