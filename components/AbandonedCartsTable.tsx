@@ -7,8 +7,11 @@ import type { AbandonedCart } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
 
+export type AbandonedCartSortMode = 'default' | 'status';
+
 type AbandonedCartsTableProps = {
   carts: AbandonedCart[];
+  sortMode?: AbandonedCartSortMode;
 };
 
 type FeedbackState = {
@@ -18,7 +21,19 @@ type FeedbackState = {
 
 const PAGE_SIZE = 20;
 
-export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps) {
+const STATUS_ORDER: Record<string, number> = {
+  sent: 0,
+  pending: 1,
+  converted: 2,
+};
+
+const getTimestamp = (value?: string | null) => {
+  if (!value) return 0;
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? 0 : time;
+};
+
+export default function AbandonedCartsTable({ carts, sortMode = 'default' }: AbandonedCartsTableProps) {
   const [data, setData] = useState<AbandonedCart[]>(carts);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -167,7 +182,30 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
     [sendingId],
   );
 
-  const totalItems = data.length;
+  const sortedData = useMemo(() => {
+    if (sortMode !== 'status') {
+      return data;
+    }
+
+    return [...data].sort((a, b) => {
+      const orderA = STATUS_ORDER[a.status] ?? Number.POSITIVE_INFINITY;
+      const orderB = STATUS_ORDER[b.status] ?? Number.POSITIVE_INFINITY;
+
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+
+      const timeB = getTimestamp(b.updated_at ?? b.created_at);
+      const timeA = getTimestamp(a.updated_at ?? a.created_at);
+      return timeB - timeA;
+    });
+  }, [data, sortMode]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sortMode]);
+
+  const totalItems = sortedData.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 
   useEffect(() => {
@@ -178,8 +216,8 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
 
   const paginatedData = useMemo(() => {
     const startIndex = (currentPage - 1) * PAGE_SIZE;
-    return data.slice(startIndex, startIndex + PAGE_SIZE);
-  }, [currentPage, data]);
+    return sortedData.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [currentPage, sortedData]);
 
   useEffect(() => {
     if (expandedId && !paginatedData.some((row) => row.id === expandedId)) {
