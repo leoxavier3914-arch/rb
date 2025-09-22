@@ -25,8 +25,7 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
     const { data, error } = await supabase
       .from('abandoned_emails')
       .select('*')
-      .order('updated_at', { ascending: false })
-      .limit(50);
+      .order('updated_at', { ascending: false });
 
     if (error) {
       console.error('[kiwify-hub] erro ao consultar carrinhos', error);
@@ -104,7 +103,7 @@ export default async function Home() {
       </header>
 
       <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <Card title="Total de registros" value={metrics.total} description="Últimos 50 carrinhos recebidos" />
+        <Card title="Total de registros" value={metrics.total} description="Todos os carrinhos recebidos" />
         <Card title="Pendentes" value={metrics.pending} description="Aguardando envio de e-mail" />
         <Card title="E-mails enviados" value={metrics.sent} description="Lembretes já disparados" />
         <Card title="Convertidos" value={metrics.converted} description="Clientes que finalizaram a compra" />
@@ -112,7 +111,7 @@ export default async function Home() {
 
       <section className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Últimos eventos</h2>
+          <h2 className="text-xl font-semibold">Eventos recebidos</h2>
           <Badge variant={metrics.expired > 0 ? 'error' : 'pending'}>
             {metrics.expired > 0 ? `${metrics.expired} link(s) expirados` : 'Todos os links ativos'}
           </Badge>
