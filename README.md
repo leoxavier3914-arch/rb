@@ -19,7 +19,7 @@ Use um arquivo `.env.local` para valores de desenvolvimento.
 
 ## Rotas principais
 - `POST /api/kiwify/webhook`: recebe eventos da Kiwify e registra o carrinho no Supabase.
-- `POST /api/admin/resend`: reenviar o e-mail manualmente (necessita header `Authorization: Bearer ADMIN_TOKEN`).
+- `POST /api/admin/resend`: reenviar o e-mail manualmente (necessita cookie `admin_token` válido ou header `Authorization: Bearer ADMIN_TOKEN`).
 
 ## Login administrativo
 Acesse `/login` e informe o valor configurado em `ADMIN_TOKEN` para destravar o painel protegido por cookie.
