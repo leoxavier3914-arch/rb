@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Badge from './Badge';
 import Table from './Table';
 import type { AbandonedCart } from '../lib/types';
@@ -16,11 +16,21 @@ type FeedbackState = {
   message: string;
 };
 
+const PAGE_SIZE = 20;
+
 export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps) {
   const [data, setData] = useState<AbandonedCart[]>(carts);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Record<string, FeedbackState | undefined>>({});
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setData(carts);
+    setCurrentPage(1);
+    setExpandedId(null);
+    setFeedback({});
+  }, [carts]);
 
   const columns = useMemo(
     () => [
@@ -117,52 +127,115 @@ export default function AbandonedCartsTable({ carts }: AbandonedCartsTableProps)
     [sendingId],
   );
 
-  return (
-    <Table<AbandonedCart>
-      columns={columns}
-      data={data}
-      getRowKey={(i) => i.id}
-      emptyMessage="Nenhum evento encontrado. Aguarde o primeiro webhook da Kiwify."
-      onRowClick={(item) => handleRowClick(item)}
-      expandedRowKey={expandedId}
-      renderExpandedRow={(item) => {
-        const isSending = sendingId === item.id;
-        const feedbackMessage = feedback[item.id];
+  const totalItems = data.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 
-        return (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-white">
-                Ações para {item.customer_name ?? 'Nome não informado'}
-              </p>
-              <p className="text-xs text-slate-400">
-                Reenviar o lembrete manualmente para {item.customer_email}.
-              </p>
-            </div>
-            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-              <button
-                type="button"
-                onClick={() => handleSendEmail(item)}
-                disabled={isSending}
-                className="inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSending ? 'Enviando…' : 'Enviar e-mail'}
-              </button>
-              {feedbackMessage ? (
-                <span
-                  className={
-                    feedbackMessage.type === 'success'
-                      ? 'text-xs font-medium text-emerald-300'
-                      : 'text-xs font-medium text-rose-300'
-                  }
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * PAGE_SIZE;
+    return data.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [currentPage, data]);
+
+  useEffect(() => {
+    if (expandedId && !paginatedData.some((row) => row.id === expandedId)) {
+      setExpandedId(null);
+    }
+  }, [expandedId, paginatedData]);
+
+  const pageStart = totalItems === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const pageEnd = totalItems === 0 ? 0 : Math.min(pageStart + paginatedData.length - 1, totalItems);
+
+  const handlePreviousPage = useCallback(() => {
+    setCurrentPage((prev) => Math.max(prev - 1, 1));
+  }, []);
+
+  const handleNextPage = useCallback(() => {
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  }, [totalPages]);
+
+  return (
+    <div className="space-y-4">
+      <Table<AbandonedCart>
+        columns={columns}
+        data={paginatedData}
+        getRowKey={(i) => i.id}
+        emptyMessage="Nenhum evento encontrado. Aguarde o primeiro webhook da Kiwify."
+        onRowClick={(item) => handleRowClick(item)}
+        expandedRowKey={expandedId}
+        renderExpandedRow={(item) => {
+          const isSending = sendingId === item.id;
+          const feedbackMessage = feedback[item.id];
+
+          return (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-white">
+                  Ações para {item.customer_name ?? 'Nome não informado'}
+                </p>
+                <p className="text-xs text-slate-400">
+                  Reenviar o lembrete manualmente para {item.customer_email}.
+                </p>
+              </div>
+              <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+                <button
+                  type="button"
+                  onClick={() => handleSendEmail(item)}
+                  disabled={isSending}
+                  className="inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {feedbackMessage.message}
-                </span>
-              ) : null}
+                  {isSending ? 'Enviando…' : 'Enviar e-mail'}
+                </button>
+                {feedbackMessage ? (
+                  <span
+                    className={
+                      feedbackMessage.type === 'success'
+                        ? 'text-xs font-medium text-emerald-300'
+                        : 'text-xs font-medium text-rose-300'
+                    }
+                  >
+                    {feedbackMessage.message}
+                  </span>
+                ) : null}
+              </div>
             </div>
-          </div>
-        );
-      }}
-    />
+          );
+        }}
+      />
+
+      <div className="flex flex-col items-center justify-between gap-2 text-xs text-slate-400 sm:flex-row sm:text-sm">
+        <span>
+          {totalItems === 0
+            ? 'Nenhum registro disponível.'
+            : `Exibindo ${pageStart}–${pageEnd} de ${totalItems} registros`}
+        </span>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handlePreviousPage}
+            disabled={currentPage === 1 || totalItems === 0}
+            className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+          >
+            Anterior
+          </button>
+          <span className="font-semibold text-slate-300">
+            {totalItems === 0 ? '—' : `Página ${currentPage} de ${totalPages}`}
+          </span>
+          <button
+            type="button"
+            onClick={handleNextPage}
+            disabled={currentPage === totalPages || totalItems === 0}
+            className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+          >
+            Próxima
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

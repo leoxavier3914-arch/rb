@@ -40,65 +40,77 @@ export async function POST(req: Request) {
     auth: { persistSession: false },
   });
 
-  // busca até 20 pendentes “vencidos”
+  // busca pendentes “vencidos” em lotes até não restarem registros elegíveis
   const now = new Date();
   const nowIso = now.toISOString();
   const legacyThreshold = new Date(
     now.getTime() - DEFAULT_DELAY_HOURS * 3600 * 1000
   ).toISOString();
 
-  const { data: rows, error } = await supabase
-    .from('abandoned_emails')
-    .select(
-      'id,email,customer_name,product_title,checkout_url,discount_code,schedule_at,created_at'
-    )
-    .eq('status', 'pending')
-    .or(
-      `schedule_at.lte.${nowIso},and(schedule_at.is.null,created_at.lte.${legacyThreshold})`
-    )
-    .order('schedule_at', { ascending: true, nullsFirst: true })
-    .limit(20);
-
-  if (error) {
-    console.error('[cron/dispatch] select error', error);
-    return NextResponse.json({ ok: false, error }, { status: 500 });
-  }
-
-  if (!rows || rows.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0 });
-  }
-
+  const processedIds = new Set<string>();
   let sent = 0;
-  for (const r of rows) {
-    try {
-      const discountCode = resolveDiscountCode(r.discount_code);
-      await emailjs.send(
-        EMAIL_SERVICE,
-        EMAIL_TEMPLATE,
-        {
-          to_email: r.email,                            // To Email do template
-          title: 'Finalize sua compra • Romeike Beauty',// Subject usa {{title}}
-          name: r.customer_name ?? 'Cliente',           // {{name}}
-          product_name: r.product_title,                // {{product_name}}
-          discount_code: discountCode,                  // {{discount_code}}
-          expire_hours: String(EXPIRE_HOURS),           // {{expire_hours}}
-          checkout_url: applyDiscountToCheckoutUrl(r.checkout_url, discountCode),
-          email: r.email,                               // Reply-To usa {{email}}
-        }
-      );
 
-      // marca como enviado
-      const { error: upErr } = await supabase
-        .from('abandoned_emails')
-        .update({ status: 'sent', sent_at: new Date().toISOString() })
-        .eq('id', r.id);
+  const selectColumns =
+    'id,email,customer_name,product_title,checkout_url,discount_code,schedule_at,created_at';
+  const BATCH_SIZE = 100;
 
-      if (upErr) throw upErr;
+  while (true) {
+    const { data: rows, error } = await supabase
+      .from('abandoned_emails')
+      .select(selectColumns)
+      .eq('status', 'pending')
+      .or(
+        `schedule_at.lte.${nowIso},and(schedule_at.is.null,created_at.lte.${legacyThreshold})`
+      )
+      .order('schedule_at', { ascending: true, nullsFirst: true })
+      .range(0, BATCH_SIZE - 1);
 
-      sent++;
-    } catch (err) {
-      console.error('[cron/dispatch] send error for id', r.id, err);
-      // opcional: marcar como 'failed' ou re-tentar depois
+    if (error) {
+      console.error('[cron/dispatch] select error', error);
+      return NextResponse.json({ ok: false, error }, { status: 500 });
+    }
+
+    const pendingRows = (rows ?? []).filter((row) => {
+      if (!row || processedIds.has(row.id)) return false;
+      processedIds.add(row.id);
+      return true;
+    });
+
+    if (pendingRows.length === 0) {
+      break;
+    }
+
+    for (const r of pendingRows) {
+      try {
+        const discountCode = resolveDiscountCode(r.discount_code);
+        await emailjs.send(
+          EMAIL_SERVICE,
+          EMAIL_TEMPLATE,
+          {
+            to_email: r.email,                            // To Email do template
+            title: 'Finalize sua compra • Romeike Beauty',// Subject usa {{title}}
+            name: r.customer_name ?? 'Cliente',           // {{name}}
+            product_name: r.product_title,                // {{product_name}}
+            discount_code: discountCode,                  // {{discount_code}}
+            expire_hours: String(EXPIRE_HOURS),           // {{expire_hours}}
+            checkout_url: applyDiscountToCheckoutUrl(r.checkout_url, discountCode),
+            email: r.email,                               // Reply-To usa {{email}}
+          }
+        );
+
+        // marca como enviado
+        const { error: upErr } = await supabase
+          .from('abandoned_emails')
+          .update({ status: 'sent', sent_at: new Date().toISOString() })
+          .eq('id', r.id);
+
+        if (upErr) throw upErr;
+
+        sent++;
+      } catch (err) {
+        console.error('[cron/dispatch] send error for id', r.id, err);
+        // opcional: marcar como 'failed' ou re-tentar depois
+      }
     }
   }
 
