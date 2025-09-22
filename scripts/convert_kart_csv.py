@@ -90,6 +90,7 @@ def _build_payload(row: dict, creation_iso: Optional[str]) -> str:
     return json.dumps(payload, ensure_ascii=False) if payload else "{}"
 
 
+ 
 def _format_timestamp(value: datetime) -> str:
     """Format datetimes for Postgres timestamp with time zone columns."""
 
@@ -101,6 +102,10 @@ def _format_timestamp(value: datetime) -> str:
 
 def _generate_rows(reader: Iterable[dict[str, str]]) -> list[list[str]]:
     now_formatted = _format_timestamp(datetime.now(timezone.utc))
+
+def _generate_rows(reader: Iterable[dict[str, str]]) -> list[list[str]]:
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     rows: list[list[str]] = []
 
     for row in reader:
@@ -140,8 +145,13 @@ def _generate_rows(reader: Iterable[dict[str, str]]) -> list[list[str]]:
             "kiwify",
             "false",
             "",
+ codex/retrieve-historical-abandoned-carts-bgxf1z
             now_formatted,
             now_formatted,
+
+            now_iso,
+            now_iso,
+ 
         ])
 
     return rows
