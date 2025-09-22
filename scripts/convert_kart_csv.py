@@ -1,5 +1,9 @@
 import csv
 import json
+ 
+import uuid
+
+
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -74,6 +78,13 @@ def convert() -> None:
         rows = []
         for row in reader:
             cart_id = row.get("Cart Id", "").strip()
+ 
+            if cart_id:
+                row_uuid = uuid.uuid5(uuid.NAMESPACE_URL, f"kiwify-cart:{cart_id}")
+            else:  # pragma: no cover - defensive branch
+                row_uuid = uuid.uuid4()
+
+ 
             customer_email = row.get("Customer Email", "").strip()
             customer_name = row.get("Customer Name", "").strip()
             product_name = row.get("Product name", "").strip()
@@ -81,7 +92,11 @@ def convert() -> None:
             created_iso = parse_datetime(row.get("Creation Date", ""))
 
             rows.append([
+ 
+                str(row_uuid),
+
                 cart_id,
+ 
                 customer_email,
                 customer_email,
                 customer_name,
