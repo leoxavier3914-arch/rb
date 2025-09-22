@@ -14,21 +14,37 @@ export default function AbandonedCartsSection({ carts, expiredCount }: Abandoned
   const [sortMode, setSortMode] = useState<AbandonedCartSortMode>('default');
 
   const { buttonLabel, buttonTitle } = useMemo(() => {
-    if (sortMode === 'status') {
-      return {
-        buttonLabel: 'Ordenar por data',
-        buttonTitle: 'Voltar a ordenar pelos eventos mais recentes.',
-      };
+    switch (sortMode) {
+      case 'converted':
+        return {
+          buttonLabel: 'Convertidos primeiro',
+          buttonTitle: 'Ordenar com convertidos no topo, seguidos de pendentes e e-mails enviados.',
+        };
+      case 'pending':
+        return {
+          buttonLabel: 'Pendentes primeiro',
+          buttonTitle: 'Ordenar com pendentes no topo, seguidos de e-mails enviados e convertidos.',
+        };
+      case 'sent':
+        return {
+          buttonLabel: 'E-mails enviados primeiro',
+          buttonTitle: 'Ordenar com e-mails enviados no topo, seguidos de convertidos e pendentes.',
+        };
+      default:
+        return {
+          buttonLabel: 'Ordenar por status',
+          buttonTitle: 'Ordenar por status: convertidos, pendentes e e-mails enviados.',
+        };
     }
-
-    return {
-      buttonLabel: 'Ordenar por status',
-      buttonTitle: 'Ordenar por status: enviados, pendentes e convertidos.',
-    };
   }, [sortMode]);
 
   const handleToggleSort = () => {
-    setSortMode((current) => (current === 'status' ? 'default' : 'status'));
+    setSortMode((current) => {
+      const sequence: AbandonedCartSortMode[] = ['default', 'converted', 'pending', 'sent'];
+      const currentIndex = sequence.indexOf(current);
+      const nextIndex = currentIndex === -1 ? 1 : (currentIndex + 1) % sequence.length;
+      return sequence[nextIndex];
+    });
   };
 
   return (
@@ -41,7 +57,7 @@ export default function AbandonedCartsSection({ carts, expiredCount }: Abandoned
             onClick={handleToggleSort}
             className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 sm:text-sm"
             title={buttonTitle}
-            aria-pressed={sortMode === 'status'}
+            aria-pressed={sortMode !== 'default'}
           >
             {buttonLabel}
           </button>

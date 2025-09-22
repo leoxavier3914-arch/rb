@@ -7,7 +7,7 @@ import type { AbandonedCart } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
 
-export type AbandonedCartSortMode = 'default' | 'status';
+export type AbandonedCartSortMode = 'default' | 'converted' | 'pending' | 'sent';
 
 type AbandonedCartsTableProps = {
   carts: AbandonedCart[];
@@ -21,11 +21,7 @@ type FeedbackState = {
 
 const PAGE_SIZE = 20;
 
-const STATUS_ORDER: Record<string, number> = {
-  sent: 0,
-  pending: 1,
-  converted: 2,
-};
+const STATUS_SEQUENCE: Array<Exclude<AbandonedCartSortMode, 'default'>> = ['converted', 'pending', 'sent'];
 
 const getTimestamp = (value?: string | null) => {
   if (!value) return 0;
@@ -183,13 +179,23 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
   );
 
   const sortedData = useMemo(() => {
-    if (sortMode !== 'status') {
+    if (sortMode === 'default') {
       return data;
     }
 
+    const startIndex = STATUS_SEQUENCE.indexOf(sortMode as Exclude<AbandonedCartSortMode, 'default'>);
+    const sequence =
+      startIndex === -1
+        ? STATUS_SEQUENCE
+        : [...STATUS_SEQUENCE.slice(startIndex), ...STATUS_SEQUENCE.slice(0, startIndex)];
+    const statusOrder = sequence.reduce<Record<string, number>>((acc, status, index) => {
+      acc[status] = index;
+      return acc;
+    }, {});
+
     return [...data].sort((a, b) => {
-      const orderA = STATUS_ORDER[a.status] ?? Number.POSITIVE_INFINITY;
-      const orderB = STATUS_ORDER[b.status] ?? Number.POSITIVE_INFINITY;
+      const orderA = statusOrder[a.status] ?? Number.POSITIVE_INFINITY;
+      const orderB = statusOrder[b.status] ?? Number.POSITIVE_INFINITY;
 
       if (orderA !== orderB) {
         return orderA - orderB;
