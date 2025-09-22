@@ -78,10 +78,56 @@ export async function POST(request: NextRequest) {
     resolvedDiscount,
   );
 
+  const normalizeString = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
+  const extractProduct = (source: Record<string, unknown> | null | undefined): string | null => {
+    if (!source) return null;
+    const candidates = [
+      'product_name',
+      'offer_name',
+      'product_title',
+      'item_title',
+      'course_name',
+      'plan_name',
+    ] as const;
+
+    for (const key of candidates) {
+      const value = normalizeString(source[key]);
+      if (value) return value;
+    }
+
+    return null;
+  };
+
+  const rawPayload = record.payload;
+  let payloadProduct: string | null = null;
+  if (rawPayload && typeof rawPayload === 'object') {
+    payloadProduct = extractProduct(rawPayload as Record<string, unknown>);
+  } else if (typeof rawPayload === 'string' && rawPayload.trim()) {
+    try {
+      const parsed = JSON.parse(rawPayload);
+      if (parsed && typeof parsed === 'object') {
+        payloadProduct = extractProduct(parsed as Record<string, unknown>);
+      }
+    } catch {
+      // ignore malformed payload
+    }
+  }
+
+  const resolvedProductName =
+    normalizeString(record.product_name) ??
+    normalizeString(record.product_title) ??
+    payloadProduct ??
+    'Produto Kiwify';
+
   const templateParams = {
     to_email: email ?? record.customer_email,
     name: name ?? record.customer_name ?? 'Cliente',
-    product_name: record.product_name ?? 'Produto Kiwify',
+    product_name: resolvedProductName,
     checkout_url: resolvedCheckoutUrl,
     discount_code: resolvedDiscount ?? '',
     expires_at: expiresAt,
