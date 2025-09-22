@@ -6,7 +6,11 @@ import { createClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto';
 
 // ==== ENVS OBRIGATÓRIAS ====
-const SUPABASE_URL = process.env.SUPABASE_URL!;
+const SUPABASE_URL =
+  (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
+if (!SUPABASE_URL) {
+  throw new Error('Missing SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL');
+}
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 // ==== ENVS OPCIONAIS ====

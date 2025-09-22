@@ -5,11 +5,18 @@ Hub interno para monitorar carrinhos abandonados da Kiwify e reenviar lembretes 
 ## Variáveis de ambiente
 Configure as seguintes chaves antes de rodar o projeto:
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+### Supabase
+- `SUPABASE_SERVICE_ROLE_KEY` (privada)
+- `SUPABASE_URL` (privada — opcional; caso não defina, as rotas server usam o fallback `NEXT_PUBLIC_SUPABASE_URL`)
+- `NEXT_PUBLIC_SUPABASE_URL` (pública — obrigatória para o client e agora fallback do server)
+
+### EmailJS
 - `EMAILJS_SERVICE_ID` (ou `NEXT_PUBLIC_EMAILJS_SERVICE_ID`)
 - `EMAILJS_TEMPLATE_ID` (ou `NEXT_PUBLIC_EMAILJS_TEMPLATE_ID`)
 - `EMAILJS_PUBLIC_KEY` (ou `NEXT_PUBLIC_EMAILJS_PUBLIC_KEY`)
+- `EMAILJS_PRIVATE_KEY` (mantida apenas no server)
+
+### Outras variáveis
 - `KIWIFY_WEBHOOK_TOKEN`
 - `ADMIN_TOKEN`
 - `DEFAULT_DISCOUNT_CODE`
