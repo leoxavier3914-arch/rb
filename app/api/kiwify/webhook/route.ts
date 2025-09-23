@@ -578,6 +578,15 @@ export async function POST(req: Request) {
     lastEvent,
   });
 
+  let source: string;
+  if (existing) {
+    source = existing.source ?? 'kiwify.webhook';
+  } else if (paid) {
+    source = 'kiwify.webhook_purchase';
+  } else {
+    source = 'kiwify.webhook';
+  }
+
   const row = {
     id: existing?.id ?? crypto.randomUUID(),
     email,
@@ -593,7 +602,7 @@ export async function POST(req: Request) {
     status,
     discount_code: discountCode,
     schedule_at: scheduleAt,
-    source: existing?.source ?? 'kiwify.webhook',
+    source,
     updated_at: now.toISOString(),
     last_event: lastEvent,
   };
