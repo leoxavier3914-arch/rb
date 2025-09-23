@@ -162,6 +162,89 @@ function findProductNameDeep(obj: any): string | null {
   return alt ? String(alt).trim() : null;
 }
 
+function normalizeIdCandidate(value: any): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
+function findProductIdDeep(obj: any): string | null {
+  const preferred = pickByKeys(
+    obj,
+    [
+      'product_id',
+      'productId',
+      'offer_id',
+      'offerId',
+      'plan_id',
+      'planId',
+      'course_id',
+      'courseId',
+      'item_id',
+      'itemId',
+      'product_code',
+      'productCode',
+      'sku',
+      'product_slug',
+      'productSlug',
+    ],
+    (v) => normalizeIdCandidate(v) !== null
+  );
+  if (preferred != null) {
+    const normalized = normalizeIdCandidate(preferred);
+    if (normalized) return normalized;
+  }
+
+  let found: string | null = null;
+  deepWalk(obj, (k, v, path) => {
+    const normalized = normalizeIdCandidate(v);
+    if (!normalized) return false;
+
+    const key = k.toLowerCase();
+    const p = path.join('.').toLowerCase();
+    const looksLikeProductPath =
+      /(^|\.)(product|products|item|items|order_items|line_items|order_products|purchases|courses)(\.|$)/i.test(p);
+
+    if (
+      looksLikeProductPath &&
+      ['id', 'product_id', 'productid', 'offer_id', 'offerid', 'sku', 'code', 'slug'].includes(key)
+    ) {
+      found = normalized;
+      return true;
+    }
+    return false;
+  });
+  if (found) return found;
+
+  const listKeys = ['order_items', 'items', 'products', 'order_products', 'line_items', 'purchases', 'courses'];
+  for (const lk of listKeys) {
+    const arr = pickByKeys(obj, [lk], (v) => Array.isArray(v)) as any[] | null;
+    if (!arr || !arr.length) continue;
+    for (const it of arr) {
+      if (!it) continue;
+      const direct = normalizeIdCandidate((it as any).product_id ?? (it as any).id ?? (it as any).sku);
+      if (direct) return direct;
+      if ((it as any).product) {
+        const nested = normalizeIdCandidate(
+          (it as any).product.product_id ??
+            (it as any).product.id ??
+            (it as any).product.sku ??
+            (it as any).product.code
+        );
+        if (nested) return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
 // ====== checkout_url (monta a partir de checkout_link se precisar) ======
 function findCheckoutUrlDeep(obj: any): string | null {
   // URL direta
@@ -750,13 +833,28 @@ function findDiscountDeep(obj: any): string | null {
   return byKey ? String(byKey).trim() : null;
 }
 
-function findCheckoutIdDeep(obj: any): string {
+function findCheckoutIdDeep(
+  obj: any,
+  opts?: { email?: string | null; productId?: string | null; productTitle?: string | null }
+): string {
   const byKey = pickByKeys(
     obj,
     ['checkout_id', 'purchase_id', 'order_id', 'cart_id', 'id', 'order_ref'],
     (v) => v !== null && v !== undefined
   );
-  return byKey != null ? String(byKey) : crypto.randomUUID();
+  if (byKey != null) return String(byKey);
+
+  const email = opts?.email?.trim().toLowerCase();
+  const productComponentRaw = opts?.productId ?? opts?.productTitle;
+  const productComponent =
+    typeof productComponentRaw === 'string' ? productComponentRaw.trim().toLowerCase() : null;
+
+  if (email && productComponent) {
+    const seed = `${email}:${productComponent}`;
+    return crypto.createHash('sha256').update(seed).digest('hex');
+  }
+
+  return crypto.randomUUID();
 }
 
 function interpretBoolean(value: any): boolean | null {
@@ -1050,9 +1148,14 @@ export async function POST(req: Request) {
   }
   const nameFromPayload = findNameDeep(body);
   const productTitleFromPayload = findProductNameDeep(body);
+  const productIdFromPayload = findProductIdDeep(body);
   const checkoutUrlFromPayload = findCheckoutUrlDeep(body);
   const discountCodeFromPayload = findDiscountDeep(body);
-  const checkoutId   = findCheckoutIdDeep(body);
+  const checkoutId = findCheckoutIdDeep(body, {
+    email,
+    productId: productIdFromPayload,
+    productTitle: productTitleFromPayload,
+  });
 
   const now = new Date();
 
@@ -1079,7 +1182,7 @@ export async function POST(req: Request) {
   const { data: existing, error: fetchError } = await supabase
     .from('abandoned_emails')
     .select(
-      'id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title'
+      'id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id'
     )
     .eq('checkout_id', checkoutId)
     .maybeSingle();
@@ -1091,6 +1194,7 @@ export async function POST(req: Request) {
   const name = nameFromPayload ?? existing?.customer_name ?? 'Cliente';
   const productTitle =
     productTitleFromPayload ?? existing?.product_title ?? 'Carrinho (Kiwify)';
+  const productId = productIdFromPayload ?? existing?.product_id ?? null;
   const checkoutUrl = checkoutUrlFromPayload ?? existing?.checkout_url ?? null;
   const trafficSource =
     extractTrafficSource(
@@ -1130,6 +1234,7 @@ export async function POST(req: Request) {
     email,
     name,
     productTitle,
+    productId,
     checkoutUrl,
     discountCode: discountCode ?? null,
     trafficSource,
@@ -1151,6 +1256,7 @@ export async function POST(req: Request) {
   const row = {
     id: existing?.id ?? crypto.randomUUID(),
     email,
+    product_id: productId,
     product_title: productTitle,
     checkout_url: checkoutUrl,
     checkout_id: checkoutId,

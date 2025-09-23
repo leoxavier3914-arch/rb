@@ -43,3 +43,28 @@ Acesse `/login` e informe o valor configurado em `ADMIN_TOKEN` para destravar o 
 - `npm run dev`
 - `npm run build`
 - `npm run start`
+- `node scripts/backfill_checkout_ids.mjs` — gera um `checkout_id` determinístico para registros antigos da tabela `abandoned_emails`
+
+### Backfill dos `checkout_id`
+
+O script `scripts/backfill_checkout_ids.mjs` ajuda a atualizar registros existentes para usar o mesmo algoritmo de `checkout_id` determinístico aplicado pelo webhook:
+
+1. Exporte as variáveis `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` (ou equivalentes) para que o script consiga autenticar com a role de serviço.
+2. Execute primeiro em modo _dry-run_ para conferir o impacto:
+
+   ```bash
+   node scripts/backfill_checkout_ids.mjs
+   ```
+
+   Esse modo lista os registros que receberiam o novo `checkout_id`, os grupos duplicados detectados e os itens ignorados por falta de e-mail ou produto.
+
+3. Se estiver tudo certo, aplique as alterações:
+
+   ```bash
+   node scripts/backfill_checkout_ids.mjs --apply
+   ```
+
+   Adicione `--delete-duplicates` se quiser remover automaticamente as linhas antigas com o mesmo e-mail/produto (o script preserva a melhor linha de cada grupo antes de excluir as demais).
+
+4. Caso algum registro apareça como “skipped”, complete manualmente o `customer_email` e o identificador/título do produto antes de rodar novamente.
+
