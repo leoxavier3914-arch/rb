@@ -24,7 +24,7 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
     const { data, error } = await supabase
       .from('abandoned_emails')
       .select('*')
-      .neq('source', 'kiwify.webhook')
+      .neq('source', 'kiwify.webhook_purchase')
       .order('updated_at', { ascending: false });
 
     if (error) {
