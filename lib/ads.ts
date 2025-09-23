@@ -445,7 +445,7 @@ export function computeAdPerformance(rows: RawAdEvent[]): AdPerformance[] {
 
   const performances: AdPerformance[] = [];
 
-  for (const accumulator of map.values()) {
+  map.forEach((accumulator) => {
     const resolvedAdClicks: AdMetricValue = accumulator.hasAdClicksMetric
       ? { value: Math.max(0, Math.round(accumulator.adClicks ?? 0)), estimated: false }
       : { value: accumulator.totalCheckouts, estimated: true };
@@ -492,7 +492,7 @@ export function computeAdPerformance(rows: RawAdEvent[]): AdPerformance[] {
       conversionRate,
       lastInteractionAt: accumulator.lastInteractionAt,
     });
-  }
+  });
 
   performances.sort((a, b) => {
     if (b.paymentsApproved !== a.paymentsApproved) {
