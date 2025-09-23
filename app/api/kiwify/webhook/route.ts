@@ -438,12 +438,33 @@ function joinTrafficParts(parts: Array<string | null | undefined>): string | nul
 function resolveChannelFromValue(value: string): string | null {
   const normalized = normalizeTrafficString(value);
   if (!normalized) return null;
+ 
   const context = buildTrafficContext([value], null);
   const channelFromHints = detectChannelFromContext(context);
   if (channelFromHints) return channelFromHints;
   if (/\baffiliate\b/.test(` ${normalized} `) || /\bafiliad[oa]\b/.test(` ${normalized} `) || /\bparceria\b/.test(` ${normalized} `)) {
     return 'affiliate';
   }
+
+  const padded = ` ${normalized} `;
+  if (/\btiktok\b/.test(padded) || normalized.includes('tiktokad')) return 'tiktok';
+  if (/\binstagram\b/.test(padded)) return 'instagram';
+  if (/\bfacebook\b/.test(padded) || /\bmeta\b/.test(padded) || padded.includes(' fb ')) return 'facebook';
+  if (/\bgoogle\b/.test(padded) || /\badwords\b/.test(padded) || /\bgads\b/.test(padded)) return 'google';
+  if (/\bbing\b/.test(padded) || /\bmicrosoft\b/.test(padded)) return 'bing';
+  if (/\bkwai\b/.test(padded)) return 'kwai';
+  if (/\btaboola\b/.test(padded)) return 'taboola';
+  if (/\bpinterest\b/.test(padded)) return 'pinterest';
+  if (/\bsnap(chat)?\b/.test(padded) || padded.includes(' snap ')) return 'snapchat';
+  if (/\btwitter\b/.test(padded) || /\bxads?\b/.test(padded) || normalized.includes('x.com')) return 'twitter';
+  if (/\blinked?in\b/.test(padded)) return 'linkedin';
+  if (/\byoutube\b/.test(padded)) return 'youtube';
+  if (/\bwhatsapp\b/.test(padded) || padded.includes(' wa ')) return 'whatsapp';
+  if (/\bemail\b/.test(padded) || normalized.includes('newsletter')) return 'email';
+  if (/\baffiliate\b/.test(padded) || /\bafiliad[oa]\b/.test(padded) || /\bparceria\b/.test(padded)) return 'affiliate';
+  if (/\borganic\b/.test(padded)) return 'organic';
+  if (/\bdirect\b/.test(padded)) return 'direct';
+ 
 
   const slug = normalized.replace(/[^a-z0-9]+/g, '.').replace(/\.+/g, '.').replace(/^\.+|\.+$/g, '');
   return slug || null;
@@ -657,6 +678,22 @@ function extractTrafficSource(
 
   if (!channel) {
     channel = detectChannelFromContext(context);
+
+    if (hasTrafficHint(context, ['tiktok', 'ttclid', 'ttad', 'ttadgroup', 'tiktokads'])) channel = 'tiktok';
+    else if (hasTrafficHint(context, ['instagram'])) channel = 'instagram';
+    else if (hasTrafficHint(context, ['facebook', 'meta', 'fbclid', 'fbads'])) channel = 'facebook';
+    else if (hasTrafficHint(context, ['google', 'gclid', 'adwords', 'googleads'])) channel = 'google';
+    else if (hasTrafficHint(context, ['bing', 'msclkid', 'microsoft'])) channel = 'bing';
+    else if (hasTrafficHint(context, ['taboola'])) channel = 'taboola';
+    else if (hasTrafficHint(context, ['kwai'])) channel = 'kwai';
+    else if (hasTrafficHint(context, ['pinterest', 'pin'])) channel = 'pinterest';
+    else if (hasTrafficHint(context, ['snapchat', 'snap'])) channel = 'snapchat';
+    else if (hasTrafficHint(context, ['twitter', 'xads', 'x com'])) channel = 'twitter';
+    else if (hasTrafficHint(context, ['linkedin'])) channel = 'linkedin';
+    else if (hasTrafficHint(context, ['youtube'])) channel = 'youtube';
+    else if (hasTrafficHint(context, ['email', 'newsletter'])) channel = 'email';
+    else if (hasTrafficHint(context, ['whatsapp', 'wa'])) channel = 'whatsapp';
+ 
   }
 
   const classification = detectTrafficClassification(mediumContext, params);
