@@ -15,3 +15,14 @@ export type AbandonedCart = {
   updated_at: string | null;
   checkout_url?: string | null;
 };
+
+export type Sale = {
+  id: string;
+  customer_email: string;
+  customer_name: string | null;
+  product_name: string | null;
+  product_id: string | null;
+  status: string | null;
+  paid_at: string | null;
+  traffic_source: string | null;
+};
