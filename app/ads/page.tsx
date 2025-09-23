@@ -1,11 +1,9 @@
 import type { ReactNode } from 'react';
 import Card from '../../components/Card';
-import Table from '../../components/Table';
 import Badge from '../../components/Badge';
+import AdsTable from '../../components/AdsTable';
 import { getSupabaseAdmin } from '../../lib/supabaseAdmin';
 import { computeAdPerformance, type AdPerformance, type RawAdEvent, type AdMetricValue } from '../../lib/ads';
-import { formatSaoPaulo } from '../../lib/dates';
-import { getTrafficCategory, getTrafficCategoryLabel, getOrganicPlatformDetail } from '../../lib/traffic';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
@@ -13,11 +11,6 @@ import { unstable_noStore as noStore } from 'next/cache';
 export const dynamic = 'force-dynamic';
 
 const numberFormatter = new Intl.NumberFormat('pt-BR');
-const percentFormatter = new Intl.NumberFormat('pt-BR', {
-  style: 'percent',
-  maximumFractionDigits: 1,
-  minimumFractionDigits: 1,
-});
 
 type AggregatedMetric = {
   value: number;
@@ -55,50 +48,6 @@ function aggregateMetric(metrics: AdMetricValue[]): AggregatedMetric {
   );
 }
 
-function formatMetric(metric: AdMetricValue): ReactNode {
-  const displayValue = metric.estimated
-    ? `~${numberFormatter.format(metric.value)}`
-    : numberFormatter.format(metric.value);
-
-  return (
-    <span className="flex items-center gap-2">
-      <span>{displayValue}</span>
-      {metric.estimated ? <Badge variant="pending">Estimado</Badge> : null}
-    </span>
-  );
-}
-
-function formatTrafficSource(source: string | null): string {
-  const trimmed = typeof source === 'string' ? source.trim() : '';
-  if (!trimmed || trimmed.toLowerCase() === 'unknown') {
-    return 'Outros canais';
-  }
-
-  const category = getTrafficCategory(trimmed);
-
-  if (category === 'organic') {
-    const platformDetail = getOrganicPlatformDetail(trimmed);
-    if (platformDetail) {
-      return `${getTrafficCategoryLabel(category)} / ${platformDetail}`;
-    }
-    return getTrafficCategoryLabel(category);
-  }
-
-  if (category === 'tiktok') {
-    return getTrafficCategoryLabel(category);
-  }
-
-  return trimmed;
-}
-
-function formatConversionRate(value: number | null): string {
-  if (value === null || Number.isNaN(value)) {
-    return '—';
-  }
-
-  return percentFormatter.format(value);
-}
-
 function resolveCardDescription(metric: AggregatedMetric, preciseHint: string, estimatedHint: string): string {
   return metric.estimated ? estimatedHint : preciseHint;
 }
@@ -118,57 +67,6 @@ export default async function AdsPage() {
   const ctaClicks = aggregateMetric(ads.map((item) => item.ctaClicks));
   const abandonedCarts = ads.reduce((sum, item) => sum + item.abandonedCarts, 0);
   const paymentsApproved = ads.reduce((sum, item) => sum + item.paymentsApproved, 0);
-
-  const columns = [
-    {
-      key: 'displayName' as const,
-      header: 'Campanha',
-      render: (ad: AdPerformance) => (
-        <div className="flex flex-col gap-1">
-          <span className="font-semibold text-white">{ad.displayName}</span>
-          <span className="text-xs text-slate-400">
-            {ad.utmSource ? ad.utmSource : 'Fonte desconhecida'} ·{' '}
-            {ad.utmMedium ? ad.utmMedium : 'Mídia indefinida'}
-          </span>
-        </div>
-      ),
-    },
-    {
-      key: 'trafficSource' as const,
-      header: 'Canal',
-      render: (ad: AdPerformance) => formatTrafficSource(ad.trafficSource),
-    },
-    {
-      key: 'adClicks' as const,
-      header: 'Cliques (anúncio)',
-      render: (ad: AdPerformance) => formatMetric(ad.adClicks),
-    },
-    {
-      key: 'ctaClicks' as const,
-      header: 'Cliques (CTA)',
-      render: (ad: AdPerformance) => formatMetric(ad.ctaClicks),
-    },
-    {
-      key: 'abandonedCarts' as const,
-      header: 'Carrinhos abandonados',
-      render: (ad: AdPerformance) => numberFormatter.format(ad.abandonedCarts),
-    },
-    {
-      key: 'paymentsApproved' as const,
-      header: 'Pagamentos aprovados',
-      render: (ad: AdPerformance) => numberFormatter.format(ad.paymentsApproved),
-    },
-    {
-      key: 'conversionRate' as const,
-      header: 'Taxa de conversão',
-      render: (ad: AdPerformance) => formatConversionRate(ad.conversionRate),
-    },
-    {
-      key: 'lastInteractionAt' as const,
-      header: 'Última atividade',
-      render: (ad: AdPerformance) => formatSaoPaulo(ad.lastInteractionAt ?? null),
-    },
-  ];
 
   return (
     <main className="flex flex-1 flex-col gap-10 pb-10">
@@ -219,12 +117,7 @@ export default async function AdsPage() {
           </p>
         </div>
 
-        <Table<AdPerformance>
-          columns={columns}
-          data={ads}
-          getRowKey={(ad) => ad.key}
-          emptyMessage="Nenhum anúncio com UTM encontrado até o momento."
-        />
+        <AdsTable ads={ads} />
       </section>
     </main>
   );
