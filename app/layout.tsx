@@ -27,6 +27,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </Link>
                 </li>
                 <li>
+                  <Link href="/sales" className="transition hover:text-white">
+                    Vendas aprovadas
+                  </Link>
+                </li>
+                <li>
                   <Link href="/test" className="transition hover:text-white">
                     Envio de teste
                   </Link>
