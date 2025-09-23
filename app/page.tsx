@@ -62,6 +62,7 @@ async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
         last_reminder_at: r.sent_at ?? r.last_reminder_at ?? null,
         created_at: r.created_at ?? null,
         updated_at: r.updated_at ?? null,
+        traffic_source: r.traffic_source ?? null,
       };
     });
   } catch (error) {

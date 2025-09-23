@@ -1,5 +1,4 @@
 """Convert a Kiwify abandoned carts export to the Supabase import format."""
-
 from __future__ import annotations
 
 import csv
@@ -33,6 +32,7 @@ COLUMNS = [
     "last_reminder_at",
     "payload",
     "source",
+    "traffic_source",
     "paid",
     "paid_at",
     "created_at",
@@ -90,7 +90,6 @@ def _build_payload(row: dict, creation_iso: Optional[str]) -> str:
     return json.dumps(payload, ensure_ascii=False) if payload else "{}"
 
 
- 
 def _format_timestamp(value: datetime) -> str:
     """Format datetimes for Postgres timestamp with time zone columns."""
 
@@ -102,9 +101,6 @@ def _format_timestamp(value: datetime) -> str:
 
 def _generate_rows(reader: Iterable[dict[str, str]]) -> list[list[str]]:
     now_formatted = _format_timestamp(datetime.now(timezone.utc))
-
-def _generate_rows(reader: Iterable[dict[str, str]]) -> list[list[str]]:
-    now_iso = datetime.now(timezone.utc).isoformat()
 
     rows: list[list[str]] = []
 
@@ -124,35 +120,33 @@ def _generate_rows(reader: Iterable[dict[str, str]]) -> list[list[str]]:
 
         row_uuid = uuid.uuid5(uuid.NAMESPACE_URL, f"kiwify-cart:{cart_id}") if cart_id else uuid.uuid4()
 
-        rows.append([
-            str(row_uuid),
-            customer_email,
-            customer_email,
-            customer_name,
-            "",
-            product_name,
-            product_name,
-            checkout_url,
-            cart_id,
-            "pending",
-            "",
-            "",
-            "",
-            "",
-            "kiwify_cart_import",
-            "",
-            payload,
-            "kiwify",
-            "false",
-            "",
- codex/retrieve-historical-abandoned-carts-bgxf1z
-            now_formatted,
-            now_formatted,
-
-            now_iso,
-            now_iso,
- 
-        ])
+        rows.append(
+            [
+                str(row_uuid),
+                customer_email,
+                customer_email,
+                customer_name,
+                "",
+                product_name,
+                product_name,
+                checkout_url,
+                cart_id,
+                "pending",
+                "",
+                "",
+                "",
+                "",
+                "kiwify_cart_import",
+                "",
+                payload,
+                "kiwify",
+                "unknown",
+                "false",
+                "",
+                now_formatted,
+                now_formatted,
+            ]
+        )
 
     return rows
 
