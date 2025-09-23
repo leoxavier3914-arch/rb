@@ -312,8 +312,8 @@ function resolveChannelFromValue(value: string): string | null {
   if (!normalized) return null;
   const padded = ` ${normalized} `;
   if (/\btiktok\b/.test(padded) || normalized.includes('tiktokad')) return 'tiktok';
-  if (/\bfacebook\b/.test(padded) || /\bmeta\b/.test(padded) || /\binstagram\b/.test(padded) || padded.includes(' fb '))
-    return 'facebook';
+  if (/\binstagram\b/.test(padded)) return 'instagram';
+  if (/\bfacebook\b/.test(padded) || /\bmeta\b/.test(padded) || padded.includes(' fb ')) return 'facebook';
   if (/\bgoogle\b/.test(padded) || /\badwords\b/.test(padded) || /\bgads\b/.test(padded)) return 'google';
   if (/\bbing\b/.test(padded) || /\bmicrosoft\b/.test(padded)) return 'bing';
   if (/\bkwai\b/.test(padded)) return 'kwai';
@@ -541,7 +541,8 @@ function extractTrafficSource(
 
   if (!channel) {
     if (hasTrafficHint(context, ['tiktok', 'ttclid', 'ttad', 'ttadgroup', 'tiktokads'])) channel = 'tiktok';
-    else if (hasTrafficHint(context, ['facebook', 'meta', 'instagram', 'fbclid', 'fbads'])) channel = 'facebook';
+    else if (hasTrafficHint(context, ['instagram'])) channel = 'instagram';
+    else if (hasTrafficHint(context, ['facebook', 'meta', 'fbclid', 'fbads'])) channel = 'facebook';
     else if (hasTrafficHint(context, ['google', 'gclid', 'adwords', 'googleads'])) channel = 'google';
     else if (hasTrafficHint(context, ['bing', 'msclkid', 'microsoft'])) channel = 'bing';
     else if (hasTrafficHint(context, ['taboola'])) channel = 'taboola';
@@ -558,11 +559,15 @@ function extractTrafficSource(
   const classification = detectTrafficClassification(mediumContext, params);
 
   const candidateParts: string[] = [];
-  if (classification && classification !== 'unknown' && classification !== channel) {
-    candidateParts.push(classification);
-  }
   if (channel) {
     candidateParts.push(channel);
+  }
+  if (
+    classification &&
+    classification !== 'unknown' &&
+    !candidateParts.includes(classification)
+  ) {
+    candidateParts.push(classification);
   }
 
   let candidate = joinTrafficParts(candidateParts);
