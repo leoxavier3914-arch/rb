@@ -227,6 +227,108 @@ type TrafficContext = {
   paramTokens: Set<string>;
 };
 
+type ChannelHintGroup = {
+  channel: string;
+  hints: string[];
+  strictTokens?: string[];
+};
+
+const CHANNEL_HINT_GROUPS: ChannelHintGroup[] = [
+  {
+    channel: 'tiktok',
+    hints: [
+      'tiktok',
+      'ttclid',
+      'ttad',
+      'ttads',
+      'ttadgroup',
+      'ttcampaign',
+      'tiktokads',
+      'tt pixel',
+      'bt pixel',
+    ],
+    strictTokens: ['tiktok'],
+  },
+  {
+    channel: 'instagram',
+    hints: [
+      'instagram',
+      'instagramads',
+      'igads',
+      'igad',
+      'instaads',
+      'instaad',
+      'igstory',
+      'igreels',
+      'igcampaign',
+    ],
+    strictTokens: ['instagram', 'insta', 'ig'],
+  },
+  {
+    channel: 'facebook',
+    hints: [
+      'facebook',
+      'facebookads',
+      'fbads',
+      'fbadset',
+      'fbcampaign',
+      'fbclid',
+      'meta ads',
+      'metaads',
+      'metapixel',
+      'metacampaign',
+    ],
+    strictTokens: ['facebook', 'fb', 'meta'],
+  },
+  {
+    channel: 'google',
+    hints: ['google', 'googleads', 'adwords', 'gads', 'gclid', 'sem', 'searchads'],
+    strictTokens: ['google'],
+  },
+  {
+    channel: 'bing',
+    hints: ['bing', 'bingads', 'msclkid', 'microsoft'],
+    strictTokens: ['bing'],
+  },
+  { channel: 'taboola', hints: ['taboola'], strictTokens: ['taboola'] },
+  {
+    channel: 'kwai',
+    hints: ['kwai', 'kwaiadid', 'kwaiads'],
+    strictTokens: ['kwai'],
+  },
+  {
+    channel: 'pinterest',
+    hints: ['pinterest', 'pinads'],
+    strictTokens: ['pinterest'],
+  },
+  {
+    channel: 'snapchat',
+    hints: ['snapchat', 'snap ads', 'snapads', 'snap'],
+    strictTokens: ['snapchat', 'snap'],
+  },
+  {
+    channel: 'twitter',
+    hints: ['twitter', 'xads', 'x com', 'x.com', 'twitterads'],
+    strictTokens: ['twitter'],
+  },
+  { channel: 'linkedin', hints: ['linkedin'], strictTokens: ['linkedin'] },
+  {
+    channel: 'youtube',
+    hints: ['youtube', 'youtubeads', 'ytads', 'yt campaign'],
+    strictTokens: ['youtube', 'yt'],
+  },
+  {
+    channel: 'email',
+    hints: ['email', 'newsletter', 'mailing'],
+    strictTokens: ['email'],
+  },
+  {
+    channel: 'whatsapp',
+    hints: ['whatsapp', 'zap', 'wpp', 'whats'],
+    strictTokens: ['whatsapp', 'zap', 'wpp'],
+  },
+];
+
 function buildTrafficContext(values: string[], params: URLSearchParams | null): TrafficContext {
   const tokens = new Set<string>();
   const combined: string[] = [];
@@ -287,6 +389,32 @@ function hasTrafficHint(ctx: TrafficContext, hints: string[]): boolean {
   return false;
 }
 
+function contextHasToken(ctx: TrafficContext, token: string): boolean {
+  const normalized = normalizeTrafficString(token);
+  if (!normalized) return false;
+  if (ctx.tokens.has(normalized) || ctx.paramTokens.has(normalized)) {
+    return true;
+  }
+  const compact = normalized.replace(/ /g, '');
+  if (compact && ctx.paramKeys.has(compact)) {
+    return true;
+  }
+  if (ctx.paramKeys.has(token.toLowerCase())) {
+    return true;
+  }
+  return false;
+}
+
+function detectChannelFromContext(ctx: TrafficContext): string | null {
+  for (const group of CHANNEL_HINT_GROUPS) {
+    const strictMatch = group.strictTokens?.some((token) => contextHasToken(ctx, token));
+    if (strictMatch || hasTrafficHint(ctx, group.hints)) {
+      return group.channel;
+    }
+  }
+  return null;
+}
+
 function joinTrafficParts(parts: Array<string | null | undefined>): string | null {
   const normalized = parts
     .map((part) => (typeof part === 'string' ? part : null))
@@ -310,6 +438,14 @@ function joinTrafficParts(parts: Array<string | null | undefined>): string | nul
 function resolveChannelFromValue(value: string): string | null {
   const normalized = normalizeTrafficString(value);
   if (!normalized) return null;
+ 
+  const context = buildTrafficContext([value], null);
+  const channelFromHints = detectChannelFromContext(context);
+  if (channelFromHints) return channelFromHints;
+  if (/\baffiliate\b/.test(` ${normalized} `) || /\bafiliad[oa]\b/.test(` ${normalized} `) || /\bparceria\b/.test(` ${normalized} `)) {
+    return 'affiliate';
+  }
+
   const padded = ` ${normalized} `;
   if (/\btiktok\b/.test(padded) || normalized.includes('tiktokad')) return 'tiktok';
   if (/\binstagram\b/.test(padded)) return 'instagram';
@@ -328,6 +464,7 @@ function resolveChannelFromValue(value: string): string | null {
   if (/\baffiliate\b/.test(padded) || /\bafiliad[oa]\b/.test(padded) || /\bparceria\b/.test(padded)) return 'affiliate';
   if (/\borganic\b/.test(padded)) return 'organic';
   if (/\bdirect\b/.test(padded)) return 'direct';
+ 
 
   const slug = normalized.replace(/[^a-z0-9]+/g, '.').replace(/\.+/g, '.').replace(/^\.+|\.+$/g, '');
   return slug || null;
@@ -540,6 +677,8 @@ function extractTrafficSource(
   }
 
   if (!channel) {
+    channel = detectChannelFromContext(context);
+
     if (hasTrafficHint(context, ['tiktok', 'ttclid', 'ttad', 'ttadgroup', 'tiktokads'])) channel = 'tiktok';
     else if (hasTrafficHint(context, ['instagram'])) channel = 'instagram';
     else if (hasTrafficHint(context, ['facebook', 'meta', 'fbclid', 'fbads'])) channel = 'facebook';
@@ -554,6 +693,7 @@ function extractTrafficSource(
     else if (hasTrafficHint(context, ['youtube'])) channel = 'youtube';
     else if (hasTrafficHint(context, ['email', 'newsletter'])) channel = 'email';
     else if (hasTrafficHint(context, ['whatsapp', 'wa'])) channel = 'whatsapp';
+ 
   }
 
   const classification = detectTrafficClassification(mediumContext, params);
