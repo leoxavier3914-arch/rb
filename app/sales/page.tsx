@@ -388,7 +388,6 @@ export default async function SalesPage() {
           <Table<SalesPeriodRow>
             columns={periodColumns}
             data={recentPeriods}
-            getRowKey={(row) => row.period}
             emptyMessage="Nenhuma conversão registrada recentemente."
           />
         </section>
