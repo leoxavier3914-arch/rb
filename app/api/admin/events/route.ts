@@ -4,25 +4,34 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL =
-  (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
-if (!SUPABASE_URL) {
-  throw new Error('Missing SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL');
-}
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const ADMIN_TOKEN = (process.env.ADMIN_TOKEN ?? '').trim();
+import { readEnvValue } from '../../../../lib/env';
 
 export async function GET(req: Request) {
+  const adminToken = readEnvValue('ADMIN_TOKEN');
+  const supabaseUrl = readEnvValue('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
+  const supabaseServiceRoleKey = readEnvValue('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    const missingEnv: string[] = [];
+    if (!supabaseUrl) missingEnv.push('SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL');
+    if (!supabaseServiceRoleKey) missingEnv.push('SUPABASE_SERVICE_ROLE_KEY');
+
+    console.error('[events] missing environment variables', missingEnv);
+    return NextResponse.json(
+      { ok: false, error: 'configuration_error', missing: missingEnv },
+      { status: 500 },
+    );
+  }
+
   // auth simples igual às outras rotas admin
-  if (ADMIN_TOKEN) {
+  if (adminToken) {
     const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    if (!token || token !== ADMIN_TOKEN) {
+    if (!token || token !== adminToken) {
       return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
     }
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
     auth: { persistSession: false },
   });
 

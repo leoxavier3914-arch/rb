@@ -6,37 +6,63 @@ import { createClient } from '@supabase/supabase-js';
 import * as emailjs from '@emailjs/nodejs';
 import { applyDiscountToCheckoutUrl } from '../../../../../lib/checkout';
 import { resolveDiscountCode } from '../../../../../lib/cryptoId';
+import { readEnvValue } from '../../../../../lib/env';
 
-const SUPABASE_URL =
-  (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
-if (!SUPABASE_URL) {
-  throw new Error('Missing SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL');
-}
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const ADMIN_TOKEN = (process.env.ADMIN_TOKEN ?? '').trim();
-
-const EMAIL_PUBLIC   = process.env.EMAILJS_PUBLIC_KEY!;
-const EMAIL_PRIVATE  = process.env.EMAILJS_PRIVATE_KEY || ''; // se Strict Mode off, pode ficar vazio
-const EMAIL_SERVICE  = process.env.EMAILJS_SERVICE_ID!;
-const EMAIL_TEMPLATE = process.env.EMAILJS_TEMPLATE_ID!;
 const DEFAULT_DELAY_HOURS =
   Number(
     (process.env.DEFAULT_DELAY_HOURS ?? process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()
   ) || 24;
 const EXPIRE_HOURS   = Number((process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()) || 24;
 
-// init EmailJS (Strict Mode se tiver PRIVATE)
-emailjs.init(EMAIL_PRIVATE ? { publicKey: EMAIL_PUBLIC, privateKey: EMAIL_PRIVATE } : { publicKey: EMAIL_PUBLIC });
+let emailJsInitialized = false;
 
 export async function POST(req: Request) {
+  const adminToken = readEnvValue('ADMIN_TOKEN');
+  const supabaseUrl = readEnvValue('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
+  const supabaseServiceRoleKey = readEnvValue('SUPABASE_SERVICE_ROLE_KEY');
+  const emailServiceId = readEnvValue('EMAILJS_SERVICE_ID', 'NEXT_PUBLIC_EMAILJS_SERVICE_ID');
+  const emailTemplateId = readEnvValue('EMAILJS_TEMPLATE_ID', 'NEXT_PUBLIC_EMAILJS_TEMPLATE_ID');
+  const emailPublicKey = readEnvValue('EMAILJS_PUBLIC_KEY', 'NEXT_PUBLIC_EMAILJS_PUBLIC_KEY');
+  const emailPrivateKey = readEnvValue('EMAILJS_PRIVATE_KEY');
+
+  if (
+    !supabaseUrl ||
+    !supabaseServiceRoleKey ||
+    !emailServiceId ||
+    !emailTemplateId ||
+    !emailPublicKey
+  ) {
+    const missingEnv: string[] = [];
+    if (!supabaseUrl) missingEnv.push('SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL');
+    if (!supabaseServiceRoleKey) missingEnv.push('SUPABASE_SERVICE_ROLE_KEY');
+    if (!emailServiceId) missingEnv.push('EMAILJS_SERVICE_ID/NEXT_PUBLIC_EMAILJS_SERVICE_ID');
+    if (!emailTemplateId) missingEnv.push('EMAILJS_TEMPLATE_ID/NEXT_PUBLIC_EMAILJS_TEMPLATE_ID');
+    if (!emailPublicKey) missingEnv.push('EMAILJS_PUBLIC_KEY/NEXT_PUBLIC_EMAILJS_PUBLIC_KEY');
+
+    console.error('[cron/dispatch] missing environment variables', missingEnv);
+    return NextResponse.json(
+      { ok: false, error: 'configuration_error', missing: missingEnv },
+      { status: 500 },
+    );
+  }
+
+  if (!emailJsInitialized) {
+    emailjs.init(
+      emailPrivateKey
+        ? { publicKey: emailPublicKey, privateKey: emailPrivateKey }
+        : { publicKey: emailPublicKey }
+    );
+    emailJsInitialized = true;
+  }
+
   // proteção simples por token
   const header = req.headers.get('authorization') || '';
   const token = header.replace(/^Bearer\s+/i, '');
-  if (ADMIN_TOKEN && token !== ADMIN_TOKEN) {
+  if (adminToken && token !== adminToken) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
     auth: { persistSession: false },
   });
 
@@ -84,8 +110,8 @@ export async function POST(req: Request) {
       try {
         const discountCode = resolveDiscountCode(r.discount_code);
         await emailjs.send(
-          EMAIL_SERVICE,
-          EMAIL_TEMPLATE,
+          emailServiceId,
+          emailTemplateId,
           {
             to_email: r.email,                            // To Email do template
             title: 'Finalize sua compra • Romeike Beauty',// Subject usa {{title}}
