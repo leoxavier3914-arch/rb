@@ -6,7 +6,12 @@ import Table from './Table';
 import Badge from './Badge';
 import { formatSaoPaulo } from '../lib/dates';
 import type { Sale } from '../lib/types';
-import { getTrafficCategory, getTrafficCategoryLabel, type TrafficCategory } from '../lib/traffic';
+import {
+  getTrafficCategory,
+  getTrafficCategoryLabel,
+  getOrganicPlatformDetail,
+  type TrafficCategory,
+} from '../lib/traffic';
 
 type FilterKey = 'all' | TrafficCategory;
 
@@ -29,7 +34,17 @@ function formatTrafficSource(source: string | null): string {
 
   const category = getTrafficCategory(trimmed);
 
-  if (category === 'organic' || category === 'tiktok') {
+  if (category === 'organic') {
+    const platformDetail = getOrganicPlatformDetail(trimmed);
+
+    if (platformDetail) {
+      return `${getTrafficCategoryLabel(category)} / ${platformDetail}`;
+    }
+
+    return getTrafficCategoryLabel(category);
+  }
+
+  if (category === 'tiktok') {
     return getTrafficCategoryLabel(category);
   }
 
