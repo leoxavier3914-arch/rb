@@ -402,10 +402,21 @@ function extractTrafficSource(
   const hints: string[] = [];
 
   const addValue = (collection: string[], value: any) => {
-    if (typeof value !== 'string') return;
+    if (typeof value !== 'string') return false;
     const trimmed = value.trim();
-    if (!trimmed) return;
+    if (!trimmed) return false;
+    if (collection.includes(trimmed)) return false;
     collection.push(trimmed);
+    return true;
+  };
+
+  const registerTiktokPixelHint = (value: any, detected: string[]) => {
+    if (addValue(hints, value)) {
+      addValue(hints, 'tiktok');
+      detected.push(String(value).trim());
+      return true;
+    }
+    return false;
   };
 
   addValue(
@@ -443,12 +454,37 @@ function extractTrafficSource(
     ) as string | null
   );
 
+  const detectedTikTokPixels: string[] = [];
+
+  for (const key of ['tiktok_pixel_id', 'tt_pixel_id']) {
+    registerTiktokPixelHint(
+      pickByKeys(body, [key], (v) => typeof v === 'string' && v.trim().length > 0) as string | null,
+      detectedTikTokPixels
+    );
+  }
+
+  const genericPixelId = pickByKeys(
+    body,
+    ['pixel_id', 'pixelId'],
+    (v) => typeof v === 'string' && v.trim().length > 0
+  ) as string | null;
+
+  if (genericPixelId && /^(tt|bt)/i.test(genericPixelId.trim())) {
+    registerTiktokPixelHint(genericPixelId, detectedTikTokPixels);
+  }
+
   addValue(
     hints,
-    pickByKeys(body, ['pixel', 'pixel_id', 'pixelId', 'tiktok_pixel_id', 'tt_pixel_id'], (v) =>
+    pickByKeys(body, ['pixel', 'pixel_id', 'pixelId'], (v) =>
       typeof v === 'string' && v.trim().length > 0
     ) as string | null
   );
+
+  if (detectedTikTokPixels.length) {
+    console.log('[kiwify-webhook] detected TikTok pixel hints', {
+      tiktokPixelIds: detectedTikTokPixels,
+    });
+  }
 
   for (const key of ['ttclid', 'fbclid', 'gclid', 'msclkid', 'kwai_adid', 'kwaiAdId']) {
     addValue(
