@@ -1,6 +1,7 @@
 export type TrafficCategory = 'organic' | 'tiktok' | 'other';
 
 const ORGANIC_KEYWORDS = ['organico', 'orgânico', 'organic', 'seo'];
+const TIKTOK_PAID_KEYWORDS = ['paid', 'ads'];
 
 const ORGANIC_PLATFORM_KEYWORDS: { keyword: string; label: string }[] = [
   { keyword: 'tiktok', label: 'TikTok' },
@@ -24,7 +25,11 @@ export function getTrafficCategory(source: string | null | undefined): TrafficCa
   }
 
   if (normalized.includes('tiktok')) {
-    return 'tiktok';
+    const hasPaidIndicator = TIKTOK_PAID_KEYWORDS.some((keyword) =>
+      normalized.includes(keyword),
+    );
+
+    return hasPaidIndicator ? 'tiktok' : 'organic';
   }
 
   return 'other';
