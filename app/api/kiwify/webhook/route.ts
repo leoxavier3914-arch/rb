@@ -48,10 +48,11 @@ function pickByKeys(
   keys: string[],
   test?: (v: any) => boolean
 ): any | null {
+  const normalizedKeys = keys.map((key) => key.toLowerCase());
   let found: any = null;
   deepWalk(obj, (k, v) => {
     if (
-      keys.some((key) => k.toLowerCase() === key) &&
+      normalizedKeys.some((key) => k.toLowerCase() === key) &&
       (test ? test(v) : v != null)
     ) {
       found = v;
