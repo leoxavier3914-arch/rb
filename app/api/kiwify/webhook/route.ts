@@ -48,10 +48,12 @@ function pickByKeys(
   keys: string[],
   test?: (v: any) => boolean
 ): any | null {
+  const normalizedKeys = new Set(keys.map((key) => key.toLowerCase()));
+
   let found: any = null;
   deepWalk(obj, (k, v) => {
     if (
-      keys.some((key) => k.toLowerCase() === key) &&
+      normalizedKeys.has(k.toLowerCase()) &&
       (test ? test(v) : v != null)
     ) {
       found = v;
@@ -390,7 +392,7 @@ function detectTrafficClassification(ctx: TrafficContext, params: URLSearchParam
   return 'unknown';
 }
 
-function extractTrafficSource(
+export function extractTrafficSource(
   body: any,
   checkoutUrl: string | null,
   existingTrafficSource: string | null
@@ -410,47 +412,47 @@ function extractTrafficSource(
 
   addValue(
     sources,
-    pickByKeys(body, ['utm_source', 'utmSource', 'traffic_source', 'campaign_source', 'source_platform', 'marketing_source'], (v) =>
+    pickByKeys(body, ['utm_source', 'utmsource', 'traffic_source', 'campaign_source', 'source_platform', 'marketing_source'], (v) =>
       typeof v === 'string' && v.trim().length > 0
     ) as string | null
   );
 
   addValue(
     hints,
-    pickByKeys(body, ['traffic_channel', 'trafficChannel', 'utm_channel', 'utmChannel', 'channel'], (v) =>
+    pickByKeys(body, ['traffic_channel', 'trafficchannel', 'utm_channel', 'utmchannel', 'channel'], (v) =>
       typeof v === 'string' && v.trim().length > 0
     ) as string | null
   );
 
   addValue(
     mediums,
-    pickByKeys(body, ['utm_medium', 'utmMedium', 'traffic_medium', 'campaign_medium', 'marketing_medium'], (v) =>
+    pickByKeys(body, ['utm_medium', 'utmmedium', 'traffic_medium', 'campaign_medium', 'marketing_medium'], (v) =>
       typeof v === 'string' && v.trim().length > 0
     ) as string | null
   );
 
   addValue(
     hints,
-    pickByKeys(body, ['utm_campaign', 'utmCampaign', 'campaign', 'campaign_name', 'campaignName'], (v) =>
+    pickByKeys(body, ['utm_campaign', 'utmcampaign', 'campaign', 'campaign_name', 'campaignname'], (v) =>
       typeof v === 'string' && v.trim().length > 0
     ) as string | null
   );
 
   addValue(
     hints,
-    pickByKeys(body, ['adset', 'adset_name', 'adsetName', 'adgroup', 'adgroup_name', 'adgroupName', 'ad_name', 'adName'], (v) =>
+    pickByKeys(body, ['adset', 'adset_name', 'adsetname', 'adgroup', 'adgroup_name', 'adgroupname', 'ad_name', 'adname'], (v) =>
       typeof v === 'string' && v.trim().length > 0
     ) as string | null
   );
 
   addValue(
     hints,
-    pickByKeys(body, ['pixel', 'pixel_id', 'pixelId', 'tiktok_pixel_id', 'tt_pixel_id'], (v) =>
+    pickByKeys(body, ['pixel', 'pixel_id', 'pixelid', 'tiktok_pixel_id', 'tt_pixel_id'], (v) =>
       typeof v === 'string' && v.trim().length > 0
     ) as string | null
   );
 
-  for (const key of ['ttclid', 'fbclid', 'gclid', 'msclkid', 'kwai_adid', 'kwaiAdId']) {
+  for (const key of ['ttclid', 'fbclid', 'gclid', 'msclkid', 'kwai_adid', 'kwaiadid']) {
     addValue(
       hints,
       pickByKeys(body, [key], (v) => typeof v === 'string' && v.trim().length > 0) as string | null
@@ -605,23 +607,23 @@ function normalizeTimestampInput(value: any): string | null {
 function findPaidAtDeep(obj: any): string | null {
   const keys = [
     'paid_at',
-    'paidAt',
+    'paidat',
     'payment_date',
-    'paymentDate',
+    'paymentdate',
     'payment_at',
-    'paymentAt',
+    'paymentat',
     'approved_at',
-    'approvedAt',
+    'approvedat',
     'completed_at',
-    'completedAt',
+    'completedat',
     'concluded_at',
-    'concludedAt',
+    'concludedat',
     'finished_at',
-    'finishedAt',
+    'finishedat',
     'confirmed_at',
-    'confirmedAt',
+    'confirmedat',
     'captured_at',
-    'capturedAt',
+    'capturedat',
   ];
   const raw = pickByKeys(obj, keys, (v) => v != null && v !== '');
   return normalizeTimestampInput(raw);
