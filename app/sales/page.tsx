@@ -25,7 +25,6 @@ async function fetchSales(): Promise<Sale[]> {
     const { data, error } = await supabase
       .from('abandoned_emails')
       .select('*')
-      .or('paid.eq.true,status.eq.converted')
       .order('paid_at', { ascending: false });
 
     if (error) {
@@ -35,10 +34,19 @@ async function fetchSales(): Promise<Sale[]> {
 
     const rows = (data ?? []) as Record<string, any>[];
 
-    return rows.map((row) => {
+    const filteredRows = rows.filter((row) => {
+      const normalizedStatus = clean(row.status).toLowerCase();
+      const paid = Boolean(row.paid);
+      const isConverted = normalizedStatus === 'converted' || normalizedStatus === 'convertido';
+      return paid || isConverted;
+    });
+
+    return filteredRows.map((row) => {
       const payload = (row?.payload ?? {}) as Record<string, unknown>;
       const productFromPayload = clean(payload.product_name) || clean(payload.offer_name);
       const trafficFromPayload = clean(payload.traffic_source);
+      const status = clean(row.status);
+      const paid = Boolean(row.paid);
 
       return {
         id: String(row.id),
@@ -47,7 +55,7 @@ async function fetchSales(): Promise<Sale[]> {
         product_name:
           clean(row.product_name) || clean(row.product_title) || productFromPayload || null,
         product_id: clean(row.product_id) || null,
-        status: clean(row.status) || (row.paid ? 'converted' : null),
+        status: status || (paid ? 'converted' : null),
         paid_at: row.paid_at ?? null,
         traffic_source: clean(row.traffic_source) || trafficFromPayload || null,
       } satisfies Sale;
