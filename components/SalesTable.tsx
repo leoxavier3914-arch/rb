@@ -23,13 +23,17 @@ type SalesTableProps = {
 
 function formatTrafficSource(source: string | null): string {
   const trimmed = typeof source === 'string' ? source.trim() : '';
+  if (!trimmed || trimmed.toLowerCase() === 'unknown') {
+    return 'Outros canais';
+  }
+
   const category = getTrafficCategory(trimmed);
 
   if (category === 'organic' || category === 'tiktok') {
     return getTrafficCategoryLabel(category);
   }
 
-  return trimmed || 'Outros canais';
+  return trimmed;
 }
 
 export default function SalesTable({ sales }: SalesTableProps) {
