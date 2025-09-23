@@ -354,6 +354,9 @@ function detectTrafficClassification(ctx: TrafficContext, params: URLSearchParam
   const referralTokens = ['referral', 'indicacao', 'indication', 'referencia', 'referido'];
   if (hasTrafficHint(ctx, referralTokens)) return 'referral';
 
+  const organicTokens = ['organic', 'organico', 'gratis', 'free', 'seo', 'blog', 'conteudo', 'content', 'direct'];
+  const hasOrganicHint = hasTrafficHint(ctx, organicTokens);
+
   const paidTokens = [
     'paid',
     'pago',
@@ -376,17 +379,26 @@ function detectTrafficClassification(ctx: TrafficContext, params: URLSearchParam
     'paid search',
   ];
 
-  const paidParamIndicators = ['fbclid', 'gclid', 'ttclid', 'msclkid', 'kwai', 'adset', 'adgroup', 'campaign_id', 'ad_id'];
+  const paidParamIndicators = ['fbclid', 'gclid', 'msclkid', 'kwai', 'adset', 'adgroup', 'campaign_id', 'ad_id'];
   const hasPaidParam = params
     ? Array.from(params.keys()).some((key) =>
         paidParamIndicators.some((indicator) => key.toLowerCase().includes(indicator))
       )
     : false;
+  const hasPaidHint = hasTrafficHint(ctx, paidTokens);
 
-  if (hasTrafficHint(ctx, paidTokens) || hasPaidParam) return 'paid';
+  const tiktokTokens = ['tiktok', 'ttclid', 'ttad', 'ttadgroup', 'tiktokads'];
+  const hasTiktokHint = hasTrafficHint(ctx, tiktokTokens);
 
-  const organicTokens = ['organic', 'organico', 'gratis', 'free', 'seo', 'blog', 'conteudo', 'content', 'direct'];
-  if (hasTrafficHint(ctx, organicTokens)) return 'organic';
+  if (hasOrganicHint) return 'organic';
+
+  if (hasTiktokHint && !hasPaidHint && !hasPaidParam) {
+    return 'organic';
+  }
+
+  if (hasPaidHint || hasPaidParam) return 'paid';
+
+  if (hasTiktokHint) return 'organic';
 
   return 'unknown';
 }
