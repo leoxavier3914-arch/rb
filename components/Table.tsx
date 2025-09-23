@@ -1,3 +1,5 @@
+'use client';
+
 import clsx from 'clsx';
 import { Fragment, type Key, type ReactNode } from 'react';
 
