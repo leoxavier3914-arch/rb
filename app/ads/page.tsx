@@ -62,10 +62,11 @@ export default async function AdsPage() {
   }
 
   const ads = await fetchAdsPerformance();
+  const tiktokAds = ads.filter((item) => item.utmCampaign?.trim().toLowerCase() === 'adstiktok');
 
   const adClicks = aggregateMetric(ads.map((item) => item.adClicks));
   const ctaClicks = aggregateMetric(ads.map((item) => item.ctaClicks));
-  const abandonedCarts = ads.reduce((sum, item) => sum + item.abandonedCarts, 0);
+  const abandonedCarts = tiktokAds.reduce((sum, item) => sum + item.abandonedCarts, 0);
   const paymentsApproved = ads.reduce((sum, item) => sum + item.paymentsApproved, 0);
 
   return (
