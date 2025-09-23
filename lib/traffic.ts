@@ -13,12 +13,12 @@ export function getTrafficCategory(source: string | null | undefined): TrafficCa
     return 'other';
   }
 
-  if (normalized.includes('tiktok')) {
-    return 'tiktok';
-  }
-
   if (ORGANIC_KEYWORDS.some((keyword) => normalized.includes(keyword))) {
     return 'organic';
+  }
+
+  if (normalized.includes('tiktok')) {
+    return 'tiktok';
   }
 
   return 'other';
