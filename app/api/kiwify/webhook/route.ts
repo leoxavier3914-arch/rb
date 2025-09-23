@@ -202,6 +202,357 @@ function findCheckoutUrlDeep(obj: any): string | null {
   return best;
 }
 
+function parseCheckoutSearchParams(url: string | null | undefined): URLSearchParams | null {
+  if (!url) return null;
+  try {
+    return new URL(url).searchParams;
+  } catch {
+    try {
+      return new URL(url, 'https://example.com').searchParams;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function normalizeTrafficString(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+type TrafficContext = {
+  tokens: Set<string>;
+  combined: string[];
+  paramKeys: Set<string>;
+  paramTokens: Set<string>;
+};
+
+function buildTrafficContext(values: string[], params: URLSearchParams | null): TrafficContext {
+  const tokens = new Set<string>();
+  const combined: string[] = [];
+  const paramKeys = new Set<string>();
+  const paramTokens = new Set<string>();
+
+  const addValue = (raw: string | null | undefined) => {
+    if (!raw) return;
+    const normalized = normalizeTrafficString(String(raw));
+    if (!normalized) return;
+    combined.push(normalized);
+    for (const token of normalized.split(' ')) {
+      if (token) tokens.add(token);
+    }
+  };
+
+  for (const value of values) {
+    addValue(value);
+  }
+
+  if (params) {
+    for (const [key, value] of Array.from(params.entries())) {
+      const lowerKey = key.toLowerCase();
+      paramKeys.add(lowerKey);
+      addValue(lowerKey);
+      addValue(value);
+      for (const token of lowerKey.split(/[^a-z0-9]+/)) {
+        if (token) paramTokens.add(token);
+      }
+      for (const token of value.toLowerCase().split(/[^a-z0-9]+/)) {
+        if (token) paramTokens.add(token);
+      }
+    }
+  }
+
+  return { tokens, combined, paramKeys, paramTokens };
+}
+
+function hasTrafficHint(ctx: TrafficContext, hints: string[]): boolean {
+  for (const hint of hints) {
+    const normalized = normalizeTrafficString(hint);
+    if (!normalized) continue;
+    const tokens = normalized.split(' ');
+    if (tokens.some((token) => ctx.tokens.has(token) || ctx.paramTokens.has(token))) {
+      return true;
+    }
+    const compact = normalized.replace(/ /g, '');
+    if (compact && ctx.paramKeys.has(compact)) {
+      return true;
+    }
+    if (ctx.paramKeys.has(hint.toLowerCase())) {
+      return true;
+    }
+    for (const value of ctx.combined) {
+      if (value.includes(normalized)) return true;
+    }
+  }
+  return false;
+}
+
+function joinTrafficParts(parts: Array<string | null | undefined>): string | null {
+  const normalized = parts
+    .map((part) => (typeof part === 'string' ? part : null))
+    .filter((part): part is string => !!part && !!part.trim())
+    .map((part) =>
+      part
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '.')
+        .replace(/\.+/g, '.')
+        .replace(/^\.+|\.+$/g, '')
+    )
+    .filter(Boolean);
+
+  if (!normalized.length) return null;
+  return normalized.join('.');
+}
+
+function resolveChannelFromValue(value: string): string | null {
+  const normalized = normalizeTrafficString(value);
+  if (!normalized) return null;
+  const padded = ` ${normalized} `;
+  if (/\btiktok\b/.test(padded) || normalized.includes('tiktokad')) return 'tiktok';
+  if (/\bfacebook\b/.test(padded) || /\bmeta\b/.test(padded) || /\binstagram\b/.test(padded) || padded.includes(' fb '))
+    return 'facebook';
+  if (/\bgoogle\b/.test(padded) || /\badwords\b/.test(padded) || /\bgads\b/.test(padded)) return 'google';
+  if (/\bbing\b/.test(padded) || /\bmicrosoft\b/.test(padded)) return 'bing';
+  if (/\bkwai\b/.test(padded)) return 'kwai';
+  if (/\btaboola\b/.test(padded)) return 'taboola';
+  if (/\bpinterest\b/.test(padded)) return 'pinterest';
+  if (/\bsnap(chat)?\b/.test(padded) || padded.includes(' snap ')) return 'snapchat';
+  if (/\btwitter\b/.test(padded) || /\bxads?\b/.test(padded) || normalized.includes('x.com')) return 'twitter';
+  if (/\blinked?in\b/.test(padded)) return 'linkedin';
+  if (/\byoutube\b/.test(padded)) return 'youtube';
+  if (/\bwhatsapp\b/.test(padded) || padded.includes(' wa ')) return 'whatsapp';
+  if (/\bemail\b/.test(padded) || normalized.includes('newsletter')) return 'email';
+  if (/\baffiliate\b/.test(padded) || /\bafiliad[oa]\b/.test(padded) || /\bparceria\b/.test(padded)) return 'affiliate';
+  if (/\borganic\b/.test(padded)) return 'organic';
+  if (/\bdirect\b/.test(padded)) return 'direct';
+
+  const slug = normalized.replace(/[^a-z0-9]+/g, '.').replace(/\.+/g, '.').replace(/^\.+|\.+$/g, '');
+  return slug || null;
+}
+
+function detectTrafficClassification(ctx: TrafficContext, params: URLSearchParams | null): string {
+  const affiliateTokens = [
+    'affiliate',
+    'affiliates',
+    'afiliado',
+    'afiliada',
+    'afiliados',
+    'afiliadas',
+    'afiliacao',
+    'parceria',
+    'parceiro',
+    'parceira',
+  ];
+  if (hasTrafficHint(ctx, affiliateTokens)) return 'affiliate';
+
+  const emailTokens = ['email', 'newsletter', 'mailing'];
+  if (hasTrafficHint(ctx, emailTokens)) return 'email';
+
+  const referralTokens = ['referral', 'indicacao', 'indication', 'referencia', 'referido'];
+  if (hasTrafficHint(ctx, referralTokens)) return 'referral';
+
+  const paidTokens = [
+    'paid',
+    'pago',
+    'midia paga',
+    'midiapaga',
+    'trafego pago',
+    'trafegopago',
+    'ads',
+    'ad',
+    'cpc',
+    'cpa',
+    'cpp',
+    'cpm',
+    'ppc',
+    'display',
+    'remarketing',
+    'retargeting',
+    'sponsored',
+    'paid social',
+    'paid search',
+  ];
+
+  const paidParamIndicators = ['fbclid', 'gclid', 'ttclid', 'msclkid', 'kwai', 'adset', 'adgroup', 'campaign_id', 'ad_id'];
+  const hasPaidParam = params
+    ? Array.from(params.keys()).some((key) =>
+        paidParamIndicators.some((indicator) => key.toLowerCase().includes(indicator))
+      )
+    : false;
+
+  if (hasTrafficHint(ctx, paidTokens) || hasPaidParam) return 'paid';
+
+  const organicTokens = ['organic', 'organico', 'gratis', 'free', 'seo', 'blog', 'conteudo', 'content', 'direct'];
+  if (hasTrafficHint(ctx, organicTokens)) return 'organic';
+
+  return 'unknown';
+}
+
+function extractTrafficSource(
+  body: any,
+  checkoutUrl: string | null,
+  existingTrafficSource: string | null
+): string | null {
+  const params = parseCheckoutSearchParams(checkoutUrl);
+
+  const sources: string[] = [];
+  const mediums: string[] = [];
+  const hints: string[] = [];
+
+  const addValue = (collection: string[], value: any) => {
+    if (typeof value !== 'string') return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    collection.push(trimmed);
+  };
+
+  addValue(
+    sources,
+    pickByKeys(body, ['utm_source', 'utmSource', 'traffic_source', 'campaign_source', 'source_platform', 'marketing_source'], (v) =>
+      typeof v === 'string' && v.trim().length > 0
+    ) as string | null
+  );
+
+  addValue(
+    hints,
+    pickByKeys(body, ['traffic_channel', 'trafficChannel', 'utm_channel', 'utmChannel', 'channel'], (v) =>
+      typeof v === 'string' && v.trim().length > 0
+    ) as string | null
+  );
+
+  addValue(
+    mediums,
+    pickByKeys(body, ['utm_medium', 'utmMedium', 'traffic_medium', 'campaign_medium', 'marketing_medium'], (v) =>
+      typeof v === 'string' && v.trim().length > 0
+    ) as string | null
+  );
+
+  addValue(
+    hints,
+    pickByKeys(body, ['utm_campaign', 'utmCampaign', 'campaign', 'campaign_name', 'campaignName'], (v) =>
+      typeof v === 'string' && v.trim().length > 0
+    ) as string | null
+  );
+
+  addValue(
+    hints,
+    pickByKeys(body, ['adset', 'adset_name', 'adsetName', 'adgroup', 'adgroup_name', 'adgroupName', 'ad_name', 'adName'], (v) =>
+      typeof v === 'string' && v.trim().length > 0
+    ) as string | null
+  );
+
+  addValue(
+    hints,
+    pickByKeys(body, ['pixel', 'pixel_id', 'pixelId', 'tiktok_pixel_id', 'tt_pixel_id'], (v) =>
+      typeof v === 'string' && v.trim().length > 0
+    ) as string | null
+  );
+
+  for (const key of ['ttclid', 'fbclid', 'gclid', 'msclkid', 'kwai_adid', 'kwaiAdId']) {
+    addValue(
+      hints,
+      pickByKeys(body, [key], (v) => typeof v === 'string' && v.trim().length > 0) as string | null
+    );
+  }
+
+  if (params) {
+    const param = (key: string) => params.get(key);
+    addValue(sources, param('utm_source'));
+    addValue(sources, param('source'));
+    addValue(sources, param('utm_platform'));
+    addValue(sources, param('utm_channel'));
+    addValue(sources, param('traffic_source'));
+    addValue(mediums, param('utm_medium'));
+    addValue(mediums, param('medium'));
+    addValue(mediums, param('traffic_medium'));
+    addValue(hints, param('utm_campaign'));
+    addValue(hints, param('utm_content'));
+    addValue(hints, param('utm_term'));
+    addValue(hints, param('utm_id'));
+    addValue(hints, param('utm_source_platform'));
+    addValue(hints, param('adset_name'));
+    addValue(hints, param('campaign_name'));
+    addValue(hints, param('ttclid'));
+    addValue(hints, param('fbclid'));
+    addValue(hints, param('gclid'));
+    addValue(hints, param('msclkid'));
+    addValue(hints, param('kwai_adid'));
+  }
+
+  const context = buildTrafficContext([...sources, ...mediums, ...hints], params);
+  const mediumContext = buildTrafficContext([...mediums, ...hints], params);
+
+  let channel: string | null = null;
+  for (const candidate of [...sources, ...hints]) {
+    channel = resolveChannelFromValue(candidate);
+    if (channel) break;
+  }
+
+  if (!channel) {
+    if (hasTrafficHint(context, ['tiktok', 'ttclid', 'ttad', 'ttadgroup', 'tiktokads'])) channel = 'tiktok';
+    else if (hasTrafficHint(context, ['facebook', 'meta', 'instagram', 'fbclid', 'fbads'])) channel = 'facebook';
+    else if (hasTrafficHint(context, ['google', 'gclid', 'adwords', 'googleads'])) channel = 'google';
+    else if (hasTrafficHint(context, ['bing', 'msclkid', 'microsoft'])) channel = 'bing';
+    else if (hasTrafficHint(context, ['taboola'])) channel = 'taboola';
+    else if (hasTrafficHint(context, ['kwai'])) channel = 'kwai';
+    else if (hasTrafficHint(context, ['pinterest', 'pin'])) channel = 'pinterest';
+    else if (hasTrafficHint(context, ['snapchat', 'snap'])) channel = 'snapchat';
+    else if (hasTrafficHint(context, ['twitter', 'xads', 'x com'])) channel = 'twitter';
+    else if (hasTrafficHint(context, ['linkedin'])) channel = 'linkedin';
+    else if (hasTrafficHint(context, ['youtube'])) channel = 'youtube';
+    else if (hasTrafficHint(context, ['email', 'newsletter'])) channel = 'email';
+    else if (hasTrafficHint(context, ['whatsapp', 'wa'])) channel = 'whatsapp';
+  }
+
+  const classification = detectTrafficClassification(mediumContext, params);
+
+  const candidateParts: string[] = [];
+  if (classification && classification !== 'unknown' && classification !== channel) {
+    candidateParts.push(classification);
+  }
+  if (channel) {
+    candidateParts.push(channel);
+  }
+
+  let candidate = joinTrafficParts(candidateParts);
+
+  if (!candidate) {
+    for (const value of sources) {
+      const normalized = resolveChannelFromValue(value);
+      if (normalized) {
+        candidate = normalized;
+        break;
+      }
+    }
+  }
+
+  if (!candidate && classification && classification !== 'unknown') {
+    candidate = joinTrafficParts([classification]);
+  }
+
+  if (!candidate) {
+    return existingTrafficSource ?? null;
+  }
+
+  if (existingTrafficSource && existingTrafficSource !== 'unknown') {
+    const existingSpecific = existingTrafficSource.includes('.');
+    const candidateSpecific = candidate.includes('.');
+    if (!candidateSpecific && existingSpecific) {
+      return existingTrafficSource;
+    }
+  }
+
+  return candidate;
+}
+
 function findDiscountDeep(obj: any): string | null {
   const byKey = pickByKeys(
     obj,
@@ -525,7 +876,7 @@ export async function POST(req: Request) {
   const { data: existing, error: fetchError } = await supabase
     .from('abandoned_emails')
     .select(
-      'id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, customer_name, product_title'
+      'id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title'
     )
     .eq('checkout_id', checkoutId)
     .maybeSingle();
@@ -538,6 +889,12 @@ export async function POST(req: Request) {
   const productTitle =
     productTitleFromPayload ?? existing?.product_title ?? 'Carrinho (Kiwify)';
   const checkoutUrl = checkoutUrlFromPayload ?? existing?.checkout_url ?? null;
+  const trafficSource =
+    extractTrafficSource(
+      body,
+      checkoutUrlFromPayload ?? existing?.checkout_url ?? null,
+      existing?.traffic_source ?? null,
+    ) ?? existing?.traffic_source ?? 'unknown';
   const discountCode =
     discountCodeFromPayload ??
     existing?.discount_code ??
@@ -572,6 +929,7 @@ export async function POST(req: Request) {
     productTitle,
     checkoutUrl,
     discountCode: discountCode ?? null,
+    trafficSource,
     paid,
     paidAt,
     status,
@@ -603,6 +961,7 @@ export async function POST(req: Request) {
     discount_code: discountCode,
     schedule_at: scheduleAt,
     source,
+    traffic_source: trafficSource,
     updated_at: now.toISOString(),
     last_event: lastEvent,
   };

@@ -29,7 +29,9 @@ export async function GET(req: Request) {
   // busca também o payload para usar como fallback
   const { data, error } = await supabase
     .from('abandoned_emails')
-    .select('id,email,customer_name,product_title,checkout_url,discount_code,status,schedule_at,updated_at,source,payload')
+    .select(
+      'id,email,customer_name,product_title,checkout_url,discount_code,status,schedule_at,updated_at,source,traffic_source,payload'
+    )
     .order('updated_at', { ascending: false })
     .limit(50);
 

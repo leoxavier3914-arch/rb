@@ -14,6 +14,7 @@ export type AbandonedCart = {
   created_at: string | null;
   updated_at: string | null;
   checkout_url?: string | null;
+  traffic_source?: string | null;
 };
 
 export type Sale = {
