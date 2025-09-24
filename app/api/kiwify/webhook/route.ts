@@ -1097,7 +1097,9 @@ async function propagateConvertedStatus(args: {
 
   const emailColumns: Array<'customer_email' | 'email'> = ['customer_email', 'email'];
 
-  for (const variant of emailVariants) {
+  const emailVariantList = Array.from(emailVariants);
+
+  for (const variant of emailVariantList) {
     for (const column of emailColumns) {
       const query = supabase
         .from('abandoned_emails')
