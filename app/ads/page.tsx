@@ -62,12 +62,20 @@ export default async function AdsPage() {
   }
 
   const ads = await fetchAdsPerformance();
-  const tiktokAds = ads.filter((item) => item.utmCampaign?.trim().toLowerCase() === 'adstiktok');
+  const paidCampaignAds = ads.filter((item) => {
+    const medium = item.utmMedium?.trim().toLowerCase();
+    const campaign = item.utmCampaign?.trim();
 
-  const adClicks = aggregateMetric(ads.map((item) => item.adClicks));
-  const ctaClicks = aggregateMetric(ads.map((item) => item.ctaClicks));
+    return Boolean(campaign) && medium === 'paid';
+  });
+  const tiktokAds = paidCampaignAds.filter(
+    (item) => item.utmCampaign?.trim().toLowerCase() === 'adstiktok',
+  );
+
+  const adClicks = aggregateMetric(paidCampaignAds.map((item) => item.adClicks));
+  const ctaClicks = aggregateMetric(paidCampaignAds.map((item) => item.ctaClicks));
   const abandonedCarts = tiktokAds.reduce((sum, item) => sum + item.abandonedCarts, 0);
-  const paymentsApproved = ads.reduce((sum, item) => sum + item.paymentsApproved, 0);
+  const paymentsApproved = paidCampaignAds.reduce((sum, item) => sum + item.paymentsApproved, 0);
 
   return (
     <main className="flex flex-1 flex-col gap-10 pb-10">
@@ -118,7 +126,7 @@ export default async function AdsPage() {
           </p>
         </div>
 
-        <AdsTable ads={ads} />
+        <AdsTable ads={paidCampaignAds} />
       </section>
     </main>
   );
