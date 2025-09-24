@@ -4,11 +4,7 @@ import { useMemo } from 'react';
 import Table from './Table';
 import Badge from './Badge';
 import { formatSaoPaulo } from '../lib/dates';
-import {
-  getTrafficCategory,
-  getTrafficCategoryLabel,
-  getOrganicPlatformDetail,
-} from '../lib/traffic';
+import { formatTrafficSourceLabel } from '../lib/traffic';
 import { type AdPerformance, type AdMetricValue } from '../lib/ads';
 import type { ReactNode } from 'react';
 
@@ -30,29 +26,6 @@ function formatMetric(metric: AdMetricValue): ReactNode {
       {metric.estimated ? <Badge variant="pending">Estimado</Badge> : null}
     </span>
   );
-}
-
-function formatTrafficSource(source: string | null): string {
-  const trimmed = typeof source === 'string' ? source.trim() : '';
-  if (!trimmed || trimmed.toLowerCase() === 'unknown') {
-    return 'Outros canais';
-  }
-
-  const category = getTrafficCategory(trimmed);
-
-  if (category === 'organic') {
-    const platformDetail = getOrganicPlatformDetail(trimmed);
-    if (platformDetail) {
-      return `${getTrafficCategoryLabel(category)} / ${platformDetail}`;
-    }
-    return getTrafficCategoryLabel(category);
-  }
-
-  if (category === 'tiktok') {
-    return getTrafficCategoryLabel(category);
-  }
-
-  return trimmed;
 }
 
 function formatConversionRate(value: number | null): string {
@@ -86,7 +59,7 @@ export default function AdsTable({ ads }: AdsTableProps) {
       {
         key: 'trafficSource' as const,
         header: 'Canal',
-        render: (ad: AdPerformance) => formatTrafficSource(ad.trafficSource),
+        render: (ad: AdPerformance) => formatTrafficSourceLabel(ad.trafficSource),
       },
       {
         key: 'adClicks' as const,

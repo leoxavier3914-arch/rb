@@ -683,8 +683,17 @@ export function extractTrafficSource(
           .filter((part) => part && part !== 'email')
       : [];
 
+    const hasClassification = baseParts.some((part) => part === 'paid' || part === 'organic');
+    const normalizedClassification = normalizeCandidate(classification);
+    const classificationToken =
+      normalizedClassification && (normalizedClassification === 'paid' || normalizedClassification === 'organic')
+        ? normalizedClassification
+        : null;
+
     if (!baseParts.length) {
-      baseParts.push('organic');
+      baseParts.push(classificationToken ?? 'organic');
+    } else if (!hasClassification) {
+      baseParts.push(classificationToken ?? 'organic');
     }
 
     const manualSource = joinTrafficParts([...baseParts, 'email']);
