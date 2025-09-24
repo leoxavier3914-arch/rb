@@ -457,6 +457,27 @@ function mergeCheckoutUrlWithTracking(
   }
 }
 
+const MANUAL_TRACKING_PARAM_KEYS = ['rb_manual'];
+
+function detectManualReminder(params: URLSearchParams | null): string | null {
+  if (!params) return null;
+
+  for (const key of params.keys()) {
+    const normalizedKey = key.trim().toLowerCase();
+    if (MANUAL_TRACKING_PARAM_KEYS.includes(normalizedKey)) {
+      const value = params.get(key);
+      if (typeof value === 'string') {
+        const trimmed = value.trim().toLowerCase();
+        if (trimmed) {
+          return trimmed;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 function normalizeTrafficString(value: string): string {
   return value
     .trim()
@@ -786,12 +807,13 @@ function detectTrafficClassification(ctx: TrafficContext, params: URLSearchParam
   return 'unknown';
 }
 
-function extractTrafficSource(
+export function extractTrafficSource(
   body: any,
   checkoutUrl: string | null,
   existingTrafficSource: string | null
 ): string | null {
   const params = parseCheckoutSearchParams(checkoutUrl);
+  const manualReminder = detectManualReminder(params);
 
   const sources: string[] = [];
   const mediums: string[] = [];
@@ -1008,19 +1030,56 @@ function extractTrafficSource(
     candidate = joinTrafficParts([classification]);
   }
 
-  if (!candidate) {
-    return existingTrafficSource ?? null;
-  }
+  let resolvedCandidate: string | null;
 
-  if (existingTrafficSource && existingTrafficSource !== 'unknown') {
+  if (!candidate) {
+    resolvedCandidate = existingTrafficSource ?? null;
+  } else if (existingTrafficSource && existingTrafficSource !== 'unknown') {
     const existingSpecific = existingTrafficSource.includes('.');
     const candidateSpecific = candidate.includes('.');
-    if (!candidateSpecific && existingSpecific) {
-      return existingTrafficSource;
-    }
+    resolvedCandidate = !candidateSpecific && existingSpecific ? existingTrafficSource : candidate;
+  } else {
+    resolvedCandidate = candidate;
   }
 
-  return candidate;
+  if (manualReminder === 'email') {
+    const normalizeCandidate = (value: string | null | undefined): string | null => {
+      if (typeof value !== 'string') return null;
+      const normalized = value.trim().toLowerCase();
+      if (!normalized || normalized === 'unknown') return null;
+      return normalized;
+    };
+
+    const resolvedNormalized = normalizeCandidate(resolvedCandidate);
+    const existingNormalized = normalizeCandidate(existingTrafficSource);
+    const candidateNormalized = normalizeCandidate(candidate);
+
+    const isEmailLike = (value: string | null) =>
+      !value ? false : value === 'email' || value.endsWith('.email');
+
+    const baseCandidate =
+      (resolvedNormalized && !isEmailLike(resolvedNormalized) && resolvedNormalized) ||
+      (existingNormalized && !isEmailLike(existingNormalized) && existingNormalized) ||
+      (candidateNormalized && !isEmailLike(candidateNormalized) && candidateNormalized) ||
+      (existingNormalized && existingNormalized !== 'email' && existingNormalized) ||
+      null;
+
+    const baseParts = baseCandidate
+      ? baseCandidate
+          .split('.')
+          .map((part) => part.trim())
+          .filter((part) => part && part !== 'email')
+      : [];
+
+    if (!baseParts.length) {
+      baseParts.push('organic');
+    }
+
+    const manualSource = joinTrafficParts([...baseParts, 'email']);
+    return manualSource ?? 'organic.email';
+  }
+
+  return resolvedCandidate;
 }
 
 function findDiscountDeep(obj: any): string | null {
