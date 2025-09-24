@@ -138,18 +138,24 @@ export async function POST(request: NextRequest) {
     expires_at: expiresAt,
   };
 
-  const response = await fetch(EMAILJS_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      service_id: serviceId,
-      template_id: templateId,
-      user_id: publicKey,
-      template_params: templateParams,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(EMAILJS_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        service_id: serviceId,
+        template_id: templateId,
+        user_id: publicKey,
+        template_params: templateParams,
+      }),
+    });
+  } catch (error) {
+    console.error('[kiwify-hub] falha ao contatar EmailJS', error);
+    return NextResponse.json({ error: 'Falha ao enviar e-mail.' }, { status: 502 });
+  }
 
   if (!response.ok) {
     const message = await response.text();
@@ -157,13 +163,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Falha ao enviar e-mail.' }, { status: 502 });
   }
 
+  const now = new Date().toISOString();
+  const nextStatus = record.status === 'converted' ? record.status : 'sent';
+
   const { error: updateError } = await supabase
     .from('abandoned_emails')
     .update({
-      status: 'sent',
+      status: nextStatus,
       discount_code: resolvedDiscount,
       expires_at: expiresAt,
       last_event: 'manual.email.sent',
+      last_reminder_at: now,
+      updated_at: now,
     })
     .eq('id', id);
 
