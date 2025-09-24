@@ -6,12 +6,7 @@ import Table from './Table';
 import Badge from './Badge';
 import { formatSaoPaulo } from '../lib/dates';
 import type { Sale } from '../lib/types';
-import {
-  getTrafficCategory,
-  getTrafficCategoryLabel,
-  getOrganicPlatformDetail,
-  type TrafficCategory,
-} from '../lib/traffic';
+import { getTrafficCategory, type TrafficCategory, formatTrafficSourceLabel } from '../lib/traffic';
 
 type FilterKey = 'all' | TrafficCategory;
 
@@ -25,31 +20,6 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 type SalesTableProps = {
   sales: Sale[];
 };
-
-function formatTrafficSource(source: string | null): string {
-  const trimmed = typeof source === 'string' ? source.trim() : '';
-  if (!trimmed || trimmed.toLowerCase() === 'unknown') {
-    return 'Outros canais';
-  }
-
-  const category = getTrafficCategory(trimmed);
-
-  if (category === 'organic') {
-    const platformDetail = getOrganicPlatformDetail(trimmed);
-
-    if (platformDetail) {
-      return `${getTrafficCategoryLabel(category)} / ${platformDetail}`;
-    }
-
-    return getTrafficCategoryLabel(category);
-  }
-
-  if (category === 'tiktok') {
-    return getTrafficCategoryLabel(category);
-  }
-
-  return trimmed;
-}
 
 export default function SalesTable({ sales }: SalesTableProps) {
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -98,7 +68,7 @@ export default function SalesTable({ sales }: SalesTableProps) {
       {
         key: 'traffic_source' as const,
         header: 'Origem',
-        render: (sale: Sale) => formatTrafficSource(sale.traffic_source),
+        render: (sale: Sale) => formatTrafficSourceLabel(sale.traffic_source),
       },
       {
         key: 'paid_at' as const,
