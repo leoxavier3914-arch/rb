@@ -29,22 +29,330 @@ function normalizeEmail(value) {
   return normalized ? normalized.toLowerCase() : null;
 }
 
-function normalizeProductComponent(row) {
-  const candidates = [row.product_id, row.productId, row.product_title, row.productTitle, row.product_name];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
+function deepWalk(obj, visit, path = []) {
+  if (obj === null || obj === undefined) return false;
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i += 1) {
+      if (deepWalk(obj[i], visit, [...path, String(i)])) return true;
+    }
+    return false;
+  }
+  if (typeof obj === 'object') {
+    for (const [key, value] of Object.entries(obj)) {
+      if (visit(key, value, [...path, key]) || deepWalk(value, visit, [...path, key])) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+function pickByKeys(obj, keys, test) {
+  if (!obj || typeof obj !== 'object') return null;
+  const normalizedKeys = keys.map((key) => key.toLowerCase());
+  let found = null;
+  deepWalk(obj, (key, value) => {
+    if (normalizedKeys.some((candidate) => candidate === key.toLowerCase()) && (!test || test(value))) {
+      found = value;
+      return true;
+    }
+    return false;
+  });
+  return found;
+}
+
+function findEmailDeep(obj) {
+  const byKey = pickByKeys(
+    obj,
+    ['email', 'customer_email', 'buyer_email', 'user_email', 'mail'],
+    (value) => typeof value === 'string' && EMAIL_RE.test(value),
+  );
+  if (byKey) return String(byKey);
+
+  let found = null;
+  deepWalk(obj, (_key, value) => {
+    if (typeof value === 'string' && EMAIL_RE.test(value)) {
+      found = value;
+      return true;
+    }
+    return false;
+  });
+  return found;
+}
+
+function findProductNameDeep(obj) {
+  const preferred = pickByKeys(
+    obj,
+    ['product_name', 'offer_name', 'product_title', 'item_title', 'course_name', 'plan_name'],
+    (value) => typeof value === 'string' && value.trim().length > 0,
+  );
+  if (preferred) return String(preferred).trim();
+
+  let found = null;
+  deepWalk(obj, (key, value, path) => {
+    if (typeof value !== 'string' || !value.trim()) return false;
+    const normalizedKey = key.toLowerCase();
+    const normalizedPath = path.join('.').toLowerCase();
+    const looksLikeProductPath = /(^|\.)(product|products|item|items|order_items|line_items|order_products)(\.|$)/i.test(
+      normalizedPath,
+    );
+    if (looksLikeProductPath && (normalizedKey === 'title' || normalizedKey === 'name')) {
+      found = value.trim();
+      return true;
+    }
+    return false;
+  });
+  if (found) return found;
+
+  const listKeys = ['order_items', 'items', 'products', 'order_products', 'line_items', 'purchases', 'courses'];
+  for (const key of listKeys) {
+    const arr = pickByKeys(obj, [key], (value) => Array.isArray(value));
+    if (!arr || !arr.length) continue;
+    for (const item of arr) {
+      if (!item) continue;
+      if (typeof item.title === 'string' && item.title.trim()) return item.title.trim();
+      if (typeof item.name === 'string' && item.name.trim()) return item.name.trim();
+      if (item.product) {
+        if (typeof item.product.title === 'string' && item.product.title.trim()) return item.product.title.trim();
+        if (typeof item.product.name === 'string' && item.product.name.trim()) return item.product.name.trim();
+      }
+    }
+  }
+
+  const alt = pickByKeys(
+    obj,
+    ['product_type', 'plan_type', 'order_ref'],
+    (value) => typeof value === 'string' && value.trim().length > 0,
+  );
+  return alt ? String(alt).trim() : null;
+}
+
+function normalizeIdCandidate(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
+function findProductIdDeep(obj) {
+  const preferred = pickByKeys(
+    obj,
+    [
+      'product_id',
+      'productId',
+      'offer_id',
+      'offerId',
+      'plan_id',
+      'planId',
+      'course_id',
+      'courseId',
+      'item_id',
+      'itemId',
+      'product_code',
+      'productCode',
+      'sku',
+      'product_slug',
+      'productSlug',
+    ],
+    (value) => normalizeIdCandidate(value) !== null,
+  );
+  if (preferred != null) {
+    const normalized = normalizeIdCandidate(preferred);
+    if (normalized) return normalized;
+  }
+
+  let found = null;
+  deepWalk(obj, (key, value, path) => {
+    const normalized = normalizeIdCandidate(value);
+    if (!normalized) return false;
+
+    const normalizedKey = key.toLowerCase();
+    const normalizedPath = path.join('.').toLowerCase();
+    const looksLikeProductPath = /(^|\.)(product|products|item|items|order_items|line_items|order_products|purchases|courses)(\.|$)/i.test(
+      normalizedPath,
+    );
+
+    if (
+      looksLikeProductPath &&
+      ['id', 'product_id', 'productid', 'offer_id', 'offerid', 'sku', 'code', 'slug'].includes(normalizedKey)
+    ) {
+      found = normalized;
+      return true;
+    }
+    return false;
+  });
+  if (found) return found;
+
+  const listKeys = ['order_items', 'items', 'products', 'order_products', 'line_items', 'purchases', 'courses'];
+  for (const key of listKeys) {
+    const arr = pickByKeys(obj, [key], (value) => Array.isArray(value));
+    if (!arr || !arr.length) continue;
+    for (const item of arr) {
+      if (!item) continue;
+      const direct = normalizeIdCandidate(item.product_id ?? item.id ?? item.sku);
+      if (direct) return direct;
+      if (item.product) {
+        const nested = normalizeIdCandidate(
+          item.product.product_id ?? item.product.id ?? item.product.sku ?? item.product.code,
+        );
+        if (nested) return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeProductComponent(row, payload) {
+  const candidates = [
+    row.product_id,
+    row.productId,
+    findProductIdDeep(payload),
+    row.product_title,
+    row.productTitle,
+    row.product_name,
+    findProductNameDeep(payload),
+  ];
   for (const candidate of candidates) {
     const normalized = normalizeString(candidate);
     if (normalized) {
-      return normalized.toLowerCase();
+      return normalized
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
     }
   }
   return null;
 }
 
-function computeDeterministicCheckoutId(row) {
-  const email = normalizeEmail(row.customer_email ?? row.email);
-  const productComponent = normalizeProductComponent(row);
-  if (!email || !productComponent) return null;
-  return crypto.createHash('sha256').update(`${email}:${productComponent}`).digest('hex');
+function normalizeCheckoutCodeCandidate(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    if (/^[A-Za-z0-9_-]{4,120}$/.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+
+    if (trimmed.startsWith('http')) {
+      try {
+        const url = new URL(trimmed);
+        const segments = url.pathname.split('/').filter(Boolean);
+        const last = segments.pop();
+        if (last && /^[A-Za-z0-9_-]{4,120}$/.test(last)) {
+          return last.toLowerCase();
+        }
+      } catch {
+        // ignore parsing errors
+      }
+    }
+  }
+  return null;
+}
+
+function findCheckoutUrl(row, payload) {
+  const candidates = [row.checkout_url, pickByKeys(payload, ['checkout_url', 'payment_link', 'url'])];
+  for (const candidate of candidates) {
+    const normalized = normalizeString(candidate);
+    if (normalized) return normalized;
+  }
+
+  let best = null;
+  deepWalk(payload, (key, value) => {
+    if (typeof value === 'string' && value.startsWith('http')) {
+      if (/kiwify\.com\.br|pay\.kiwify/i.test(value)) {
+        best = value;
+        return true;
+      }
+      if (!best) best = value;
+    }
+    return false;
+  });
+  return best;
+}
+
+function findCheckoutCode(row, payload) {
+  const direct = pickByKeys(payload, ['checkout_link', 'checkout_code', 'cart_code', 'order_ref'], (value) =>
+    normalizeCheckoutCodeCandidate(value) !== null,
+  );
+  if (direct != null) {
+    const normalized = normalizeCheckoutCodeCandidate(direct);
+    if (normalized) return normalized;
+  }
+
+  const url = findCheckoutUrl(row, payload);
+  if (url) {
+    const normalized = normalizeCheckoutCodeCandidate(url);
+    if (normalized) return normalized;
+  }
+
+  const fallback = normalizeCheckoutCodeCandidate(row.checkout_id);
+  return fallback ?? null;
+}
+
+function findDirectCheckoutId(row, payload) {
+  const direct = normalizeString(
+    row.checkout_id ??
+      pickByKeys(payload, ['checkout_id', 'purchase_id', 'order_id', 'cart_id', 'id', 'order_ref']),
+  );
+  return direct ?? null;
+}
+
+function resolveCheckoutId(row) {
+  let payload = row.payload;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      payload = null;
+    }
+  }
+  if (payload === null || typeof payload !== 'object') {
+    payload = {};
+  }
+
+  const email =
+    normalizeEmail(row.customer_email ?? row.email) ??
+    normalizeEmail(findEmailDeep(payload));
+
+  const productComponent = normalizeProductComponent(row, payload);
+  const checkoutCode = findCheckoutCode(row, payload);
+  const direct = findDirectCheckoutId(row, payload);
+
+  const seeds = [];
+  if (email && checkoutCode) {
+    seeds.push(`${email}::checkout::${checkoutCode}`);
+  }
+  if (email && productComponent) {
+    seeds.push(`${email}::product::${productComponent}`);
+  }
+  if (productComponent && checkoutCode) {
+    seeds.push(`product::${productComponent}::checkout::${checkoutCode}`);
+  }
+
+  const hashedCandidates = seeds.map((seed) => crypto.createHash('sha256').update(seed).digest('hex'));
+
+  const ordered = [];
+  const seen = new Set();
+  for (const candidate of [...hashedCandidates, direct]) {
+    if (!candidate) continue;
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    ordered.push(candidate);
+  }
+
+  if (!ordered.length) {
+    return { primary: direct ?? null, candidates: direct ? [direct] : [] };
+  }
+
+  return { primary: ordered[0], candidates: ordered };
 }
 
 function scoreRow(row) {
@@ -139,6 +447,7 @@ async function fetchAllRows(client, pageSize = 1000) {
           'product_name',
           'product_title',
           'checkout_url',
+          'payload',
           'status',
           'paid',
           'paid_at',
@@ -241,15 +550,16 @@ async function main() {
   const skipped = [];
 
   for (const row of rows) {
-    const deterministic = computeDeterministicCheckoutId(row);
-    if (!deterministic) {
-      skipped.push({ row, reason: 'missing email or product identifier' });
+    const resolution = resolveCheckoutId(row);
+    if (!resolution.primary) {
+      skipped.push({ row, reason: 'missing email, product identifier or checkout reference' });
       continue;
     }
+    const deterministic = resolution.primary;
     if (!groups.has(deterministic)) {
       groups.set(deterministic, []);
     }
-    groups.get(deterministic).push({ ...row, deterministic_id: deterministic });
+    groups.get(deterministic).push({ ...row, deterministic_id: deterministic, checkout_candidates: resolution.candidates });
   }
 
   const updates = [];

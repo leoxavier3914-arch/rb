@@ -833,28 +833,175 @@ function findDiscountDeep(obj: any): string | null {
   return byKey ? String(byKey).trim() : null;
 }
 
+type CheckoutIdResolution = {
+  primary: string;
+  candidates: string[];
+};
+
+function normalizeCheckoutCodeCandidate(value: any): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    if (/^[A-Za-z0-9_-]{4,120}$/.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+
+    if (trimmed.startsWith('http')) {
+      try {
+        const url = new URL(trimmed);
+        const segments = url.pathname.split('/').filter(Boolean);
+        const last = segments.pop();
+        if (last && /^[A-Za-z0-9_-]{4,120}$/.test(last)) {
+          return last.toLowerCase();
+        }
+      } catch {
+        // ignore parsing errors
+      }
+    }
+  }
+  return null;
+}
+
+function findCheckoutCodeDeep(obj: any): string | null {
+  const direct = pickByKeys(
+    obj,
+    ['checkout_link', 'checkout_code', 'checkoutCode', 'cart_code', 'cartCode'],
+    (v) => normalizeCheckoutCodeCandidate(v) !== null
+  );
+  if (direct != null) {
+    const normalized = normalizeCheckoutCodeCandidate(direct);
+    if (normalized) return normalized;
+  }
+
+  const url = findCheckoutUrlDeep(obj);
+  if (url) {
+    const normalized = normalizeCheckoutCodeCandidate(url);
+    if (normalized) return normalized;
+  }
+
+  return null;
+}
+
+function normalizeProductComponent(value: any): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function findCheckoutIdDeep(
   obj: any,
   opts?: { email?: string | null; productId?: string | null; productTitle?: string | null }
-): string {
-  const byKey = pickByKeys(
+): CheckoutIdResolution {
+  const direct = pickByKeys(
     obj,
     ['checkout_id', 'purchase_id', 'order_id', 'cart_id', 'id', 'order_ref'],
     (v) => v !== null && v !== undefined
   );
-  if (byKey != null) return String(byKey);
 
-  const email = opts?.email?.trim().toLowerCase();
-  const productComponentRaw = opts?.productId ?? opts?.productTitle;
+  const email = opts?.email?.trim().toLowerCase() ?? null;
   const productComponent =
-    typeof productComponentRaw === 'string' ? productComponentRaw.trim().toLowerCase() : null;
+    normalizeProductComponent(opts?.productId) ?? normalizeProductComponent(opts?.productTitle);
+  const checkoutCode = findCheckoutCodeDeep(obj);
 
+  const seeds: string[] = [];
+  if (email && checkoutCode) {
+    seeds.push(`${email}::checkout::${checkoutCode}`);
+  }
   if (email && productComponent) {
-    const seed = `${email}:${productComponent}`;
-    return crypto.createHash('sha256').update(seed).digest('hex');
+    seeds.push(`${email}::product::${productComponent}`);
+  }
+  if (productComponent && checkoutCode) {
+    seeds.push(`product::${productComponent}::checkout::${checkoutCode}`);
   }
 
-  return crypto.randomUUID();
+  const hashedCandidates = seeds.map((seed) =>
+    crypto.createHash('sha256').update(seed).digest('hex')
+  );
+
+  const candidates = Array.from(
+    new Set([
+      ...hashedCandidates,
+      direct != null ? String(direct) : null,
+    ].filter((value): value is string => Boolean(value)))
+  );
+
+  if (!candidates.length) {
+    const generated = crypto.randomUUID();
+    return { primary: generated, candidates: [generated] };
+  }
+
+  return { primary: candidates[0], candidates };
+}
+
+function toTimestamp(value: any): number {
+  if (!value) return 0;
+  const date = new Date(value);
+  const time = date.getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function pickPreferredExisting(
+  rows: any[],
+  candidateIds: Iterable<string>
+): any | null {
+  if (!rows.length) return null;
+  const candidateSet = new Set(
+    Array.from(candidateIds)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .map((value) => value.trim())
+  );
+
+  const seen = new Set<string>();
+  const deduped: any[] = [];
+  for (const row of rows) {
+    if (!row) continue;
+    const key =
+      (typeof row.id === 'string' && row.id) ||
+      (typeof row.checkout_id === 'string' && row.checkout_id) ||
+      `${row.customer_email ?? ''}::${row.product_id ?? ''}::${row.product_title ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(row);
+  }
+
+  const pickBetter = (current: any, candidate: any) => {
+    if (!current) return candidate;
+    if (!candidate) return current;
+
+    const currentPaid = Boolean(current.paid) || current.status === 'converted';
+    const candidatePaid = Boolean(candidate.paid) || candidate.status === 'converted';
+    if (candidatePaid !== currentPaid) {
+      return candidatePaid ? candidate : current;
+    }
+
+    const currentMatchesCandidateId =
+      typeof current.checkout_id === 'string' && candidateSet.has(current.checkout_id);
+    const candidateMatchesCandidateId =
+      typeof candidate.checkout_id === 'string' && candidateSet.has(candidate.checkout_id);
+    if (candidateMatchesCandidateId !== currentMatchesCandidateId) {
+      return candidateMatchesCandidateId ? candidate : current;
+    }
+
+    const currentTimestamp = Math.max(
+      toTimestamp(current.updated_at),
+      toTimestamp(current.created_at)
+    );
+    const candidateTimestamp = Math.max(
+      toTimestamp(candidate.updated_at),
+      toTimestamp(candidate.created_at)
+    );
+    if (candidateTimestamp !== currentTimestamp) {
+      return candidateTimestamp > currentTimestamp ? candidate : current;
+    }
+
+    return current;
+  };
+
+  return deduped.reduce(pickBetter, null);
 }
 
 function interpretBoolean(value: any): boolean | null {
@@ -1151,11 +1298,14 @@ export async function POST(req: Request) {
   const productIdFromPayload = findProductIdDeep(body);
   const checkoutUrlFromPayload = findCheckoutUrlDeep(body);
   const discountCodeFromPayload = findDiscountDeep(body);
-  const checkoutId = findCheckoutIdDeep(body, {
+  const checkoutIdResolution = findCheckoutIdDeep(body, {
     email,
     productId: productIdFromPayload,
     productTitle: productTitleFromPayload,
   });
+  const canonicalCheckoutId = checkoutIdResolution.primary;
+  const checkoutIdCandidates = checkoutIdResolution.candidates;
+  let checkoutId = canonicalCheckoutId;
 
   const now = new Date();
 
@@ -1179,16 +1329,104 @@ export async function POST(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data: existing, error: fetchError } = await supabase
-    .from('abandoned_emails')
-    .select(
-      'id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id'
-    )
-    .eq('checkout_id', checkoutId)
-    .maybeSingle();
+const selectColumns =
+  'id, checkout_id, paid, paid_at, status, created_at, updated_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
 
-  if (fetchError) {
-    console.warn('[kiwify-webhook] failed to load existing record', fetchError);
+  let existing: any = null;
+
+  if (checkoutIdCandidates.length) {
+    const { data, error } = await supabase
+      .from('abandoned_emails')
+      .select(selectColumns)
+      .in('checkout_id', checkoutIdCandidates)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[kiwify-webhook] failed to load existing record', error);
+    } else {
+      existing = data;
+    }
+  }
+
+  if (!existing) {
+    const buildBaseQuery = () =>
+      supabase
+        .from('abandoned_emails')
+        .select(selectColumns)
+        .eq('customer_email', email)
+        .order('updated_at', { ascending: false });
+
+    const fallbackQueries = [] as ReturnType<typeof buildBaseQuery>[];
+
+    if (productIdFromPayload) {
+      fallbackQueries.push(buildBaseQuery().eq('product_id', productIdFromPayload));
+    }
+    if (productTitleFromPayload) {
+      fallbackQueries.push(buildBaseQuery().eq('product_title', productTitleFromPayload));
+    }
+    if (checkoutUrlFromPayload) {
+      fallbackQueries.push(buildBaseQuery().eq('checkout_url', checkoutUrlFromPayload));
+    }
+
+    fallbackQueries.push(buildBaseQuery());
+
+    const fallbackRows: any[] = [];
+
+    for (const query of fallbackQueries) {
+      const { data, error } = await query.limit(20);
+      if (error) {
+        console.warn('[kiwify-webhook] fallback lookup failed', error);
+        continue;
+      }
+      if (Array.isArray(data)) {
+        fallbackRows.push(...data);
+      } else if (data) {
+        fallbackRows.push(data);
+      }
+    }
+
+    if (fallbackRows.length) {
+      existing = pickPreferredExisting(fallbackRows, checkoutIdCandidates) ?? existing;
+    }
+  }
+
+  if (existing?.id && existing.checkout_id && existing.checkout_id !== checkoutId) {
+    console.log('[kiwify-webhook] migrating checkout_id to canonical value', {
+      previous: existing.checkout_id,
+      canonical: checkoutId,
+      existingId: existing.id,
+    });
+
+    const { error: migrateError } = await supabase
+      .from('abandoned_emails')
+      .update({ checkout_id: checkoutId })
+      .eq('id', existing.id);
+
+    if (migrateError) {
+      console.warn('[kiwify-webhook] failed to migrate checkout_id', migrateError, {
+        id: existing.id,
+        from: existing.checkout_id,
+        to: checkoutId,
+      });
+
+      const { data: canonicalRow, error: canonicalError } = await supabase
+        .from('abandoned_emails')
+        .select(selectColumns)
+        .eq('checkout_id', checkoutId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (canonicalError) {
+        console.warn('[kiwify-webhook] lookup after migration failure also failed', canonicalError);
+      } else if (canonicalRow) {
+        existing = pickPreferredExisting([existing, canonicalRow], checkoutIdCandidates) ?? canonicalRow;
+      }
+    } else {
+      existing.checkout_id = checkoutId;
+    }
   }
 
   const name = nameFromPayload ?? existing?.customer_name ?? 'Cliente';
