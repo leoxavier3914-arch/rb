@@ -39,6 +39,17 @@ Acesse `/login` e informe o valor configurado em `ADMIN_TOKEN` para destravar o 
 4. Valide no log/preview do EmailJS que o template continua exibindo "24 h" graças a `DEFAULT_EXPIRE_HOURS` enquanto o cron respeita o atraso configurado.
 5. Verifique na interface que registros com `source = 'kiwify.webhook_purchase'` (compras que já nasceram pagas) ficam ocultos, enquanto os carrinhos abandonados via webhook — inclusive com `source = 'kiwify.webhook'` — permanecem listados no Hub.
 
+## Backfill de registros antigos
+Para sincronizar compras aprovadas antigas (anteriores ao patch do webhook), execute o script de backfill apontando para o mesmo projeto Supabase usado em produção:
+
+```bash
+SUPABASE_URL="https://<sua-instancia>.supabase.co" \
+SUPABASE_SERVICE_ROLE_KEY="<chave-service-role>" \
+node scripts/backfill_converted_status.mjs
+```
+
+O script percorre todos os registros marcados como pagos/convertidos e replica o status para duplicidades do mesmo e-mail + produto, garantindo consistência nas tabelas existentes.
+
 ## Scripts
 - `npm run dev`
 - `npm run build`
