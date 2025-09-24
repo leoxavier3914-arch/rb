@@ -833,28 +833,108 @@ function findDiscountDeep(obj: any): string | null {
   return byKey ? String(byKey).trim() : null;
 }
 
+type CheckoutIdResolution = {
+  primary: string;
+  candidates: string[];
+};
+
+function normalizeCheckoutCodeCandidate(value: any): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    if (/^[A-Za-z0-9_-]{4,120}$/.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+
+    if (trimmed.startsWith('http')) {
+      try {
+        const url = new URL(trimmed);
+        const segments = url.pathname.split('/').filter(Boolean);
+        const last = segments.pop();
+        if (last && /^[A-Za-z0-9_-]{4,120}$/.test(last)) {
+          return last.toLowerCase();
+        }
+      } catch {
+        // ignore parsing errors
+      }
+    }
+  }
+  return null;
+}
+
+function findCheckoutCodeDeep(obj: any): string | null {
+  const direct = pickByKeys(
+    obj,
+    ['checkout_link', 'checkout_code', 'checkoutCode', 'cart_code', 'cartCode'],
+    (v) => normalizeCheckoutCodeCandidate(v) !== null
+  );
+  if (direct != null) {
+    const normalized = normalizeCheckoutCodeCandidate(direct);
+    if (normalized) return normalized;
+  }
+
+  const url = findCheckoutUrlDeep(obj);
+  if (url) {
+    const normalized = normalizeCheckoutCodeCandidate(url);
+    if (normalized) return normalized;
+  }
+
+  return null;
+}
+
+function normalizeProductComponent(value: any): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function findCheckoutIdDeep(
   obj: any,
   opts?: { email?: string | null; productId?: string | null; productTitle?: string | null }
-): string {
-  const byKey = pickByKeys(
+): CheckoutIdResolution {
+  const direct = pickByKeys(
     obj,
     ['checkout_id', 'purchase_id', 'order_id', 'cart_id', 'id', 'order_ref'],
     (v) => v !== null && v !== undefined
   );
-  if (byKey != null) return String(byKey);
 
-  const email = opts?.email?.trim().toLowerCase();
-  const productComponentRaw = opts?.productId ?? opts?.productTitle;
+  const email = opts?.email?.trim().toLowerCase() ?? null;
   const productComponent =
-    typeof productComponentRaw === 'string' ? productComponentRaw.trim().toLowerCase() : null;
+    normalizeProductComponent(opts?.productId) ?? normalizeProductComponent(opts?.productTitle);
+  const checkoutCode = findCheckoutCodeDeep(obj);
 
+  const seeds: string[] = [];
+  if (email && checkoutCode) {
+    seeds.push(`${email}::checkout::${checkoutCode}`);
+  }
   if (email && productComponent) {
-    const seed = `${email}:${productComponent}`;
-    return crypto.createHash('sha256').update(seed).digest('hex');
+    seeds.push(`${email}::product::${productComponent}`);
+  }
+  if (productComponent && checkoutCode) {
+    seeds.push(`product::${productComponent}::checkout::${checkoutCode}`);
   }
 
-  return crypto.randomUUID();
+  const hashedCandidates = seeds.map((seed) =>
+    crypto.createHash('sha256').update(seed).digest('hex')
+  );
+
+  const candidates = Array.from(
+    new Set([
+      ...hashedCandidates,
+      direct != null ? String(direct) : null,
+    ].filter((value): value is string => Boolean(value)))
+  );
+
+  if (!candidates.length) {
+    const generated = crypto.randomUUID();
+    return { primary: generated, candidates: [generated] };
+  }
+
+  return { primary: candidates[0], candidates };
 }
 
 function interpretBoolean(value: any): boolean | null {
@@ -1151,11 +1231,13 @@ export async function POST(req: Request) {
   const productIdFromPayload = findProductIdDeep(body);
   const checkoutUrlFromPayload = findCheckoutUrlDeep(body);
   const discountCodeFromPayload = findDiscountDeep(body);
-  const checkoutId = findCheckoutIdDeep(body, {
+  const checkoutIdResolution = findCheckoutIdDeep(body, {
     email,
     productId: productIdFromPayload,
     productTitle: productTitleFromPayload,
   });
+  let checkoutId = checkoutIdResolution.primary;
+  const checkoutIdCandidates = checkoutIdResolution.candidates;
 
   const now = new Date();
 
@@ -1179,16 +1261,53 @@ export async function POST(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data: existing, error: fetchError } = await supabase
-    .from('abandoned_emails')
-    .select(
-      'id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id'
-    )
-    .eq('checkout_id', checkoutId)
-    .maybeSingle();
+  const selectColumns =
+    'id, checkout_id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
 
-  if (fetchError) {
-    console.warn('[kiwify-webhook] failed to load existing record', fetchError);
+  let existing: any = null;
+
+  if (checkoutIdCandidates.length) {
+    const { data, error } = await supabase
+      .from('abandoned_emails')
+      .select(selectColumns)
+      .in('checkout_id', checkoutIdCandidates)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[kiwify-webhook] failed to load existing record', error);
+    } else {
+      existing = data;
+    }
+  }
+
+  if (!existing) {
+    let fallbackQuery = supabase
+      .from('abandoned_emails')
+      .select(selectColumns)
+      .eq('customer_email', email)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (productIdFromPayload) {
+      fallbackQuery = fallbackQuery.eq('product_id', productIdFromPayload);
+    } else if (productTitleFromPayload) {
+      fallbackQuery = fallbackQuery.eq('product_title', productTitleFromPayload);
+    } else if (checkoutUrlFromPayload) {
+      fallbackQuery = fallbackQuery.eq('checkout_url', checkoutUrlFromPayload);
+    }
+
+    const { data, error } = await fallbackQuery.maybeSingle();
+    if (error) {
+      console.warn('[kiwify-webhook] fallback lookup failed', error);
+    } else {
+      existing = data;
+    }
+  }
+
+  if (existing?.checkout_id) {
+    checkoutId = existing.checkout_id;
   }
 
   const name = nameFromPayload ?? existing?.customer_name ?? 'Cliente';
