@@ -27,13 +27,17 @@ const formatPaidAt = (sale: Sale): { label: string; timestamp: number } => {
   return { label: formatter.format(paidDate), timestamp: paidDate.getTime() };
 };
 
+const DIRECT_PURCHASE_SOURCE = 'kiwify.webhook_purchase';
+
 const getConversionLabel = (sale: Sale): string => {
+  const source = sale.source?.toLowerCase() ?? '';
   const status = sale.status?.toLowerCase() ?? '';
-  if (status.includes('convert')) {
+
+  if (source !== DIRECT_PURCHASE_SOURCE && status.includes('convert')) {
     return 'Carrinho recuperado';
   }
 
-  return 'Compra direta';
+  return 'Aprovado direto';
 };
 
 type ClientPurchase = {

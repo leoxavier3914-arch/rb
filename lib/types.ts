@@ -26,4 +26,5 @@ export type Sale = {
   status: string | null;
   paid_at: string | null;
   traffic_source: string | null;
+  source: string | null;
 };

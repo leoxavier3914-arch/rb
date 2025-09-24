@@ -32,6 +32,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </Link>
                 </li>
                 <li>
+                  <Link href="/clientes" className="transition hover:text-white">
+                    Clientes
+                  </Link>
+                </li>
+                <li>
                   <Link href="/ads" className="transition hover:text-white">
                     Gestão de Ads
                   </Link>
