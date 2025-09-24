@@ -60,7 +60,7 @@ export function applyDiscountToCheckoutUrl(
 
 function getParamCaseInsensitive(params: URLSearchParams, key: string): string | null {
   const lower = key.toLowerCase();
-  for (const existingKey of params.keys()) {
+  for (const existingKey of Array.from(params.keys())) {
     if (existingKey.toLowerCase() === lower) {
       const value = params.get(existingKey);
       if (value !== null) {

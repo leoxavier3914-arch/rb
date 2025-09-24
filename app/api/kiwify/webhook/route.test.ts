@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractTrafficSource } from './route';
+import { extractTrafficSource } from './traffic';
 
 const baseCheckout = 'https://pay.example.com/checkout';
 
