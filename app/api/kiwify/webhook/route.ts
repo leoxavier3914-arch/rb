@@ -521,7 +521,7 @@ function joinTrafficParts(parts: Array<string | null | undefined>): string | nul
 function resolveChannelFromValue(value: string): string | null {
   const normalized = normalizeTrafficString(value);
   if (!normalized) return null;
- 
+
   const context = buildTrafficContext([value], null);
   const channelFromHints = detectChannelFromContext(context);
   if (channelFromHints) return channelFromHints;
@@ -547,7 +547,6 @@ function resolveChannelFromValue(value: string): string | null {
   if (/\baffiliate\b/.test(padded) || /\bafiliad[oa]\b/.test(padded) || /\bparceria\b/.test(padded)) return 'affiliate';
   if (/\borganic\b/.test(padded)) return 'organic';
   if (/\bdirect\b/.test(padded)) return 'direct';
- 
 
   const slug = normalized.replace(/[^a-z0-9]+/g, '.').replace(/\.+/g, '.').replace(/^\.+|\.+$/g, '');
   return slug || null;
@@ -776,7 +775,6 @@ function extractTrafficSource(
     else if (hasTrafficHint(context, ['youtube'])) channel = 'youtube';
     else if (hasTrafficHint(context, ['email', 'newsletter'])) channel = 'email';
     else if (hasTrafficHint(context, ['whatsapp', 'wa'])) channel = 'whatsapp';
- 
   }
 
   const classification = detectTrafficClassification(mediumContext, params);
@@ -1201,7 +1199,7 @@ function extractPaymentMeta(body: any) {
   }
 
   if (paid && negative) {
-    // Prefer explicit boolean flag when conflicting keywords appear
+    // Prefer explicit boolean flag quando há conflito de palavras-chave
     paid = false;
   }
 
@@ -1329,8 +1327,8 @@ export async function POST(req: Request) {
     auth: { persistSession: false },
   });
 
-const selectColumns =
-  'id, checkout_id, paid, paid_at, status, created_at, updated_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
+  const selectColumns =
+    'id, checkout_id, paid, paid_at, status, created_at, updated_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
 
   let existing: any = null;
 
@@ -1370,6 +1368,7 @@ const selectColumns =
       fallbackQueries.push(buildBaseQuery().eq('checkout_url', checkoutUrlFromPayload));
     }
 
+    // Consulta genérica por email (sem outros filtros)
     fallbackQueries.push(buildBaseQuery());
 
     const fallbackRows: any[] = [];
@@ -1392,6 +1391,7 @@ const selectColumns =
     }
   }
 
+  // Se encontrou registro com outro checkout_id, tenta migrar para o canônico
   if (existing?.id && existing.checkout_id && existing.checkout_id !== checkoutId) {
     console.log('[kiwify-webhook] migrating checkout_id to canonical value', {
       previous: existing.checkout_id,
@@ -1411,6 +1411,7 @@ const selectColumns =
         to: checkoutId,
       });
 
+      // Em caso de conflito de unique, busca a linha "canônica" e escolhe a melhor
       const { data: canonicalRow, error: canonicalError } = await supabase
         .from('abandoned_emails')
         .select(selectColumns)
