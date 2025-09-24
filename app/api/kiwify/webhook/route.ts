@@ -833,28 +833,84 @@ function findDiscountDeep(obj: any): string | null {
   return byKey ? String(byKey).trim() : null;
 }
 
-function findCheckoutIdDeep(
-  obj: any,
-  opts?: { email?: string | null; productId?: string | null; productTitle?: string | null }
-): string {
-  const byKey = pickByKeys(
+type CheckoutIdOptions = {
+  email?: string | null;
+  productId?: string | null;
+  productTitle?: string | null;
+  checkoutUrl?: string | null;
+};
+
+function normalizeCandidate(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text.length ? text : null;
+}
+
+function normalizeForDeterministic(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text.length ? text.toLowerCase() : null;
+}
+
+function collectCheckoutIdCandidates(obj: any, opts?: CheckoutIdOptions): string[] {
+  const seen = new Set<string>();
+  const push = (value: unknown) => {
+    const normalized = normalizeCandidate(value);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+  };
+
+  const direct = pickByKeys(
     obj,
     ['checkout_id', 'purchase_id', 'order_id', 'cart_id', 'id', 'order_ref'],
-    (v) => v !== null && v !== undefined
+    (v) => v !== null && v !== undefined && !(typeof v === 'string' && v.trim().length === 0)
   );
-  if (byKey != null) return String(byKey);
-
-  const email = opts?.email?.trim().toLowerCase();
-  const productComponentRaw = opts?.productId ?? opts?.productTitle;
-  const productComponent =
-    typeof productComponentRaw === 'string' ? productComponentRaw.trim().toLowerCase() : null;
-
-  if (email && productComponent) {
-    const seed = `${email}:${productComponent}`;
-    return crypto.createHash('sha256').update(seed).digest('hex');
+  if (direct !== null && direct !== undefined) {
+    push(direct);
   }
 
-  return crypto.randomUUID();
+  const email = normalizeForDeterministic(opts?.email);
+  const productId = normalizeForDeterministic(opts?.productId);
+  const productTitle = normalizeForDeterministic(opts?.productTitle);
+  const checkoutUrlRaw = typeof opts?.checkoutUrl === 'string' ? opts.checkoutUrl.trim() : null;
+  let checkoutUrlComponent: string | null = null;
+  if (checkoutUrlRaw) {
+    try {
+      const parsed = new URL(checkoutUrlRaw);
+      const explicitParam = parsed.searchParams.get('checkout_id');
+      if (explicitParam) {
+        checkoutUrlComponent = explicitParam.trim().toLowerCase();
+      } else {
+        const pathname = parsed.pathname.trim().toLowerCase();
+        if (pathname) {
+          checkoutUrlComponent = pathname;
+        }
+      }
+    } catch {
+      checkoutUrlComponent = checkoutUrlRaw.toLowerCase();
+    }
+  }
+
+  const seeds = new Set<string>();
+  if (email && productId) {
+    seeds.add(`${email}:${productId}`);
+  }
+  if (email && productTitle) {
+    seeds.add(`${email}:${productTitle}`);
+  }
+  if (email && checkoutUrlComponent) {
+    seeds.add(`${email}:${checkoutUrlComponent}`);
+  }
+
+  for (const seed of seeds) {
+    push(crypto.createHash('sha256').update(seed).digest('hex'));
+  }
+
+  if (!seen.size) {
+    push(crypto.randomUUID());
+  }
+
+  return Array.from(seen);
 }
 
 function interpretBoolean(value: any): boolean | null {
@@ -1151,10 +1207,11 @@ export async function POST(req: Request) {
   const productIdFromPayload = findProductIdDeep(body);
   const checkoutUrlFromPayload = findCheckoutUrlDeep(body);
   const discountCodeFromPayload = findDiscountDeep(body);
-  const checkoutId = findCheckoutIdDeep(body, {
+  const checkoutIdCandidates = collectCheckoutIdCandidates(body, {
     email,
     productId: productIdFromPayload,
     productTitle: productTitleFromPayload,
+    checkoutUrl: checkoutUrlFromPayload,
   });
 
   const now = new Date();
@@ -1179,13 +1236,17 @@ export async function POST(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data: existing, error: fetchError } = await supabase
+  const { data: existingRows, error: fetchError } = await supabase
     .from('abandoned_emails')
     .select(
       'id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id'
     )
-    .eq('checkout_id', checkoutId)
-    .maybeSingle();
+    .in('checkout_id', checkoutIdCandidates)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  const existing = Array.isArray(existingRows) ? existingRows[0] ?? null : existingRows ?? null;
+  const checkoutId = existing?.checkout_id ?? checkoutIdCandidates[0] ?? crypto.randomUUID();
 
   if (fetchError) {
     console.warn('[kiwify-webhook] failed to load existing record', fetchError);
@@ -1235,6 +1296,7 @@ export async function POST(req: Request) {
     name,
     productTitle,
     productId,
+    checkoutId,
     checkoutUrl,
     discountCode: discountCode ?? null,
     trafficSource,
