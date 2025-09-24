@@ -52,7 +52,12 @@ function getValueByPath(source: UnknownRecord | undefined | null, path: string):
       }
     } else if (typeof current === 'object') {
       const record = current as UnknownRecord;
-      current = record[segment];
+      const lowerSegment = segment.toLowerCase();
+      const matchingKey = Object.keys(record).find((key) => key.toLowerCase() === lowerSegment);
+      if (!matchingKey) {
+        return undefined;
+      }
+      current = record[matchingKey];
     } else {
       return undefined;
     }
@@ -248,6 +253,7 @@ const CTA_CLICK_PATHS = [
 const UTM_SOURCE_PATHS = [
   'utm_source',
   'utmSource',
+  'trackingparameters.utm_source',
   'traffic_source',
   'trafficSource',
   'source_platform',
@@ -257,6 +263,7 @@ const UTM_SOURCE_PATHS = [
 const UTM_MEDIUM_PATHS = [
   'utm_medium',
   'utmMedium',
+  'trackingparameters.utm_medium',
   'traffic_medium',
   'campaign_medium',
   'marketing_medium',
@@ -265,6 +272,7 @@ const UTM_MEDIUM_PATHS = [
 const UTM_CAMPAIGN_PATHS = [
   'utm_campaign',
   'utmCampaign',
+  'trackingparameters.utm_campaign',
   'campaign',
   'campaign_name',
   'campaignName',

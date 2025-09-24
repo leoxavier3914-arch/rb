@@ -43,16 +43,59 @@ function deepWalk(
   return false;
 }
 
+function getValueByPathCaseInsensitive(obj: any, path: string[]): any {
+  let current: any = obj;
+
+  for (const rawSegment of path) {
+    if (current === null || current === undefined) return undefined;
+
+    const segment = rawSegment.toLowerCase();
+
+    if (Array.isArray(current)) {
+      const index = Number(segment);
+      if (Number.isInteger(index) && index >= 0 && index < current.length) {
+        current = current[index];
+        continue;
+      }
+      return undefined;
+    }
+
+    if (typeof current === 'object') {
+      const entries = Object.entries(current as Record<string, any>);
+      const match = entries.find(([key]) => key.toLowerCase() === segment);
+      if (!match) return undefined;
+      current = match[1];
+      continue;
+    }
+
+    return undefined;
+  }
+
+  return current;
+}
+
 function pickByKeys(
   obj: any,
   keys: string[],
   test?: (v: any) => boolean
 ): any | null {
   const normalizedKeys = keys.map((key) => key.toLowerCase());
+  const pathKeys = keys
+    .map((key) => key.trim())
+    .filter((key) => key.includes('.'))
+    .map((key) => key.split('.').filter(Boolean));
+
+  for (const path of pathKeys) {
+    const value = getValueByPathCaseInsensitive(obj, path);
+    if (value !== undefined && (test ? test(value) : value != null)) {
+      return value;
+    }
+  }
+
   let found: any = null;
   deepWalk(obj, (k, v) => {
     if (
-      normalizedKeys.some((key) => k.toLowerCase() === key) &&
+      normalizedKeys.some((key) => !key.includes('.') && k.toLowerCase() === key) &&
       (test ? test(v) : v != null)
     ) {
       found = v;
@@ -290,6 +333,127 @@ function parseCheckoutSearchParams(url: string | null | undefined): URLSearchPar
     } catch {
       return null;
     }
+  }
+}
+
+const UTM_PARAM_PATHS: Record<string, string[]> = {
+  utm_source: ['utm_source', 'utmSource', 'trackingparameters.utm_source'],
+  utm_medium: ['utm_medium', 'utmMedium', 'trackingparameters.utm_medium'],
+  utm_campaign: ['utm_campaign', 'utmCampaign', 'trackingparameters.utm_campaign'],
+  utm_content: ['utm_content', 'utmContent', 'trackingparameters.utm_content'],
+  utm_term: ['utm_term', 'utmTerm', 'trackingparameters.utm_term'],
+  utm_id: ['utm_id', 'utmId', 'trackingparameters.utm_id'],
+  utm_source_platform: [
+    'utm_source_platform',
+    'utmSourcePlatform',
+    'trackingparameters.utm_source_platform',
+  ],
+  utm_platform: ['utm_platform', 'utmPlatform', 'trackingparameters.utm_platform'],
+  utm_channel: ['utm_channel', 'utmChannel', 'trackingparameters.utm_channel'],
+};
+
+type TrackingParamMap = Record<string, string>;
+
+function cleanTrackingValue(value: any): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function extractTrackingParams(body: any): TrackingParamMap {
+  const params: TrackingParamMap = {};
+
+  for (const [target, paths] of Object.entries(UTM_PARAM_PATHS)) {
+    const value = pickByKeys(body, paths, (v) => typeof v === 'string' && v.trim().length > 0);
+    const cleaned = cleanTrackingValue(value);
+    if (cleaned) {
+      params[target] = cleaned;
+    }
+  }
+
+  return params;
+}
+
+function hasTrackingParams(params: TrackingParamMap): boolean {
+  return Object.keys(params).length > 0;
+}
+
+function hasUrlTrackingParams(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    let found = false;
+    parsed.searchParams.forEach((_, key) => {
+      if (!found && key.toLowerCase().startsWith('utm_')) {
+        found = true;
+      }
+    });
+    if (found) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function sameUrlBase(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  try {
+    const urlA = new URL(a);
+    const urlB = new URL(b);
+    return urlA.origin === urlB.origin && urlA.pathname === urlB.pathname;
+  } catch {
+    return false;
+  }
+}
+
+function hasParamCaseInsensitive(params: URLSearchParams, key: string): boolean {
+  const lower = key.toLowerCase();
+  let match = false;
+  params.forEach((_, existingKey) => {
+    if (!match && existingKey.toLowerCase() === lower) {
+      match = true;
+    }
+  });
+  return match;
+}
+
+function mergeCheckoutUrlWithTracking(
+  baseUrl: string | null,
+  params: TrackingParamMap,
+  fallbackUrl: string | null,
+): string | null {
+  if (!baseUrl) {
+    return fallbackUrl;
+  }
+
+  if (!hasTrackingParams(params)) {
+    if (
+      fallbackUrl &&
+      fallbackUrl !== baseUrl &&
+      hasUrlTrackingParams(fallbackUrl) &&
+      !hasUrlTrackingParams(baseUrl) &&
+      sameUrlBase(fallbackUrl, baseUrl)
+    ) {
+      return fallbackUrl;
+    }
+    return baseUrl;
+  }
+
+  try {
+    const parsed = new URL(baseUrl);
+    let changed = false;
+
+    for (const [key, value] of Object.entries(params)) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+      if (hasParamCaseInsensitive(parsed.searchParams, key)) continue;
+      parsed.searchParams.set(key, trimmed);
+      changed = true;
+    }
+
+    return changed ? parsed.toString() : baseUrl;
+  } catch {
+    return baseUrl;
   }
 }
 
@@ -653,30 +817,67 @@ function extractTrafficSource(
 
   addValue(
     sources,
-    pickByKeys(body, ['utm_source', 'utmSource', 'traffic_source', 'campaign_source', 'source_platform', 'marketing_source'], (v) =>
-      typeof v === 'string' && v.trim().length > 0
-    ) as string | null
+    pickByKeys(
+      body,
+      [
+        'utm_source',
+        'utmSource',
+        'trackingparameters.utm_source',
+        'traffic_source',
+        'campaign_source',
+        'source_platform',
+        'marketing_source',
+      ],
+      (v) => typeof v === 'string' && v.trim().length > 0,
+    ) as string | null,
   );
 
   addValue(
     hints,
-    pickByKeys(body, ['traffic_channel', 'trafficChannel', 'utm_channel', 'utmChannel', 'channel'], (v) =>
-      typeof v === 'string' && v.trim().length > 0
-    ) as string | null
+    pickByKeys(
+      body,
+      [
+        'traffic_channel',
+        'trafficChannel',
+        'utm_channel',
+        'utmChannel',
+        'trackingparameters.utm_channel',
+        'channel',
+      ],
+      (v) => typeof v === 'string' && v.trim().length > 0,
+    ) as string | null,
   );
 
   addValue(
     mediums,
-    pickByKeys(body, ['utm_medium', 'utmMedium', 'traffic_medium', 'campaign_medium', 'marketing_medium'], (v) =>
-      typeof v === 'string' && v.trim().length > 0
-    ) as string | null
+    pickByKeys(
+      body,
+      [
+        'utm_medium',
+        'utmMedium',
+        'trackingparameters.utm_medium',
+        'traffic_medium',
+        'campaign_medium',
+        'marketing_medium',
+      ],
+      (v) => typeof v === 'string' && v.trim().length > 0,
+    ) as string | null,
   );
 
   addValue(
     hints,
-    pickByKeys(body, ['utm_campaign', 'utmCampaign', 'campaign', 'campaign_name', 'campaignName'], (v) =>
-      typeof v === 'string' && v.trim().length > 0
-    ) as string | null
+    pickByKeys(
+      body,
+      [
+        'utm_campaign',
+        'utmCampaign',
+        'trackingparameters.utm_campaign',
+        'campaign',
+        'campaign_name',
+        'campaignName',
+      ],
+      (v) => typeof v === 'string' && v.trim().length > 0,
+    ) as string | null,
   );
 
   addValue(
@@ -1485,6 +1686,7 @@ export async function POST(req: Request) {
   const productTitleFromPayload = findProductNameDeep(body);
   const productIdFromPayload = findProductIdDeep(body);
   const checkoutUrlFromPayload = findCheckoutUrlDeep(body);
+  const trackingParamsFromPayload = extractTrackingParams(body);
   const discountCodeFromPayload = findDiscountDeep(body);
   const checkoutIdResolution = findCheckoutIdDeep(body, {
     email,
@@ -1624,13 +1826,15 @@ export async function POST(req: Request) {
   const productTitle =
     productTitleFromPayload ?? existing?.product_title ?? 'Carrinho (Kiwify)';
   const productId = productIdFromPayload ?? existing?.product_id ?? null;
-  const checkoutUrl = checkoutUrlFromPayload ?? existing?.checkout_url ?? null;
+  const checkoutUrl = mergeCheckoutUrlWithTracking(
+    checkoutUrlFromPayload ?? existing?.checkout_url ?? null,
+    trackingParamsFromPayload,
+    existing?.checkout_url ?? null,
+  );
   const trafficSource =
-    extractTrafficSource(
-      body,
-      checkoutUrlFromPayload ?? existing?.checkout_url ?? null,
-      existing?.traffic_source ?? null,
-    ) ?? existing?.traffic_source ?? 'unknown';
+    extractTrafficSource(body, checkoutUrl, existing?.traffic_source ?? null) ??
+    existing?.traffic_source ??
+    'unknown';
   const discountCode =
     discountCodeFromPayload ??
     existing?.discount_code ??
