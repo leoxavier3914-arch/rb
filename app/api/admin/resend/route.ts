@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { resolveDiscountCode, resolveExpiration } from '../../../../lib/cryptoId';
 import { getEmailJsConfig } from '../../../../lib/emailJsConfig';
 import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
-import { applyDiscountToCheckoutUrl } from '../../../../lib/checkout';
+import {
+  applyDiscountToCheckoutUrl,
+  applyManualTrackingToCheckoutUrl,
+} from '../../../../lib/checkout';
 
 const resendSchema = z.object({
   id: z.string(),
@@ -73,9 +76,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Serviço de e-mail indisponível.' }, { status: 500 });
   }
 
-  const resolvedCheckoutUrl = applyDiscountToCheckoutUrl(
-    checkoutUrl ?? record.checkout_url ?? '',
-    resolvedDiscount,
+  const resolvedCheckoutUrl = applyManualTrackingToCheckoutUrl(
+    applyDiscountToCheckoutUrl(checkoutUrl ?? record.checkout_url ?? '', resolvedDiscount),
+    {
+      trafficSource: record.traffic_source ?? null,
+    },
   );
 
   const normalizeString = (value: unknown): string | null => {
