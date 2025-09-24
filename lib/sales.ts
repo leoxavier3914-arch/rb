@@ -185,6 +185,7 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
         status: statusFromRow || statusFromPayload || (paid ? 'converted' : null),
         paid_at: paidAt ?? null,
         traffic_source: clean(row.traffic_source) || trafficFromPayload || null,
+        source: clean(row.source) || null,
       } satisfies Sale;
     });
   } catch (error) {
