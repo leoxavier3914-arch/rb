@@ -521,7 +521,7 @@ function joinTrafficParts(parts: Array<string | null | undefined>): string | nul
 function resolveChannelFromValue(value: string): string | null {
   const normalized = normalizeTrafficString(value);
   if (!normalized) return null;
- 
+
   const context = buildTrafficContext([value], null);
   const channelFromHints = detectChannelFromContext(context);
   if (channelFromHints) return channelFromHints;
@@ -547,7 +547,6 @@ function resolveChannelFromValue(value: string): string | null {
   if (/\baffiliate\b/.test(padded) || /\bafiliad[oa]\b/.test(padded) || /\bparceria\b/.test(padded)) return 'affiliate';
   if (/\borganic\b/.test(padded)) return 'organic';
   if (/\bdirect\b/.test(padded)) return 'direct';
- 
 
   const slug = normalized.replace(/[^a-z0-9]+/g, '.').replace(/\.+/g, '.').replace(/^\.+|\.+$/g, '');
   return slug || null;
@@ -776,7 +775,6 @@ function extractTrafficSource(
     else if (hasTrafficHint(context, ['youtube'])) channel = 'youtube';
     else if (hasTrafficHint(context, ['email', 'newsletter'])) channel = 'email';
     else if (hasTrafficHint(context, ['whatsapp', 'wa'])) channel = 'whatsapp';
- 
   }
 
   const classification = detectTrafficClassification(mediumContext, params);
@@ -935,6 +933,73 @@ function findCheckoutIdDeep(
   }
 
   return { primary: candidates[0], candidates };
+}
+
+function toTimestamp(value: any): number {
+  if (!value) return 0;
+  const date = new Date(value);
+  const time = date.getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function pickPreferredExisting(
+  rows: any[],
+  candidateIds: Iterable<string>
+): any | null {
+  if (!rows.length) return null;
+  const candidateSet = new Set(
+    Array.from(candidateIds)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .map((value) => value.trim())
+  );
+
+  const seen = new Set<string>();
+  const deduped: any[] = [];
+  for (const row of rows) {
+    if (!row) continue;
+    const key =
+      (typeof row.id === 'string' && row.id) ||
+      (typeof row.checkout_id === 'string' && row.checkout_id) ||
+      `${row.customer_email ?? ''}::${row.product_id ?? ''}::${row.product_title ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(row);
+  }
+
+  const pickBetter = (current: any, candidate: any) => {
+    if (!current) return candidate;
+    if (!candidate) return current;
+
+    const currentPaid = Boolean(current.paid) || current.status === 'converted';
+    const candidatePaid = Boolean(candidate.paid) || candidate.status === 'converted';
+    if (candidatePaid !== currentPaid) {
+      return candidatePaid ? candidate : current;
+    }
+
+    const currentMatchesCandidateId =
+      typeof current.checkout_id === 'string' && candidateSet.has(current.checkout_id);
+    const candidateMatchesCandidateId =
+      typeof candidate.checkout_id === 'string' && candidateSet.has(candidate.checkout_id);
+    if (candidateMatchesCandidateId !== currentMatchesCandidateId) {
+      return candidateMatchesCandidateId ? candidate : current;
+    }
+
+    const currentTimestamp = Math.max(
+      toTimestamp(current.updated_at),
+      toTimestamp(current.created_at)
+    );
+    const candidateTimestamp = Math.max(
+      toTimestamp(candidate.updated_at),
+      toTimestamp(candidate.created_at)
+    );
+    if (candidateTimestamp !== currentTimestamp) {
+      return candidateTimestamp > currentTimestamp ? candidate : current;
+    }
+
+    return current;
+  };
+
+  return deduped.reduce(pickBetter, null);
 }
 
 function interpretBoolean(value: any): boolean | null {
@@ -1134,7 +1199,7 @@ function extractPaymentMeta(body: any) {
   }
 
   if (paid && negative) {
-    // Prefer explicit boolean flag when conflicting keywords appear
+    // Prefer explicit boolean flag quando há conflito de palavras-chave
     paid = false;
   }
 
@@ -1236,8 +1301,9 @@ export async function POST(req: Request) {
     productId: productIdFromPayload,
     productTitle: productTitleFromPayload,
   });
-  let checkoutId = checkoutIdResolution.primary;
+  const canonicalCheckoutId = checkoutIdResolution.primary;
   const checkoutIdCandidates = checkoutIdResolution.candidates;
+  let checkoutId = canonicalCheckoutId;
 
   const now = new Date();
 
@@ -1262,7 +1328,7 @@ export async function POST(req: Request) {
   });
 
   const selectColumns =
-    'id, checkout_id, paid, paid_at, status, created_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
+    'id, checkout_id, paid, paid_at, status, created_at, updated_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
 
   let existing: any = null;
 
@@ -1283,31 +1349,85 @@ export async function POST(req: Request) {
   }
 
   if (!existing) {
-    let fallbackQuery = supabase
-      .from('abandoned_emails')
-      .select(selectColumns)
-      .eq('customer_email', email)
-      .order('updated_at', { ascending: false })
-      .limit(1);
+    const buildBaseQuery = () =>
+      supabase
+        .from('abandoned_emails')
+        .select(selectColumns)
+        .eq('customer_email', email)
+        .order('updated_at', { ascending: false });
+
+    const fallbackQueries = [] as ReturnType<typeof buildBaseQuery>[];
 
     if (productIdFromPayload) {
-      fallbackQuery = fallbackQuery.eq('product_id', productIdFromPayload);
-    } else if (productTitleFromPayload) {
-      fallbackQuery = fallbackQuery.eq('product_title', productTitleFromPayload);
-    } else if (checkoutUrlFromPayload) {
-      fallbackQuery = fallbackQuery.eq('checkout_url', checkoutUrlFromPayload);
+      fallbackQueries.push(buildBaseQuery().eq('product_id', productIdFromPayload));
+    }
+    if (productTitleFromPayload) {
+      fallbackQueries.push(buildBaseQuery().eq('product_title', productTitleFromPayload));
+    }
+    if (checkoutUrlFromPayload) {
+      fallbackQueries.push(buildBaseQuery().eq('checkout_url', checkoutUrlFromPayload));
     }
 
-    const { data, error } = await fallbackQuery.maybeSingle();
-    if (error) {
-      console.warn('[kiwify-webhook] fallback lookup failed', error);
-    } else {
-      existing = data;
+    // Consulta genérica por email (sem outros filtros)
+    fallbackQueries.push(buildBaseQuery());
+
+    const fallbackRows: any[] = [];
+
+    for (const query of fallbackQueries) {
+      const { data, error } = await query.limit(20);
+      if (error) {
+        console.warn('[kiwify-webhook] fallback lookup failed', error);
+        continue;
+      }
+      if (Array.isArray(data)) {
+        fallbackRows.push(...data);
+      } else if (data) {
+        fallbackRows.push(data);
+      }
+    }
+
+    if (fallbackRows.length) {
+      existing = pickPreferredExisting(fallbackRows, checkoutIdCandidates) ?? existing;
     }
   }
 
-  if (existing?.checkout_id) {
-    checkoutId = existing.checkout_id;
+  // Se encontrou registro com outro checkout_id, tenta migrar para o canônico
+  if (existing?.id && existing.checkout_id && existing.checkout_id !== checkoutId) {
+    console.log('[kiwify-webhook] migrating checkout_id to canonical value', {
+      previous: existing.checkout_id,
+      canonical: checkoutId,
+      existingId: existing.id,
+    });
+
+    const { error: migrateError } = await supabase
+      .from('abandoned_emails')
+      .update({ checkout_id: checkoutId })
+      .eq('id', existing.id);
+
+    if (migrateError) {
+      console.warn('[kiwify-webhook] failed to migrate checkout_id', migrateError, {
+        id: existing.id,
+        from: existing.checkout_id,
+        to: checkoutId,
+      });
+
+      // Em caso de conflito de unique, busca a linha "canônica" e escolhe a melhor
+      const { data: canonicalRow, error: canonicalError } = await supabase
+        .from('abandoned_emails')
+        .select(selectColumns)
+        .eq('checkout_id', checkoutId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (canonicalError) {
+        console.warn('[kiwify-webhook] lookup after migration failure also failed', canonicalError);
+      } else if (canonicalRow) {
+        existing = pickPreferredExisting([existing, canonicalRow], checkoutIdCandidates) ?? canonicalRow;
+      }
+    } else {
+      existing.checkout_id = checkoutId;
+    }
   }
 
   const name = nameFromPayload ?? existing?.customer_name ?? 'Cliente';
