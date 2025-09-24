@@ -2,7 +2,7 @@
 export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto';
 import { readEnvValue } from '../../../../lib/env';
 
@@ -890,6 +890,18 @@ function normalizeProductComponent(value: any): string | null {
   return trimmed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+function normalizeEmailForMatch(value: any): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeStatusForMatch(value: any): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function findCheckoutIdDeep(
   obj: any,
   opts?: { email?: string | null; productId?: string | null; productTitle?: string | null }
@@ -1000,6 +1012,182 @@ function pickPreferredExisting(
   };
 
   return deduped.reduce(pickBetter, null);
+}
+
+async function propagateConvertedStatus(args: {
+  supabase: SupabaseClient;
+  checkoutIdCandidates: Iterable<string>;
+  currentRowId: string;
+  email: string;
+  productId: string | null;
+  productTitle: string | null;
+  paidAt: string | null;
+  lastEvent: string | null;
+  nowIso: string;
+}) {
+  const {
+    supabase,
+    checkoutIdCandidates,
+    currentRowId,
+    email,
+    productId,
+    productTitle,
+    paidAt,
+    lastEvent,
+    nowIso,
+  } = args;
+
+  const candidateIdSet = new Set(
+    Array.from(checkoutIdCandidates)
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map((value) => value.trim())
+  );
+  const candidateIds = Array.from(candidateIdSet);
+
+  type MinimalRow = {
+    id: string;
+    checkout_id: string | null;
+    paid: boolean | null;
+    status: string | null;
+    paid_at: string | null;
+    last_event: string | null;
+    product_id: string | null;
+    product_title: string | null;
+  };
+
+  const seenIds = new Set<string>();
+  const collectRows = (rows: MinimalRow[] | null | undefined, buffer: MinimalRow[]) => {
+    if (!Array.isArray(rows)) return;
+    for (const row of rows) {
+      if (!row || typeof row.id !== 'string') continue;
+      if (seenIds.has(row.id)) continue;
+      seenIds.add(row.id);
+      buffer.push(row);
+    }
+  };
+
+  const relatedRows: MinimalRow[] = [];
+
+  if (candidateIds.length) {
+    const { data, error } = await supabase
+      .from('abandoned_emails')
+      .select(
+        'id, checkout_id, paid, status, paid_at, last_event, product_id, product_title'
+      )
+      .in('checkout_id', candidateIds);
+
+    if (error) {
+      console.warn('[kiwify-webhook] failed to load duplicates by checkout_id', error, {
+        checkoutIdCount: candidateIds.length,
+      });
+    } else {
+      collectRows(data, relatedRows);
+    }
+  }
+
+  const normalizedEmail = normalizeEmailForMatch(email);
+  const emailVariants = new Set<string>();
+  if (normalizedEmail) {
+    emailVariants.add(normalizedEmail);
+  }
+  const rawEmail = typeof email === 'string' ? email.trim() : '';
+  if (rawEmail && rawEmail !== normalizedEmail) {
+    emailVariants.add(rawEmail);
+  }
+
+  const emailColumns: Array<'customer_email' | 'email'> = ['customer_email', 'email'];
+
+  for (const variant of emailVariants) {
+    for (const column of emailColumns) {
+      const query = supabase
+        .from('abandoned_emails')
+        .select(
+          'id, checkout_id, paid, status, paid_at, last_event, product_id, product_title'
+        )
+        .eq(column, variant)
+        .limit(200);
+
+      const { data, error } = await query;
+      if (error) {
+        console.warn('[kiwify-webhook] failed to load duplicates by email', error, {
+          column,
+        });
+        continue;
+      }
+      collectRows(data, relatedRows);
+    }
+  }
+
+  if (!relatedRows.length) {
+    return;
+  }
+
+  const targetProductId = normalizeProductComponent(productId);
+  const targetProductTitle = normalizeProductComponent(productTitle);
+
+  const updates: MinimalRow[] = [];
+
+  for (const candidate of relatedRows) {
+    if (!candidate || candidate.id === currentRowId) continue;
+
+    const candidateProductId = normalizeProductComponent(candidate.product_id);
+    const candidateProductTitle = normalizeProductComponent(candidate.product_title);
+
+    const matchesCheckoutId =
+      candidate.checkout_id && candidateIdSet.has(candidate.checkout_id);
+
+    let matchesProduct = Boolean(matchesCheckoutId);
+    if (!matchesProduct) {
+      if (targetProductId && candidateProductId) {
+        matchesProduct = candidateProductId === targetProductId;
+      } else if (!targetProductId && targetProductTitle && candidateProductTitle) {
+        matchesProduct = candidateProductTitle === targetProductTitle;
+      }
+    }
+
+    if (!matchesProduct) {
+      continue;
+    }
+
+    const candidateStatus = normalizeStatusForMatch(candidate.status);
+    const alreadyConverted = Boolean(candidate.paid) && candidateStatus === 'converted';
+    const hasPaidAt = Boolean(candidate.paid_at);
+
+    if (alreadyConverted && hasPaidAt) {
+      continue;
+    }
+
+    updates.push({
+      id: candidate.id,
+      checkout_id: candidate.checkout_id ?? null,
+      paid: true,
+      status: 'converted',
+      paid_at: candidate.paid_at ?? paidAt ?? nowIso,
+      last_event: candidate.last_event ?? lastEvent ?? null,
+      product_id: candidate.product_id ?? null,
+      product_title: candidate.product_title ?? null,
+    });
+  }
+
+  if (!updates.length) {
+    return;
+  }
+
+  const payload = updates.map((item) => ({
+    id: item.id,
+    paid: true,
+    status: 'converted',
+    paid_at: item.paid_at,
+    last_event: item.last_event,
+    updated_at: nowIso,
+  }));
+
+  const { error } = await supabase.from('abandoned_emails').upsert(payload);
+  if (error) {
+    console.warn('[kiwify-webhook] failed to propagate converted status', error, {
+      ids: payload.map((row) => row.id),
+    });
+  }
 }
 
 function interpretBoolean(value: any): boolean | null {
@@ -1492,6 +1680,8 @@ export async function POST(req: Request) {
     source = 'kiwify.webhook';
   }
 
+  const nowIso = now.toISOString();
+
   const row = {
     id: existing?.id ?? crypto.randomUUID(),
     email,
@@ -1510,7 +1700,7 @@ export async function POST(req: Request) {
     schedule_at: scheduleAt,
     source,
     traffic_source: trafficSource,
-    updated_at: now.toISOString(),
+    updated_at: nowIso,
     last_event: lastEvent,
   };
 
@@ -1523,6 +1713,20 @@ export async function POST(req: Request) {
       rowPreview: { email: row.email, checkout_id: row.checkout_id },
     });
     return NextResponse.json({ ok: false, error }, { status: 500 });
+  }
+
+  if (paid) {
+    await propagateConvertedStatus({
+      supabase,
+      checkoutIdCandidates,
+      currentRowId: row.id,
+      email,
+      productId,
+      productTitle,
+      paidAt: row.paid_at ?? null,
+      lastEvent,
+      nowIso,
+    });
   }
 
   return NextResponse.json({ ok: true });
