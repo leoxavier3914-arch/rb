@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import emailjs from '@emailjs/nodejs';
 import * as crypto from 'crypto';
 import { applyDiscountToCheckoutUrl } from '../../../../lib/checkout';
+import { readEnvValue } from '../../../../lib/env';
 
 // --- EmailJS (Strict Mode: precisa PUBLIC + PRIVATE) ---
 const EMAIL_PUBLIC   = process.env.EMAILJS_PUBLIC_KEY!;
@@ -20,11 +21,18 @@ if (EMAIL_PUBLIC && EMAIL_PRIVATE) {
 
 export async function POST(req: Request) {
   // --- Env guards úteis (erros mais claros) ---
-  const supabaseUrl =
-    (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
-  const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
+  const supabaseUrl = readEnvValue('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL') ?? '';
+  const supabaseKey =
+    readEnvValue(
+      'SUPABASE_SERVICE_ROLE_KEY',
+      'SUPABASE_SERVICE_ROLE',
+      'SUPABASE_SERVICE_KEY',
+      'SUPABASE_SECRET_KEY',
+    ) ?? '';
   if (!supabaseUrl || !supabaseKey) {
-    console.error('[env] faltam SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY');
+    console.error(
+      '[env] faltam SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SERVICE_ROLE',
+    );
     return NextResponse.json({ ok: false, error: 'env_missing_supabase' }, { status: 500 });
   }
 

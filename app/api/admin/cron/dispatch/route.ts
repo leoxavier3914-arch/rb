@@ -19,7 +19,12 @@ let emailJsInitialized = false;
 export async function POST(req: Request) {
   const adminToken = readEnvValue('ADMIN_TOKEN');
   const supabaseUrl = readEnvValue('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
-  const supabaseServiceRoleKey = readEnvValue('SUPABASE_SERVICE_ROLE_KEY');
+  const supabaseServiceRoleKey = readEnvValue(
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_ROLE',
+    'SUPABASE_SERVICE_KEY',
+    'SUPABASE_SECRET_KEY',
+  );
   const emailServiceId = readEnvValue('EMAILJS_SERVICE_ID', 'NEXT_PUBLIC_EMAILJS_SERVICE_ID');
   const emailTemplateId = readEnvValue('EMAILJS_TEMPLATE_ID', 'NEXT_PUBLIC_EMAILJS_TEMPLATE_ID');
   const emailPublicKey = readEnvValue('EMAILJS_PUBLIC_KEY', 'NEXT_PUBLIC_EMAILJS_PUBLIC_KEY');
@@ -34,7 +39,8 @@ export async function POST(req: Request) {
   ) {
     const missingEnv: string[] = [];
     if (!supabaseUrl) missingEnv.push('SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL');
-    if (!supabaseServiceRoleKey) missingEnv.push('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseServiceRoleKey)
+      missingEnv.push('SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SERVICE_ROLE');
     if (!emailServiceId) missingEnv.push('EMAILJS_SERVICE_ID/NEXT_PUBLIC_EMAILJS_SERVICE_ID');
     if (!emailTemplateId) missingEnv.push('EMAILJS_TEMPLATE_ID/NEXT_PUBLIC_EMAILJS_TEMPLATE_ID');
     if (!emailPublicKey) missingEnv.push('EMAILJS_PUBLIC_KEY/NEXT_PUBLIC_EMAILJS_PUBLIC_KEY');

@@ -9,12 +9,18 @@ import { readEnvValue } from '../../../../lib/env';
 export async function GET(req: Request) {
   const adminToken = readEnvValue('ADMIN_TOKEN');
   const supabaseUrl = readEnvValue('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
-  const supabaseServiceRoleKey = readEnvValue('SUPABASE_SERVICE_ROLE_KEY');
+  const supabaseServiceRoleKey = readEnvValue(
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_ROLE',
+    'SUPABASE_SERVICE_KEY',
+    'SUPABASE_SECRET_KEY',
+  );
 
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     const missingEnv: string[] = [];
     if (!supabaseUrl) missingEnv.push('SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL');
-    if (!supabaseServiceRoleKey) missingEnv.push('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseServiceRoleKey)
+      missingEnv.push('SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SERVICE_ROLE');
 
     console.error('[events] missing environment variables', missingEnv);
     return NextResponse.json(
