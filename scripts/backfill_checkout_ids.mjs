@@ -528,12 +528,13 @@ async function main() {
 
   const supabaseUrl = readEnv('SUPABASE_URL', ['NEXT_PUBLIC_SUPABASE_URL']);
   const serviceKey = readEnv('SUPABASE_SERVICE_ROLE_KEY', [
+    'SUPABASE_SERVICE_ROLE',
     'SUPABASE_SERVICE_KEY',
     'SUPABASE_SECRET_KEY',
   ]);
 
   if (!supabaseUrl || !serviceKey) {
-    console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.');
+    console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SERVICE_ROLE environment variables.');
     process.exit(1);
   }
 

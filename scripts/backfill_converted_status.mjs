@@ -236,10 +236,14 @@ async function propagateForRow({ supabase, row }) {
 
 async function main() {
   const supabaseUrl = readEnv('SUPABASE_URL', ['NEXT_PUBLIC_SUPABASE_URL']);
-  const serviceKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceKey = readEnv('SUPABASE_SERVICE_ROLE_KEY', [
+    'SUPABASE_SERVICE_ROLE',
+    'SUPABASE_SERVICE_KEY',
+    'SUPABASE_SECRET_KEY',
+  ]);
 
   if (!supabaseUrl || !serviceKey) {
-    console.error('Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+    console.error('Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SERVICE_ROLE.');
     process.exitCode = 1;
     return;
   }

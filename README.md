@@ -6,7 +6,7 @@ Hub interno para monitorar carrinhos abandonados da Kiwify e reenviar lembretes 
 Configure as seguintes chaves antes de rodar o projeto:
 
 ### Supabase
-- `SUPABASE_SERVICE_ROLE_KEY` (privada)
+- `SUPABASE_SERVICE_ROLE_KEY` (privada; em ambientes como o Vercel pode aparecer como `SUPABASE_SERVICE_ROLE`)
 - `SUPABASE_URL` (privada — opcional; caso não defina, as rotas server usam o fallback `NEXT_PUBLIC_SUPABASE_URL`)
 - `NEXT_PUBLIC_SUPABASE_URL` (pública — obrigatória para o client e agora fallback do server)
 
@@ -44,7 +44,7 @@ Para sincronizar compras aprovadas antigas (anteriores ao patch do webhook), exe
 
 ```bash
 SUPABASE_URL="https://<sua-instancia>.supabase.co" \
-SUPABASE_SERVICE_ROLE_KEY="<chave-service-role>" \
+SUPABASE_SERVICE_ROLE_KEY="<chave-service-role>" \ # ou SUPABASE_SERVICE_ROLE
 node scripts/backfill_converted_status.mjs
 ```
 
@@ -60,7 +60,7 @@ O script percorre todos os registros marcados como pagos/convertidos e replica o
 
 O script `scripts/backfill_checkout_ids.mjs` ajuda a atualizar registros existentes para usar o mesmo algoritmo de `checkout_id` determinístico aplicado pelo webhook:
 
-1. Exporte as variáveis `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` (ou equivalentes) para que o script consiga autenticar com a role de serviço.
+1. Exporte as variáveis `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` (ou `SUPABASE_SERVICE_ROLE`) para que o script consiga autenticar com a role de serviço.
 2. Execute primeiro em modo _dry-run_ para conferir o impacto:
 
    ```bash
