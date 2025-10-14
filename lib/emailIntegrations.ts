@@ -139,20 +139,9 @@ const ensureBoolean = (value: unknown, fallback: boolean): boolean => {
 };
 
 const ensureEmailConfig = (
-  value: unknown,
+  _value: unknown,
   defaultEmailConfig: EmailJsClientConfig,
-): EmailJsClientConfig => {
-  if (!value || typeof value !== 'object') {
-    return { ...defaultEmailConfig };
-  }
-
-  const candidate = value as Partial<EmailJsClientConfig>;
-  return {
-    serviceId: typeof candidate.serviceId === 'string' ? candidate.serviceId : defaultEmailConfig.serviceId,
-    templateId: typeof candidate.templateId === 'string' ? candidate.templateId : defaultEmailConfig.templateId,
-    publicKey: typeof candidate.publicKey === 'string' ? candidate.publicKey : defaultEmailConfig.publicKey,
-  };
-};
+): EmailJsClientConfig => ({ ...defaultEmailConfig });
 
 const cloneTemplates = (templates: ReadonlyArray<EmailTemplate>): EmailTemplate[] => templates.map((template) => ({ ...template }));
 

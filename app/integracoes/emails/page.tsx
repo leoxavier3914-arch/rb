@@ -95,8 +95,12 @@ export default function EmailIntegrationsPage() {
                 publicKey,
               },
             };
-            setSettings(migrated);
-            window.localStorage.setItem(EMAIL_INTEGRATIONS_STORAGE_KEY, JSON.stringify(migrated));
+            const normalizedMigrated = normalizeEmailIntegrationSettings(migrated, defaultEmailConfig);
+            setSettings(normalizedMigrated);
+            window.localStorage.setItem(
+              EMAIL_INTEGRATIONS_STORAGE_KEY,
+              JSON.stringify(normalizedMigrated),
+            );
           }
         } catch (legacyError) {
           console.warn('[kiwify-hub] não foi possível migrar configurações legadas de e-mail', legacyError);
@@ -243,54 +247,44 @@ export default function EmailIntegrationsPage() {
     <form className="space-y-8" onSubmit={handleSubmit}>
       <IntegrationSection
         title="Credenciais do EmailJS"
-        description="Defina as credenciais globais que serão usadas para todos os envios (manual ou automáticos)."
+        description="As credenciais são carregadas automaticamente das variáveis de ambiente configuradas na Vercel e são aplicadas em todos os envios."
       >
-        <div className="grid gap-4 md:grid-cols-3">
-          <label className="flex flex-col gap-2 text-sm">
-            <span className="font-medium text-white">Service ID</span>
-            <input
-              type="text"
-              value={emailConfig.serviceId}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  emailConfig: { ...prev.emailConfig, serviceId: event.target.value },
-                }))
-              }
-              placeholder="ex: service_abandoned_cart"
-              className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-sm">
-            <span className="font-medium text-white">Template ID</span>
-            <input
-              type="text"
-              value={emailConfig.templateId}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  emailConfig: { ...prev.emailConfig, templateId: event.target.value },
-                }))
-              }
-              placeholder="ex: template_abandoned_cart"
-              className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-sm">
-            <span className="font-medium text-white">Chave pública</span>
-            <input
-              type="text"
-              value={emailConfig.publicKey}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  emailConfig: { ...prev.emailConfig, publicKey: event.target.value },
-                }))
-              }
-              placeholder="ex: public_xxxxx"
-              className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
-            />
-          </label>
+        <div className="space-y-4">
+          <p className="text-sm text-slate-400">
+            Para alterar Service ID, Template ID ou Public Key, atualize as variáveis <code>NEXT_PUBLIC_EMAILJS_*</code> no projeto.
+          </p>
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="flex flex-col gap-2 text-sm">
+              <span className="font-medium text-white">Service ID</span>
+              <input
+                type="text"
+                value={emailConfig.serviceId}
+                readOnly
+                className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white focus:outline-none"
+                placeholder="Defina via ambiente"
+              />
+            </label>
+            <label className="flex flex-col gap-2 text-sm">
+              <span className="font-medium text-white">Template ID</span>
+              <input
+                type="text"
+                value={emailConfig.templateId}
+                readOnly
+                className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white focus:outline-none"
+                placeholder="Defina via ambiente"
+              />
+            </label>
+            <label className="flex flex-col gap-2 text-sm">
+              <span className="font-medium text-white">Chave pública</span>
+              <input
+                type="text"
+                value={emailConfig.publicKey}
+                readOnly
+                className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white focus:outline-none"
+                placeholder="Defina via ambiente"
+              />
+            </label>
+          </div>
         </div>
       </IntegrationSection>
 

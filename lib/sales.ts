@@ -198,10 +198,6 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
     pickTimestamp(
       row.sent_at,
       row.last_reminder_at,
-      payload.sent_at,
-      payload.sentAt,
-      payload.last_reminder_at,
-      payload.lastReminderAt,
     ) ?? null;
 
   const status = resolveDashboardStatus({
