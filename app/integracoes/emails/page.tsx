@@ -1,8 +1,10 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import IntegrationGuideLink from '../../../components/IntegrationGuideLink';
 import IntegrationSection from '../../../components/IntegrationSection';
+
+const LOCAL_STORAGE_KEY = 'email-integrations-settings';
 
 const toggles = [
   {
@@ -51,14 +53,95 @@ const defaultTemplates: EmailTemplate[] = [
 ];
 
 export default function EmailIntegrationsPage() {
-  const [templates, setTemplates] = useState<EmailTemplate[]>(defaultTemplates);
+  const defaultEmailConfig = useMemo(
+    () => ({
+      serviceId: process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID ?? '',
+      templateId: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID ?? '',
+      publicKey: process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY ?? '',
+    }),
+    [],
+  );
+
+  const [templates, setTemplates] = useState<EmailTemplate[]>(() =>
+    defaultTemplates.map((template) => ({ ...template })),
+  );
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplates[0]?.id ?? '');
   const [fromEmail, setFromEmail] = useState('contato@kiwifyhub.com');
-  const [emailConfig, setEmailConfig] = useState({
-    serviceId: process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID ?? '',
-    templateId: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID ?? '',
-    publicKey: process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY ?? '',
-  });
+  const [emailConfig, setEmailConfig] = useState(defaultEmailConfig);
+  
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const stored = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (!stored) {
+        return;
+      }
+
+      const parsed = JSON.parse(stored) as Partial<{
+        templates: unknown;
+        selectedTemplateId: unknown;
+        fromEmail: unknown;
+        emailConfig: unknown;
+      }>;
+
+      const storedTemplates = Array.isArray(parsed.templates)
+        ? parsed.templates.filter((template): template is EmailTemplate => {
+            if (!template || typeof template !== 'object') {
+              return false;
+            }
+
+            const candidate = template as Partial<EmailTemplate>;
+            return (
+              typeof candidate.id === 'string' &&
+              typeof candidate.name === 'string' &&
+              typeof candidate.subject === 'string' &&
+              typeof candidate.description === 'string' &&
+              typeof candidate.html === 'string'
+            );
+          })
+        : [];
+
+      const nextTemplates =
+        storedTemplates.length > 0
+          ? storedTemplates
+          : defaultTemplates.map((template) => ({ ...template }));
+      setTemplates(nextTemplates);
+
+      const storedTemplateId =
+        typeof parsed.selectedTemplateId === 'string' &&
+        nextTemplates.some((template) => template.id === parsed.selectedTemplateId)
+          ? parsed.selectedTemplateId
+          : nextTemplates[0]?.id ?? '';
+      setSelectedTemplateId(storedTemplateId);
+
+      if (typeof parsed.fromEmail === 'string' && parsed.fromEmail.trim()) {
+        setFromEmail(parsed.fromEmail);
+      }
+
+      if (parsed.emailConfig && typeof parsed.emailConfig === 'object') {
+        const partialConfig = parsed.emailConfig as Partial<typeof defaultEmailConfig>;
+        setEmailConfig({
+          serviceId:
+            typeof partialConfig.serviceId === 'string'
+              ? partialConfig.serviceId
+              : defaultEmailConfig.serviceId,
+          templateId:
+            typeof partialConfig.templateId === 'string'
+              ? partialConfig.templateId
+              : defaultEmailConfig.templateId,
+          publicKey:
+            typeof partialConfig.publicKey === 'string'
+              ? partialConfig.publicKey
+              : defaultEmailConfig.publicKey,
+        });
+      }
+    } catch (error) {
+      console.warn('[kiwify-hub] não foi possível carregar as configurações de e-mail', error);
+    }
+  }, [defaultEmailConfig]);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null,
@@ -116,15 +199,24 @@ export default function EmailIntegrationsPage() {
     event.preventDefault();
     setIsSaving(true);
     setFeedbackMessage('');
-    // eslint-disable-next-line no-console
-    console.log('Configurações salvas', {
-      fromEmail,
-      emailConfig,
-      templates,
-    });
     window.setTimeout(() => {
-      setIsSaving(false);
-      setFeedbackMessage('Configurações salvas com sucesso.');
+      try {
+        if (typeof window !== 'undefined') {
+          const settingsToStore = {
+            templates,
+            selectedTemplateId,
+            fromEmail,
+            emailConfig,
+          };
+          window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(settingsToStore));
+        }
+        setFeedbackMessage('Configurações salvas com sucesso.');
+      } catch (error) {
+        console.warn('[kiwify-hub] não foi possível salvar as configurações de e-mail', error);
+        setFeedbackMessage('Não foi possível salvar as configurações. Tente novamente.');
+      } finally {
+        setIsSaving(false);
+      }
     }, 600);
   };
 
