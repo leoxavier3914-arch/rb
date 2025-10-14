@@ -25,9 +25,37 @@ const toggles = [
   },
 ];
 
+type WhatsappMessage = {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+};
+
+const defaultMessages: WhatsappMessage[] = [
+  {
+    id: 'remarketing',
+    name: 'WhatsApp remarketing',
+    description: 'Mensagem enviada para retomar contato com quem abandonou o carrinho.',
+    content:
+      'Oi {{nome}}, percebemos que você deixou alguns itens no carrinho. Posso te ajudar a finalizar a compra?',
+  },
+  {
+    id: 'feedback',
+    name: 'WhatsApp feedback',
+    description: 'Mensagem utilizada para solicitar a avaliação do cliente após a entrega.',
+    content:
+      'Olá {{nome}}! Gostaríamos de saber como foi a sua experiência com a Kiwify. Pode compartilhar um feedback rápido?',
+  },
+];
+
 export default function WhatsappIntegrationsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [messages, setMessages] = useState<WhatsappMessage[]>(defaultMessages);
+  const [selectedMessageId, setSelectedMessageId] = useState<string>(defaultMessages[0]?.id ?? '');
+
+  const selectedMessage = messages.find((message) => message.id === selectedMessageId) ?? null;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -38,6 +66,42 @@ export default function WhatsappIntegrationsPage() {
       setIsSaving(false);
       setFeedbackMessage('Configurações salvas com sucesso.');
     }, 600);
+  };
+
+  const handleSelectMessage = (messageId: string) => {
+    setSelectedMessageId(messageId);
+  };
+
+  const handleAddMessage = () => {
+    const timestamp = Date.now();
+    const newMessage: WhatsappMessage = {
+      id: `custom-${timestamp}`,
+      name: 'Nova mensagem',
+      description: 'Descreva o objetivo dessa mensagem automática.',
+      content: 'Escreva aqui o conteúdo que será enviado pelo WhatsApp.',
+    };
+
+    setMessages((prev) => [...prev, newMessage]);
+    setSelectedMessageId(newMessage.id);
+  };
+
+  const handleRemoveMessage = (messageId: string) => {
+    const remainingMessages = messages.filter((message) => message.id !== messageId);
+    setMessages(remainingMessages);
+
+    if (messageId === selectedMessageId) {
+      setSelectedMessageId(remainingMessages[0]?.id ?? '');
+    }
+  };
+
+  const handleMessageChange = <K extends keyof WhatsappMessage>(
+    messageId: string,
+    field: K,
+    value: WhatsappMessage[K],
+  ) => {
+    setMessages((prev) =>
+      prev.map((message) => (message.id === messageId ? { ...message, [field]: value } : message)),
+    );
   };
 
   return (
@@ -118,6 +182,133 @@ export default function WhatsappIntegrationsPage() {
               defaultValue={`Oi {{nome}}, tudo bem? Sou da equipe Kiwify e gostaria de saber como foi a sua experiência.`}
             />
           </label>
+        </div>
+      </IntegrationSection>
+
+      <IntegrationSection
+        title="Mensagens automáticas"
+        description="Gerencie as mensagens utilizadas nas jornadas de remarketing e feedback."
+      >
+        <div className="space-y-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Mensagens configuradas</h3>
+              <p className="text-xs text-slate-400">
+                Ajuste os textos enviados pela automação ou adicione novas mensagens personalizadas.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleAddMessage}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-brand/60 bg-brand/10 px-4 text-sm font-semibold text-brand transition hover:bg-brand hover:text-white"
+            >
+              Adicionar mensagem
+            </button>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
+            <table className="min-w-full divide-y divide-slate-800 text-left text-sm text-slate-200">
+              <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-400">
+                <tr>
+                  <th scope="col" className="px-4 py-3">
+                    Mensagem
+                  </th>
+                  <th scope="col" className="px-4 py-3">
+                    Pré-visualização
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {messages.map((message) => {
+                  const isActive = message.id === selectedMessage?.id;
+                  const preview = message.content.length > 80 ? `${message.content.slice(0, 80)}...` : message.content;
+
+                  return (
+                    <tr
+                      key={message.id}
+                      className={`cursor-pointer transition hover:bg-slate-900/70 ${isActive ? 'bg-slate-900/80' : ''}`}
+                      onClick={() => handleSelectMessage(message.id)}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-white">{message.name}</span>
+                          <span className="text-xs text-slate-500">{message.description}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-200">{preview}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleSelectMessage(message.id);
+                          }}
+                          className="text-xs font-semibold text-brand hover:text-brand/80"
+                        >
+                          Editar
+                        </button>
+                        {messages.length > 1 && message.id !== 'remarketing' && message.id !== 'feedback' ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRemoveMessage(message.id);
+                            }}
+                            className="ml-3 text-xs font-semibold text-rose-400 hover:text-rose-300"
+                          >
+                            Remover
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {selectedMessage ? (
+            <div className="grid gap-6 rounded-2xl border border-slate-800 bg-slate-950/40 p-6">
+              <div className="flex flex-col gap-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Mensagem selecionada</span>
+                <input
+                  type="text"
+                  value={selectedMessage.name}
+                  onChange={(event) => handleMessageChange(selectedMessage.id, 'name', event.target.value)}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm font-semibold text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
+                  placeholder="Nome interno da mensagem"
+                />
+              </div>
+
+              <label className="flex flex-col gap-2 text-sm">
+                <span className="font-medium text-white">Descrição</span>
+                <input
+                  type="text"
+                  value={selectedMessage.description}
+                  onChange={(event) => handleMessageChange(selectedMessage.id, 'description', event.target.value)}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
+                  placeholder="Breve descrição sobre quando a mensagem será utilizada"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm">
+                <span className="font-medium text-white">Conteúdo da mensagem</span>
+                <textarea
+                  rows={6}
+                  value={selectedMessage.content}
+                  onChange={(event) => handleMessageChange(selectedMessage.id, 'content', event.target.value)}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
+                  placeholder="Digite o texto enviado pelo WhatsApp"
+                />
+                <span className="text-xs text-slate-500">
+                  {'Utilize variáveis como {{nome}} para personalizar automaticamente cada mensagem.'}
+                </span>
+              </label>
+            </div>
+          ) : null}
         </div>
       </IntegrationSection>
 
