@@ -3,8 +3,14 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import IntegrationGuideLink from '../../../components/IntegrationGuideLink';
 import IntegrationSection from '../../../components/IntegrationSection';
-
-const LOCAL_STORAGE_KEY = 'email-integrations-settings';
+import {
+  EMAIL_FLOW_CONFIGS,
+  EMAIL_INTEGRATIONS_STORAGE_KEY,
+  EmailIntegrationSettings,
+  EmailTemplate,
+  normalizeEmailIntegrationSettings,
+  syncFlowSettingsWithTemplates,
+} from '../../../lib/emailIntegrations';
 
 const toggles = [
   {
@@ -27,31 +33,6 @@ const toggles = [
   },
 ];
 
-type EmailTemplate = {
-  id: string;
-  name: string;
-  subject: string;
-  description: string;
-  html: string;
-};
-
-const defaultTemplates: EmailTemplate[] = [
-  {
-    id: 'remarketing',
-    name: 'E-mail de remarketing',
-    description: 'Carrinhos abandonados, enviado automaticamente como hoje.',
-    subject: 'Seu carrinho está te esperando na Kiwify',
-    html: `<h1>Volte para finalizar a compra ❤️</h1>\n<p>Notamos que você deixou itens no carrinho. Clique no botão abaixo para concluir.</p>\n<a href="{{{checkoutUrl}}}" style="display:inline-block;padding:12px 24px;background:#7c3aed;color:#fff;border-radius:8px;text-decoration:none;">Finalizar compra</a>`,
-  },
-  {
-    id: 'feedback',
-    name: 'E-mail de feedback',
-    description: 'Disparado para vendas aprovadas pedindo a avaliação do cliente.',
-    subject: 'Como foi a sua experiência com a Kiwify?',
-    html: `<h1>Queremos ouvir você!</h1>\n<p>Conte como foi a sua experiência respondendo nosso rápido formulário.</p>\n<p>Obrigado por comprar com a gente 💜</p>`,
-  },
-];
-
 export default function EmailIntegrationsPage() {
   const defaultEmailConfig = useMemo(
     () => ({
@@ -62,12 +43,13 @@ export default function EmailIntegrationsPage() {
     [],
   );
 
-  const [templates, setTemplates] = useState<EmailTemplate[]>(() =>
-    defaultTemplates.map((template) => ({ ...template })),
+  const defaultSettings = useMemo<EmailIntegrationSettings>(
+    () => normalizeEmailIntegrationSettings(undefined, defaultEmailConfig),
+    [defaultEmailConfig],
   );
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplates[0]?.id ?? '');
-  const [fromEmail, setFromEmail] = useState('contato@kiwifyhub.com');
-  const [emailConfig, setEmailConfig] = useState(defaultEmailConfig);
+
+  const [settings, setSettings] = useState<EmailIntegrationSettings>(defaultSettings);
+  const { templates, selectedTemplateId, fromEmail, emailConfig, flowSettings } = settings;
   
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -75,73 +57,55 @@ export default function EmailIntegrationsPage() {
     }
 
     try {
-      const stored = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (!stored) {
+      const stored = window.localStorage.getItem(EMAIL_INTEGRATIONS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const normalized = normalizeEmailIntegrationSettings(parsed, defaultEmailConfig);
+        setSettings(normalized);
         return;
       }
 
-      const parsed = JSON.parse(stored) as Partial<{
-        templates: unknown;
-        selectedTemplateId: unknown;
-        fromEmail: unknown;
-        emailConfig: unknown;
-      }>;
+      const legacyRaw = window.localStorage.getItem('feedback-settings');
+      if (legacyRaw) {
+        try {
+          const legacy = JSON.parse(legacyRaw) as Partial<{
+            emailServiceId?: unknown;
+            emailTemplateId?: unknown;
+            emailPublicKey?: unknown;
+          }>;
+          const serviceId =
+            typeof legacy.emailServiceId === 'string' && legacy.emailServiceId.trim().length > 0
+              ? legacy.emailServiceId
+              : defaultEmailConfig.serviceId;
+          const templateId =
+            typeof legacy.emailTemplateId === 'string' && legacy.emailTemplateId.trim().length > 0
+              ? legacy.emailTemplateId
+              : defaultEmailConfig.templateId;
+          const publicKey =
+            typeof legacy.emailPublicKey === 'string' && legacy.emailPublicKey.trim().length > 0
+              ? legacy.emailPublicKey
+              : defaultEmailConfig.publicKey;
 
-      const storedTemplates = Array.isArray(parsed.templates)
-        ? parsed.templates.filter((template): template is EmailTemplate => {
-            if (!template || typeof template !== 'object') {
-              return false;
-            }
-
-            const candidate = template as Partial<EmailTemplate>;
-            return (
-              typeof candidate.id === 'string' &&
-              typeof candidate.name === 'string' &&
-              typeof candidate.subject === 'string' &&
-              typeof candidate.description === 'string' &&
-              typeof candidate.html === 'string'
-            );
-          })
-        : [];
-
-      const nextTemplates =
-        storedTemplates.length > 0
-          ? storedTemplates
-          : defaultTemplates.map((template) => ({ ...template }));
-      setTemplates(nextTemplates);
-
-      const storedTemplateId =
-        typeof parsed.selectedTemplateId === 'string' &&
-        nextTemplates.some((template) => template.id === parsed.selectedTemplateId)
-          ? parsed.selectedTemplateId
-          : nextTemplates[0]?.id ?? '';
-      setSelectedTemplateId(storedTemplateId);
-
-      if (typeof parsed.fromEmail === 'string' && parsed.fromEmail.trim()) {
-        setFromEmail(parsed.fromEmail);
-      }
-
-      if (parsed.emailConfig && typeof parsed.emailConfig === 'object') {
-        const partialConfig = parsed.emailConfig as Partial<typeof defaultEmailConfig>;
-        setEmailConfig({
-          serviceId:
-            typeof partialConfig.serviceId === 'string'
-              ? partialConfig.serviceId
-              : defaultEmailConfig.serviceId,
-          templateId:
-            typeof partialConfig.templateId === 'string'
-              ? partialConfig.templateId
-              : defaultEmailConfig.templateId,
-          publicKey:
-            typeof partialConfig.publicKey === 'string'
-              ? partialConfig.publicKey
-              : defaultEmailConfig.publicKey,
-        });
+          if (serviceId || templateId || publicKey) {
+            const migrated: EmailIntegrationSettings = {
+              ...defaultSettings,
+              emailConfig: {
+                serviceId,
+                templateId,
+                publicKey,
+              },
+            };
+            setSettings(migrated);
+            window.localStorage.setItem(EMAIL_INTEGRATIONS_STORAGE_KEY, JSON.stringify(migrated));
+          }
+        } catch (legacyError) {
+          console.warn('[kiwify-hub] não foi possível migrar configurações legadas de e-mail', legacyError);
+        }
       }
     } catch (error) {
       console.warn('[kiwify-hub] não foi possível carregar as configurações de e-mail', error);
     }
-  }, [defaultEmailConfig]);
+  }, [defaultEmailConfig, defaultSettings]);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null,
@@ -153,8 +117,9 @@ export default function EmailIntegrationsPage() {
     field: Field,
     value: EmailTemplate[Field],
   ) => {
-    setTemplates((prev) =>
-      prev.map((template) =>
+    setSettings((prev) => ({
+      ...prev,
+      templates: prev.templates.map((template) =>
         template.id === id
           ? {
               ...template,
@@ -162,11 +127,14 @@ export default function EmailIntegrationsPage() {
             }
           : template,
       ),
-    );
+    }));
   };
 
   const handleSelectTemplate = (templateId: string) => {
-    setSelectedTemplateId(templateId);
+    setSettings((prev) => ({
+      ...prev,
+      selectedTemplateId: templateId,
+    }));
   };
 
   const handleAddTemplate = () => {
@@ -178,17 +146,30 @@ export default function EmailIntegrationsPage() {
       subject: 'Defina o assunto do novo template',
       html: `<h1>Seu conteúdo aqui</h1>\n<p>Utilize {{{body}}} no EmailJS para receber o HTML final gerado pelo app.</p>`,
     };
-    setTemplates((prev) => [...prev, newTemplate]);
-    setSelectedTemplateId(newTemplate.id);
+    setSettings((prev) => {
+      const nextTemplates = [...prev.templates, newTemplate];
+      return {
+        ...prev,
+        templates: nextTemplates,
+        selectedTemplateId: newTemplate.id,
+        flowSettings: syncFlowSettingsWithTemplates(prev.flowSettings, nextTemplates),
+      };
+    });
   };
 
   const handleRemoveTemplate = (templateId: string) => {
-    setTemplates((prev) => {
-      const filtered = prev.filter((template) => template.id !== templateId);
-      if (templateId === selectedTemplateId) {
-        setSelectedTemplateId(filtered[0]?.id ?? '');
-      }
-      return filtered;
+    setSettings((prev) => {
+      const filtered = prev.templates.filter((template) => template.id !== templateId);
+      const fallbackId = filtered[0]?.id ?? prev.templates[0]?.id ?? '';
+      return {
+        ...prev,
+        templates: filtered,
+        selectedTemplateId:
+          prev.selectedTemplateId === templateId
+            ? fallbackId
+            : prev.selectedTemplateId,
+        flowSettings: syncFlowSettingsWithTemplates(prev.flowSettings, filtered),
+      };
     });
   };
 
@@ -202,13 +183,7 @@ export default function EmailIntegrationsPage() {
     window.setTimeout(() => {
       try {
         if (typeof window !== 'undefined') {
-          const settingsToStore = {
-            templates,
-            selectedTemplateId,
-            fromEmail,
-            emailConfig,
-          };
-          window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(settingsToStore));
+          window.localStorage.setItem(EMAIL_INTEGRATIONS_STORAGE_KEY, JSON.stringify(settings));
         }
         setFeedbackMessage('Configurações salvas com sucesso.');
       } catch (error) {
@@ -276,7 +251,12 @@ export default function EmailIntegrationsPage() {
             <input
               type="text"
               value={emailConfig.serviceId}
-              onChange={(event) => setEmailConfig((prev) => ({ ...prev, serviceId: event.target.value }))}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  emailConfig: { ...prev.emailConfig, serviceId: event.target.value },
+                }))
+              }
               placeholder="ex: service_abandoned_cart"
               className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
             />
@@ -286,7 +266,12 @@ export default function EmailIntegrationsPage() {
             <input
               type="text"
               value={emailConfig.templateId}
-              onChange={(event) => setEmailConfig((prev) => ({ ...prev, templateId: event.target.value }))}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  emailConfig: { ...prev.emailConfig, templateId: event.target.value },
+                }))
+              }
               placeholder="ex: template_abandoned_cart"
               className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
             />
@@ -296,7 +281,12 @@ export default function EmailIntegrationsPage() {
             <input
               type="text"
               value={emailConfig.publicKey}
-              onChange={(event) => setEmailConfig((prev) => ({ ...prev, publicKey: event.target.value }))}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  emailConfig: { ...prev.emailConfig, publicKey: event.target.value },
+                }))
+              }
               placeholder="ex: public_xxxxx"
               className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
             />
@@ -463,12 +453,98 @@ export default function EmailIntegrationsPage() {
             type="email"
             name="from-email"
             value={fromEmail}
-            onChange={(event) => setFromEmail(event.target.value)}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                fromEmail: event.target.value,
+              }))
+            }
             placeholder="contato@sualoja.com"
             className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
           />
         </div>
         <IntegrationGuideLink guidePath="/guides/emails.md" label="Baixar regras e lógica de e-mail" />
+      </IntegrationSection>
+
+      <IntegrationSection
+        title="Templates por status"
+        description="Escolha qual template será utilizado por padrão em cada fluxo e defina se o envio está ativo."
+      >
+        <div className="space-y-4">
+          {EMAIL_FLOW_CONFIGS.map((flow) => {
+            const setting = flowSettings[flow.id];
+            const selectedId = setting?.templateId ?? templates[0]?.id ?? '';
+            const isEnabled = setting?.enabled ?? true;
+
+            return (
+              <div
+                key={flow.id}
+                className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950/40 p-4"
+              >
+                <div>
+                  <h3 className="text-sm font-semibold text-white">{flow.label}</h3>
+                  <p className="text-xs text-slate-400">{flow.description}</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                  <label className="flex flex-col gap-2 text-sm">
+                    <span className="font-medium text-white">Template padrão</span>
+                    <select
+                      className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white focus:border-brand focus:outline-none"
+                      value={selectedId}
+                      onChange={(event) => {
+                        const nextTemplateId = event.target.value;
+                        setSettings((prev) => ({
+                          ...prev,
+                          flowSettings: syncFlowSettingsWithTemplates(
+                            {
+                              ...prev.flowSettings,
+                              [flow.id]: {
+                                ...prev.flowSettings[flow.id],
+                                templateId: nextTemplateId,
+                                enabled: prev.flowSettings[flow.id]?.enabled ?? flow.defaultEnabled,
+                              },
+                            },
+                            prev.templates,
+                          ),
+                        }));
+                      }}
+                    >
+                      {templates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-2 text-sm text-white">
+                    <div className="flex flex-col">
+                      <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Status</span>
+                      <span className="text-sm font-semibold text-white">{isEnabled ? 'Ativo' : 'Desativado'}</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="h-5 w-10 accent-brand"
+                      checked={isEnabled}
+                      onChange={(event) =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          flowSettings: {
+                            ...prev.flowSettings,
+                            [flow.id]: {
+                              ...prev.flowSettings[flow.id],
+                              templateId: selectedId,
+                              enabled: event.target.checked,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </IntegrationSection>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">

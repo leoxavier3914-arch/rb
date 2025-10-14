@@ -1,11 +1,17 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Table from './Table';
 import Badge from './Badge';
 import { formatSaoPaulo } from '../lib/dates';
 import type { FeedbackEntry } from '../lib/types';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
+import {
+  EMAIL_INTEGRATIONS_STORAGE_KEY,
+  EmailIntegrationSettings,
+  normalizeEmailIntegrationSettings,
+} from '../lib/emailIntegrations';
 
 const LOCAL_STORAGE_KEY = 'feedback-settings';
 
@@ -13,11 +19,11 @@ const DEFAULT_WHATSAPP_TEMPLATE =
   'Olá {{name}}, tudo bem? Aqui é a equipe da Kiwa. Vimos que sua compra de {{product}} está com status {{status}}. Conte conosco para qualquer dúvida!';
 
 type FeedbackSettings = {
-  emailServiceId: string;
-  emailTemplateId: string;
-  emailPublicKey: string;
   whatsappTemplate: string;
   whatsappMediaUrl: string;
+  emailServiceId?: string;
+  emailTemplateId?: string;
+  emailPublicKey?: string;
 };
 
 type FeedbackDashboardProps = {
@@ -46,11 +52,11 @@ const ORIGIN_LABEL: Record<FeedbackEntry['origin'], string> = {
 };
 
 const DEFAULT_SETTINGS: FeedbackSettings = {
+  whatsappTemplate: DEFAULT_WHATSAPP_TEMPLATE,
+  whatsappMediaUrl: '',
   emailServiceId: '',
   emailTemplateId: '',
   emailPublicKey: '',
-  whatsappTemplate: DEFAULT_WHATSAPP_TEMPLATE,
-  whatsappMediaUrl: '',
 };
 
 const loadSettings = (): FeedbackSettings => {
@@ -102,6 +108,21 @@ const applyTemplate = (template: string, entry: FeedbackEntry) => {
 
 export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
   const [settings, setSettings] = useState<FeedbackSettings>(DEFAULT_SETTINGS);
+  const defaultEmailConfig = useMemo(
+    () => ({
+      serviceId: process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID ?? '',
+      templateId: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID ?? '',
+      publicKey: process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY ?? '',
+    }),
+    [],
+  );
+  const defaultEmailIntegration = useMemo<EmailIntegrationSettings>(
+    () => normalizeEmailIntegrationSettings(undefined, defaultEmailConfig),
+    [defaultEmailConfig],
+  );
+  const [emailIntegration, setEmailIntegration] =
+    useState<EmailIntegrationSettings>(defaultEmailIntegration);
+  const [isEmailIntegrationHydrated, setIsEmailIntegrationHydrated] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [emailSendingId, setEmailSendingId] = useState<string | null>(null);
@@ -114,13 +135,100 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    let nextSettings = defaultEmailIntegration;
+    try {
+      const stored = window.localStorage.getItem(EMAIL_INTEGRATIONS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        nextSettings = normalizeEmailIntegrationSettings(parsed, defaultEmailConfig);
+      }
+    } catch (error) {
+      console.warn('[kiwify-hub] não foi possível carregar as integrações de e-mail', error);
+    }
+
+    setEmailIntegration(nextSettings);
+    setIsEmailIntegrationHydrated(true);
+  }, [defaultEmailConfig, defaultEmailIntegration]);
+
+  useEffect(() => {
     if (isHydrated) {
       saveSettings(settings);
     }
   }, [isHydrated, settings]);
 
+  useEffect(() => {
+    if (!isHydrated || !isEmailIntegrationHydrated) {
+      return;
+    }
+
+    const hasLegacyConfig = Boolean(
+      (settings.emailServiceId && settings.emailServiceId.trim()) ||
+        (settings.emailTemplateId && settings.emailTemplateId.trim()) ||
+        (settings.emailPublicKey && settings.emailPublicKey.trim()),
+    );
+
+    const integrationHasConfig = Boolean(
+      emailIntegration.emailConfig.serviceId.trim() &&
+        emailIntegration.emailConfig.templateId.trim() &&
+        emailIntegration.emailConfig.publicKey.trim(),
+    );
+
+    if (hasLegacyConfig && !integrationHasConfig) {
+      const migrated: EmailIntegrationSettings = {
+        ...emailIntegration,
+        emailConfig: {
+          serviceId: settings.emailServiceId ?? '',
+          templateId: settings.emailTemplateId ?? '',
+          publicKey: settings.emailPublicKey ?? '',
+        },
+      };
+
+      setEmailIntegration(migrated);
+
+      try {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(EMAIL_INTEGRATIONS_STORAGE_KEY, JSON.stringify(migrated));
+        }
+      } catch (error) {
+        console.warn('[kiwify-hub] não foi possível migrar EmailJS das configurações legadas', error);
+      }
+    }
+  }, [
+    emailIntegration,
+    isEmailIntegrationHydrated,
+    isHydrated,
+    settings.emailPublicKey,
+    settings.emailServiceId,
+    settings.emailTemplateId,
+  ]);
+
+  const integrationConfig = emailIntegration.emailConfig;
+  const integrationFromEmail = emailIntegration.fromEmail;
+  const manualFlowSetting = emailIntegration.flowSettings.manual ?? {
+    templateId: '',
+    enabled: true,
+  };
+  const manualTemplate =
+    emailIntegration.templates.find((template) => template.id === manualFlowSetting.templateId) ??
+    null;
+  const manualTemplateId = manualFlowSetting.templateId ?? '';
+  const manualTemplateHtml = manualTemplate?.html ?? '';
+  const manualTemplateName = manualTemplate?.name ?? '';
+  const manualTemplateSubject = manualTemplate?.subject ?? '';
+  const isManualFlowEnabled = manualFlowSetting.enabled !== false;
+  const hasManualTemplateConfigured = Boolean(manualTemplate);
+
   const isEmailConfigured = Boolean(
-    settings.emailServiceId && settings.emailTemplateId && settings.emailPublicKey,
+    isEmailIntegrationHydrated &&
+      isManualFlowEnabled &&
+      hasManualTemplateConfigured &&
+      integrationConfig.serviceId &&
+      integrationConfig.templateId &&
+      integrationConfig.publicKey,
   );
 
   const filteredEntries = useMemo(() => {
@@ -148,10 +256,44 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
         return;
       }
 
-      if (!isEmailConfigured) {
+      if (!isEmailIntegrationHydrated) {
         setActionFeedback((prev) => ({
           ...prev,
-          [entry.id]: { type: 'error', message: 'Configure o EmailJS antes de enviar.' },
+          [entry.id]: { type: 'error', message: 'As configurações de e-mail ainda estão carregando.' },
+        }));
+        return;
+      }
+
+      if (!isManualFlowEnabled) {
+        setActionFeedback((prev) => ({
+          ...prev,
+          [entry.id]: { type: 'error', message: 'Envio manual desativado nas integrações.' },
+        }));
+        return;
+      }
+
+      if (!hasManualTemplateConfigured || !manualTemplateId) {
+        setActionFeedback((prev) => ({
+          ...prev,
+          [entry.id]: {
+            type: 'error',
+            message: 'Selecione um template para envios manuais em Integrações > E-mails.',
+          },
+        }));
+        return;
+      }
+
+      if (
+        !integrationConfig.serviceId.trim() ||
+        !integrationConfig.templateId.trim() ||
+        !integrationConfig.publicKey.trim()
+      ) {
+        setActionFeedback((prev) => ({
+          ...prev,
+          [entry.id]: {
+            type: 'error',
+            message: 'Configure o EmailJS em Integrações > E-mails.',
+          },
         }));
         return;
       }
@@ -164,27 +306,34 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
       setActionFeedback((prev) => ({ ...prev, [entry.id]: undefined }));
 
       try {
+        const templateParamsPayload = {
+          to_email: entry.customer_email,
+          to_name: entry.customer_name ?? entry.customer_email,
+          customer_email: entry.customer_email,
+          customer_name: entry.customer_name ?? '',
+          customer_phone: entry.customer_phone ?? '',
+          product_name: entry.product_name ?? '',
+          status: entry.status,
+          purchase_date: entry.paid_at ?? '',
+          last_cart_activity: entry.last_cart_activity ?? '',
+          checkout_url: entry.checkout_url ?? '',
+          template_variant: manualTemplateId,
+          template_name: manualTemplateName,
+          template_subject: manualTemplateSubject,
+          body: manualTemplateHtml,
+          from_email: integrationFromEmail ?? '',
+        };
+
         const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            service_id: settings.emailServiceId,
-            template_id: settings.emailTemplateId,
-            user_id: settings.emailPublicKey,
-            template_params: {
-              to_email: entry.customer_email,
-              to_name: entry.customer_name ?? entry.customer_email,
-              customer_email: entry.customer_email,
-              customer_name: entry.customer_name ?? '',
-              customer_phone: entry.customer_phone ?? '',
-              product_name: entry.product_name ?? '',
-              status: entry.status,
-              purchase_date: entry.paid_at ?? '',
-              last_cart_activity: entry.last_cart_activity ?? '',
-              checkout_url: entry.checkout_url ?? '',
-            },
+            service_id: integrationConfig.serviceId,
+            template_id: integrationConfig.templateId,
+            user_id: integrationConfig.publicKey,
+            template_params: templateParamsPayload,
           }),
         });
 
@@ -209,7 +358,20 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
         setEmailSendingId(null);
       }
     },
-    [emailSendingId, isEmailConfigured, settings.emailPublicKey, settings.emailServiceId, settings.emailTemplateId],
+    [
+      emailSendingId,
+      hasManualTemplateConfigured,
+      integrationConfig.publicKey,
+      integrationConfig.serviceId,
+      integrationConfig.templateId,
+      integrationFromEmail,
+      isEmailIntegrationHydrated,
+      isManualFlowEnabled,
+      manualTemplateHtml,
+      manualTemplateId,
+      manualTemplateName,
+      manualTemplateSubject,
+    ],
   );
 
   const handleSendWhatsApp = useCallback(
@@ -352,39 +514,87 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
           <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
             <h3 className="text-lg font-semibold">Configuração do EmailJS</h3>
             <p className="text-xs text-slate-400">
-              Informe o serviço, template e chave pública utilizados na sua conta do EmailJS. Esses dados ficam
-              salvos apenas neste navegador.
+              As credenciais abaixo são gerenciadas em{' '}
+              <Link href="/integracoes/emails" className="text-brand hover:text-brand/80">
+                Integrações &gt; E-mails
+              </Link>
+              . Atualize-as por lá para que todos os envios utilizem os mesmos dados.
             </p>
-            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
-              Service ID
-              <input
-                type="text"
-                value={settings.emailServiceId}
-                onChange={(event) => handleSettingsChange('emailServiceId', event.target.value)}
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                placeholder="ex: service_xpto"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
-              Template ID
-              <input
-                type="text"
-                value={settings.emailTemplateId}
-                onChange={(event) => handleSettingsChange('emailTemplateId', event.target.value)}
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                placeholder="ex: template_feedback"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
-              Public Key
-              <input
-                type="text"
-                value={settings.emailPublicKey}
-                onChange={(event) => handleSettingsChange('emailPublicKey', event.target.value)}
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                placeholder="ex: AbCdEf123456"
-              />
-            </label>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Service ID
+                <input
+                  type="text"
+                  value={integrationConfig.serviceId}
+                  readOnly
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
+                  placeholder="Defina em Integrações"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Template ID
+                <input
+                  type="text"
+                  value={integrationConfig.templateId}
+                  readOnly
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
+                  placeholder="Defina em Integrações"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Public Key
+                <input
+                  type="text"
+                  value={integrationConfig.publicKey}
+                  readOnly
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
+                  placeholder="Defina em Integrações"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Remetente padrão
+                <input
+                  type="text"
+                  value={integrationFromEmail ?? ''}
+                  readOnly
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
+                  placeholder="Defina em Integrações"
+                />
+              </label>
+            </div>
+            <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-white">Template padrão (envio manual)</p>
+                  <p className="text-xs text-slate-400">
+                    {hasManualTemplateConfigured ? manualTemplateName : 'Nenhum template selecionado.'}
+                  </p>
+                </div>
+                <span
+                  className={`text-xs font-semibold uppercase tracking-wide ${
+                    isManualFlowEnabled ? 'text-emerald-300' : 'text-rose-300'
+                  }`}
+                >
+                  {isManualFlowEnabled ? 'Ativo' : 'Desativado'}
+                </span>
+              </div>
+              {hasManualTemplateConfigured ? (
+                <p className="text-xs text-slate-500">
+                  Assunto padrão:{' '}
+                  <span className="text-slate-200">{manualTemplateSubject || 'Sem assunto definido'}</span>
+                </p>
+              ) : (
+                <p className="text-xs font-medium text-rose-300">
+                  Defina um template para envios manuais em Integrações &gt; E-mails.
+                </p>
+              )}
+            </div>
+            <Link
+              href="/integracoes/emails"
+              className="inline-flex w-full items-center justify-center rounded-md border border-brand/40 px-3 py-2 text-xs font-semibold text-brand transition hover:border-brand hover:text-white"
+            >
+              Ajustar em Integrações &gt; E-mails
+            </Link>
             <p className="text-xs text-slate-500">
               Os seguintes parâmetros são enviados automaticamente para o template: <code>to_email</code>,{' '}
               <code>to_name</code>, <code>customer_email</code>, <code>customer_name</code>, <code>customer_phone</code>,{' '}
