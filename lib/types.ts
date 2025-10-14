@@ -31,6 +31,33 @@ export type Sale = {
   source: string | null;
 };
 
+export type DashboardSaleStatus =
+  | 'new'
+  | 'approved'
+  | 'abandoned'
+  | 'converted'
+  | 'sent'
+  | 'refunded'
+  | 'refused';
+
+export type DashboardSale = {
+  id: string;
+  customer_email: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  product_name: string | null;
+  product_id: string | null;
+  status: DashboardSaleStatus;
+  created_at: string | null;
+  updated_at: string | null;
+  paid_at: string | null;
+  last_event: string | null;
+  last_reminder_at: string | null;
+  traffic_source: string | null;
+  source: string | null;
+  checkout_url: string | null;
+};
+
 export type FeedbackEntry = {
   id: string;
   customer_email: string;
