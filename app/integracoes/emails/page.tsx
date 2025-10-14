@@ -29,8 +29,6 @@ type EmailTemplate = {
   id: string;
   name: string;
   subject: string;
-  serviceId: string;
-  templateId: string;
   description: string;
   html: string;
 };
@@ -41,8 +39,6 @@ const defaultTemplates: EmailTemplate[] = [
     name: 'E-mail de remarketing',
     description: 'Carrinhos abandonados, enviado automaticamente como hoje.',
     subject: 'Seu carrinho está te esperando na Kiwify',
-    serviceId: 'emailjs_remarketing',
-    templateId: 'template_remarketing',
     html: `<h1>Volte para finalizar a compra ❤️</h1>\n<p>Notamos que você deixou itens no carrinho. Clique no botão abaixo para concluir.</p>\n<a href="{{{checkoutUrl}}}" style="display:inline-block;padding:12px 24px;background:#7c3aed;color:#fff;border-radius:8px;text-decoration:none;">Finalizar compra</a>`,
   },
   {
@@ -50,8 +46,6 @@ const defaultTemplates: EmailTemplate[] = [
     name: 'E-mail de feedback',
     description: 'Disparado para vendas aprovadas pedindo a avaliação do cliente.',
     subject: 'Como foi a sua experiência com a Kiwify?',
-    serviceId: 'emailjs_feedback',
-    templateId: 'template_feedback',
     html: `<h1>Queremos ouvir você!</h1>\n<p>Conte como foi a sua experiência respondendo nosso rápido formulário.</p>\n<p>Obrigado por comprar com a gente 💜</p>`,
   },
 ];
@@ -60,7 +54,11 @@ export default function EmailIntegrationsPage() {
   const [templates, setTemplates] = useState<EmailTemplate[]>(defaultTemplates);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplates[0]?.id ?? '');
   const [fromEmail, setFromEmail] = useState('contato@kiwifyhub.com');
-  const [testEmail, setTestEmail] = useState('');
+  const [emailConfig, setEmailConfig] = useState({
+    serviceId: process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID ?? '',
+    templateId: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID ?? '',
+    publicKey: process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY ?? '',
+  });
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null,
@@ -95,8 +93,6 @@ export default function EmailIntegrationsPage() {
       name: 'Novo template',
       description: 'HTML personalizado criado pela sua equipe.',
       subject: 'Defina o assunto do novo template',
-      serviceId: 'emailjs_service_id',
-      templateId: 'emailjs_template_id',
       html: `<h1>Seu conteúdo aqui</h1>\n<p>Utilize {{{body}}} no EmailJS para receber o HTML final gerado pelo app.</p>`,
     };
     setTemplates((prev) => [...prev, newTemplate]);
@@ -118,6 +114,7 @@ export default function EmailIntegrationsPage() {
     // eslint-disable-next-line no-console
     console.log('Configurações salvas', {
       fromEmail,
+      emailConfig,
       templates,
     });
   };
@@ -168,6 +165,44 @@ export default function EmailIntegrationsPage() {
 
   return (
     <form className="space-y-8" onSubmit={handleSubmit}>
+      <IntegrationSection
+        title="Credenciais do EmailJS"
+        description="Defina as credenciais globais que serão usadas para todos os envios (manual ou automáticos)."
+      >
+        <div className="grid gap-4 md:grid-cols-3">
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="font-medium text-white">Service ID</span>
+            <input
+              type="text"
+              value={emailConfig.serviceId}
+              onChange={(event) => setEmailConfig((prev) => ({ ...prev, serviceId: event.target.value }))}
+              placeholder="ex: service_abandoned_cart"
+              className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="font-medium text-white">Template ID</span>
+            <input
+              type="text"
+              value={emailConfig.templateId}
+              onChange={(event) => setEmailConfig((prev) => ({ ...prev, templateId: event.target.value }))}
+              placeholder="ex: template_abandoned_cart"
+              className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="font-medium text-white">Chave pública</span>
+            <input
+              type="text"
+              value={emailConfig.publicKey}
+              onChange={(event) => setEmailConfig((prev) => ({ ...prev, publicKey: event.target.value }))}
+              placeholder="ex: public_xxxxx"
+              className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
+            />
+          </label>
+        </div>
+      </IntegrationSection>
+
       <IntegrationSection
         title="Orquestração de envios"
         description="Determine como o fluxo de e-mails será executado em sua operação."
@@ -229,12 +264,6 @@ export default function EmailIntegrationsPage() {
                   <th scope="col" className="px-4 py-3">
                     Assunto
                   </th>
-                  <th scope="col" className="px-4 py-3">
-                    Service ID
-                  </th>
-                  <th scope="col" className="px-4 py-3">
-                    Template ID
-                  </th>
                   <th scope="col" className="px-4 py-3 text-right">
                     Ações
                   </th>
@@ -258,8 +287,6 @@ export default function EmailIntegrationsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-200">{template.subject}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-slate-400">{template.serviceId}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-slate-400">{template.templateId}</td>
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
@@ -303,9 +330,17 @@ export default function EmailIntegrationsPage() {
                   placeholder="Nome interno do template"
                 />
               </div>
+              <label className="flex flex-col gap-2 text-sm md:col-span-2">
+                <span className="font-medium text-white">Descrição</span>
+                <input
+                  type="text"
+                  value={selectedTemplate.description}
+                  onChange={(event) => handleTemplateChange(selectedTemplate.id, 'description', event.target.value)}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
+                  placeholder="Breve descrição do template"
+                />
+              </label>
               {renderTemplateField('subject', 'Assunto do e-mail')}
-              {renderTemplateField('serviceId', 'Service ID')}
-              {renderTemplateField('templateId', 'Template ID')}
               <div className="md:col-span-2">
                 {renderTemplateField('html', 'HTML do template (utilize {{{body}}} no EmailJS)', 'textarea')}
               </div>
@@ -315,44 +350,22 @@ export default function EmailIntegrationsPage() {
       </IntegrationSection>
 
       <IntegrationSection
-        title="Testes e documentação"
-        description="Execute um disparo isolado e compartilhe o material de apoio com a sua equipe."
+        title="Remetente padrão"
+        description="Defina qual endereço será exibido como remetente nos disparos."
       >
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-1 flex-col gap-2 text-sm">
-            <label htmlFor="from-email" className="font-medium text-white">
-              Remetente padrão
-            </label>
-            <input
-              id="from-email"
-              type="email"
-              name="from-email"
-              value={fromEmail}
-              onChange={(event) => setFromEmail(event.target.value)}
-              placeholder="contato@sualoja.com"
-              className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
-            />
-          </div>
-          <div className="flex flex-1 flex-col gap-2 text-sm">
-            <label htmlFor="test-email" className="font-medium text-white">
-              Enviar e-mail de teste
-            </label>
-            <input
-              id="test-email"
-              type="email"
-              name="test-email"
-              value={testEmail}
-              onChange={(event) => setTestEmail(event.target.value)}
-              placeholder="nome@suaempresa.com"
-              className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
-            />
-          </div>
-          <button
-            type="button"
-            className="inline-flex h-10 items-center justify-center rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand/90"
-          >
-            Enviar teste
-          </button>
+        <div className="flex flex-col gap-2 text-sm">
+          <label htmlFor="from-email" className="font-medium text-white">
+            E-mail do remetente
+          </label>
+          <input
+            id="from-email"
+            type="email"
+            name="from-email"
+            value={fromEmail}
+            onChange={(event) => setFromEmail(event.target.value)}
+            placeholder="contato@sualoja.com"
+            className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
+          />
         </div>
         <IntegrationGuideLink guidePath="/guides/emails.md" label="Baixar regras e lógica de e-mail" />
       </IntegrationSection>
