@@ -1,4 +1,6 @@
 import Card from '../../components/Card';
+import ClientsContent from './ClientsContent';
+import type { ClientPurchase, ClientSummary } from './ClientsContent';
 import { fetchApprovedSales } from '../../lib/sales';
 import { formatTrafficSourceLabel, getTrafficCategory, getTrafficCategoryLabel } from '../../lib/traffic';
 import type { Sale } from '../../lib/types';
@@ -40,20 +42,9 @@ const getConversionLabel = (sale: Sale): string => {
   return 'Aprovado direto';
 };
 
-type ClientPurchase = {
+type TopProduct = {
   productName: string;
-  paidAtLabel: string;
-  paidAtTimestamp: number;
-  conversionLabel: string;
-  originLabel: string;
-  groupLabel: string;
-};
-
-type ClientSummary = {
-  email: string;
-  name: string | null;
-  purchases: ClientPurchase[];
-  lastPurchaseTimestamp: number;
+  count: number;
 };
 
 const groupSalesByClient = (sales: Sale[]): ClientSummary[] => {
@@ -104,6 +95,20 @@ const groupSalesByClient = (sales: Sale[]): ClientSummary[] => {
   return clients;
 };
 
+const getTopProducts = (sales: Sale[], limit = 3): TopProduct[] => {
+  const counts = new Map<string, number>();
+
+  for (const sale of sales) {
+    const productName = sale.product_name ?? 'Produto não informado';
+    counts.set(productName, (counts.get(productName) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([productName, count]) => ({ productName, count }));
+};
+
 export default async function ClientsPage() {
   noStore();
 
@@ -114,8 +119,10 @@ export default async function ClientsPage() {
   }
 
   const sales = await fetchApprovedSales();
-  const clients = groupSalesByClient(sales);
+  const convertedSales = sales.filter((sale) => sale.status === 'converted');
+  const clients = groupSalesByClient(convertedSales);
   const totalPurchases = clients.reduce((acc, client) => acc + client.purchases.length, 0);
+  const topProducts = getTopProducts(convertedSales);
 
   return (
     <main className="flex flex-1 flex-col gap-10 pb-10">
@@ -138,72 +145,36 @@ export default async function ClientsPage() {
         />
       </section>
 
-      <section className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold">Lista de clientes</h2>
-          <p className="text-sm text-slate-400">Toque para expandir os detalhes de cada cliente.</p>
-        </div>
-
-        {clients.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-800 bg-slate-950/40 p-6 text-center text-sm text-slate-400">
-            Nenhum pagamento aprovado encontrado até o momento.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {clients.map((client) => (
-              <details
-                key={client.email}
-                className="group rounded-xl border border-slate-800 bg-slate-950/40 p-4 transition hover:border-slate-700"
-              >
-                <summary className="cursor-pointer list-none outline-none">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-lg font-semibold text-white">
-                        {client.name ?? 'Cliente sem nome'}
-                      </p>
-                      <p className="text-sm text-slate-400">{client.email}</p>
-                    </div>
-                    <span className="text-sm text-slate-400">
-                      {client.purchases.length === 1
-                        ? '1 compra registrada'
-                        : `${client.purchases.length} compras registradas`}
-                    </span>
-                  </div>
-                </summary>
-
-                <div className="mt-4 space-y-4 border-t border-slate-800 pt-4">
-                  {client.purchases.map((purchase, index) => (
-                    <article
-                      key={`${client.email}-${purchase.paidAtTimestamp}-${index}`}
-                      className="rounded-lg border border-slate-800 bg-slate-900/40 p-4"
-                    >
-                      <h3 className="text-base font-semibold text-white">{purchase.productName}</h3>
-                      <dl className="mt-3 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
-                        <div>
-                          <dt className="font-medium text-slate-400">Pagamento</dt>
-                          <dd>{purchase.paidAtLabel}</dd>
-                        </div>
-                        <div>
-                          <dt className="font-medium text-slate-400">Tipo de conversão</dt>
-                          <dd>{purchase.conversionLabel}</dd>
-                        </div>
-                        <div>
-                          <dt className="font-medium text-slate-400">Origem informada</dt>
-                          <dd>{purchase.originLabel}</dd>
-                        </div>
-                        <div>
-                          <dt className="font-medium text-slate-400">Grupo de tráfego</dt>
-                          <dd>{purchase.groupLabel}</dd>
-                        </div>
-                      </dl>
-                    </article>
-                  ))}
-                </div>
-              </details>
-            ))}
-          </div>
-        )}
+      <section className="rounded-xl border border-slate-800 bg-slate-950/40 p-6">
+        <h2 className="text-sm font-semibold uppercase tracking-widest text-brand">Produtos mais vendidos</h2>
+        <ol className="mt-4 space-y-3 text-sm text-slate-300">
+          {topProducts.length === 0 ? (
+            <li className="text-slate-400">Nenhum produto vendido até o momento.</li>
+          ) : (
+            topProducts.map((product, index) => (
+              <li key={product.productName} className="flex items-center justify-between gap-4">
+                <span className="flex items-center gap-3">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">
+                    {index + 1}
+                  </span>
+                  <span className="font-medium text-white">{product.productName}</span>
+                </span>
+                <span className="text-xs uppercase tracking-widest text-slate-400">
+                  {product.count} {product.count === 1 ? 'venda' : 'vendas'}
+                </span>
+              </li>
+            ))
+          )}
+        </ol>
       </section>
+
+      {clients.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-800 bg-slate-950/40 p-6 text-center text-sm text-slate-400">
+          Nenhum pagamento aprovado encontrado até o momento.
+        </p>
+      ) : (
+        <ClientsContent clients={clients} />
+      )}
     </main>
   );
 }
