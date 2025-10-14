@@ -32,8 +32,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </Link>
                 </li>
                 <li>
-                  <Link href="/feedback" className="transition hover:text-white">
-                    Feedback
+                  <Link href="/integracoes" className="transition hover:text-white">
+                    Integrações
                   </Link>
                 </li>
                 <li>
