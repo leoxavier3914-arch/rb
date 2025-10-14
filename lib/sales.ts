@@ -232,6 +232,11 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
 };
 
 const buildSaleKey = (sale: Sale) => {
+  const id = sale.id?.trim();
+  if (id) {
+    return `id:${id}`;
+  }
+
   const email = sale.customer_email?.toLowerCase();
   if (email) {
     return `email:${email}`;
