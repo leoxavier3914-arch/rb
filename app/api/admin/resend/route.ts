@@ -71,8 +71,9 @@ export async function POST(request: NextRequest) {
   let serviceId: string;
   let templateId: string;
   let publicKey: string;
+  let privateKey: string;
   try {
-    ({ serviceId, templateId, publicKey } = getEmailJsConfig());
+    ({ serviceId, templateId, publicKey, privateKey } = getEmailJsConfig());
   } catch (error) {
     console.error('[kiwify-hub] configuração do EmailJS ausente', error);
     return NextResponse.json({ error: 'Serviço de e-mail indisponível.' }, { status: 500 });
@@ -145,6 +146,7 @@ export async function POST(request: NextRequest) {
       serviceId,
       templateId,
       publicKey,
+      accessToken: privateKey,
       templateParams,
     });
   } catch (error) {

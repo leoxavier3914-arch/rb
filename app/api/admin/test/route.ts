@@ -129,13 +129,14 @@ export async function POST(req: Request) {
 
   // Envio do e-mail de teste via EmailJS
   try {
-    const { serviceId, templateId, publicKey } = getEmailJsConfig();
+    const { serviceId, templateId, publicKey, privateKey } = getEmailJsConfig();
     const checkoutWithDiscount = applyDiscountToCheckoutUrl(row.checkout_url, row.discount_code as any);
 
     await sendEmailJsTemplate({
       serviceId,
       templateId,
       publicKey,
+      accessToken: privateKey,
       templateParams: {
         to_email: data.email,
         name: data.customer_name ?? 'Cliente',
