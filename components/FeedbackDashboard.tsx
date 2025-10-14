@@ -21,9 +21,6 @@ const DEFAULT_WHATSAPP_TEMPLATE =
 type FeedbackSettings = {
   whatsappTemplate: string;
   whatsappMediaUrl: string;
-  emailServiceId?: string;
-  emailTemplateId?: string;
-  emailPublicKey?: string;
 };
 
 type FeedbackDashboardProps = {
@@ -54,9 +51,6 @@ const ORIGIN_LABEL: Record<FeedbackEntry['origin'], string> = {
 const DEFAULT_SETTINGS: FeedbackSettings = {
   whatsappTemplate: DEFAULT_WHATSAPP_TEMPLATE,
   whatsappMediaUrl: '',
-  emailServiceId: '',
-  emailTemplateId: '',
-  emailPublicKey: '',
 };
 
 const loadSettings = (): FeedbackSettings => {
@@ -160,54 +154,16 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
     }
   }, [isHydrated, settings]);
 
-  useEffect(() => {
-    if (!isHydrated || !isEmailIntegrationHydrated) {
-      return;
-    }
-
-    const hasLegacyConfig = Boolean(
-      (settings.emailServiceId && settings.emailServiceId.trim()) ||
-        (settings.emailTemplateId && settings.emailTemplateId.trim()) ||
-        (settings.emailPublicKey && settings.emailPublicKey.trim()),
-    );
-
-    const integrationHasConfig = Boolean(
-      emailIntegration.emailConfig.serviceId.trim() &&
-        emailIntegration.emailConfig.templateId.trim() &&
-        emailIntegration.emailConfig.publicKey.trim(),
-    );
-
-    if (hasLegacyConfig && !integrationHasConfig) {
-      const migrated: EmailIntegrationSettings = {
-        ...emailIntegration,
-        emailConfig: {
-          serviceId: settings.emailServiceId ?? '',
-          templateId: settings.emailTemplateId ?? '',
-          publicKey: settings.emailPublicKey ?? '',
-        },
-      };
-
-      setEmailIntegration(migrated);
-
-      try {
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(EMAIL_INTEGRATIONS_STORAGE_KEY, JSON.stringify(migrated));
-        }
-      } catch (error) {
-        console.warn('[kiwify-hub] não foi possível migrar EmailJS das configurações legadas', error);
-      }
-    }
-  }, [
-    emailIntegration,
-    isEmailIntegrationHydrated,
-    isHydrated,
-    settings.emailPublicKey,
-    settings.emailServiceId,
-    settings.emailTemplateId,
-  ]);
-
   const integrationConfig = emailIntegration.emailConfig;
   const integrationFromEmail = emailIntegration.fromEmail;
+  const resolvedEmailConfig = useMemo(
+    () => ({
+      serviceId: integrationConfig.serviceId || defaultEmailConfig.serviceId,
+      templateId: integrationConfig.templateId || defaultEmailConfig.templateId,
+      publicKey: integrationConfig.publicKey || defaultEmailConfig.publicKey,
+    }),
+    [defaultEmailConfig, integrationConfig],
+  );
   const manualFlowSetting = emailIntegration.flowSettings.manual ?? {
     templateId: '',
     enabled: true,
@@ -226,9 +182,9 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
     isEmailIntegrationHydrated &&
       isManualFlowEnabled &&
       hasManualTemplateConfigured &&
-      integrationConfig.serviceId &&
-      integrationConfig.templateId &&
-      integrationConfig.publicKey,
+      resolvedEmailConfig.serviceId &&
+      resolvedEmailConfig.templateId &&
+      resolvedEmailConfig.publicKey,
   );
 
   const filteredEntries = useMemo(() => {
@@ -284,9 +240,9 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
       }
 
       if (
-        !integrationConfig.serviceId.trim() ||
-        !integrationConfig.templateId.trim() ||
-        !integrationConfig.publicKey.trim()
+        !resolvedEmailConfig.serviceId.trim() ||
+        !resolvedEmailConfig.templateId.trim() ||
+        !resolvedEmailConfig.publicKey.trim()
       ) {
         setActionFeedback((prev) => ({
           ...prev,
@@ -330,9 +286,9 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            service_id: integrationConfig.serviceId,
-            template_id: integrationConfig.templateId,
-            user_id: integrationConfig.publicKey,
+            service_id: resolvedEmailConfig.serviceId,
+            template_id: resolvedEmailConfig.templateId,
+            user_id: resolvedEmailConfig.publicKey,
             template_params: templateParamsPayload,
           }),
         });
@@ -361,9 +317,6 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
     [
       emailSendingId,
       hasManualTemplateConfigured,
-      integrationConfig.publicKey,
-      integrationConfig.serviceId,
-      integrationConfig.templateId,
       integrationFromEmail,
       isEmailIntegrationHydrated,
       isManualFlowEnabled,
@@ -371,6 +324,9 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
       manualTemplateId,
       manualTemplateName,
       manualTemplateSubject,
+      resolvedEmailConfig.publicKey,
+      resolvedEmailConfig.serviceId,
+      resolvedEmailConfig.templateId,
     ],
   );
 
@@ -520,37 +476,37 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
               </Link>
               . Atualize-as por lá para que todos os envios utilizem os mesmos dados.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
-                Service ID
-                <input
-                  type="text"
-                  value={integrationConfig.serviceId}
-                  readOnly
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
-                  placeholder="Defina em Integrações"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
-                Template ID
-                <input
-                  type="text"
-                  value={integrationConfig.templateId}
-                  readOnly
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
-                  placeholder="Defina em Integrações"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
-                Public Key
-                <input
-                  type="text"
-                  value={integrationConfig.publicKey}
-                  readOnly
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
-                  placeholder="Defina em Integrações"
-                />
-              </label>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                  Service ID
+                  <input
+                    type="text"
+                    value={resolvedEmailConfig.serviceId}
+                    readOnly
+                    className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
+                    placeholder="Defina via ambiente"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                  Template ID
+                  <input
+                    type="text"
+                    value={resolvedEmailConfig.templateId}
+                    readOnly
+                    className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
+                    placeholder="Defina via ambiente"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                  Public Key
+                  <input
+                    type="text"
+                    value={resolvedEmailConfig.publicKey}
+                    readOnly
+                    className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none"
+                    placeholder="Defina via ambiente"
+                  />
+                </label>
               <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
                 Remetente padrão
                 <input
