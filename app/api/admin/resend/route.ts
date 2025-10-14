@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { resolveDiscountCode, resolveExpiration } from '../../../../lib/cryptoId';
-import { getEmailJsConfig } from '../../../../lib/emailJsConfig';
+import {
+  EmailJsApiError,
+  getEmailJsConfig,
+  sendEmailJsTemplate,
+} from '../../../../lib/emailJsConfig';
 import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
 import {
   applyDiscountToCheckoutUrl,
@@ -16,8 +20,6 @@ const resendSchema = z.object({
   discountCode: z.string().optional().nullable(),
   expiresInHours: z.union([z.number(), z.string()]).optional().nullable(),
 });
-
-const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
 
 export async function POST(request: NextRequest) {
   const adminToken = process.env.ADMIN_TOKEN;
@@ -138,28 +140,19 @@ export async function POST(request: NextRequest) {
     expires_at: expiresAt,
   };
 
-  let response: Response;
   try {
-    response = await fetch(EMAILJS_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        service_id: serviceId,
-        template_id: templateId,
-        user_id: publicKey,
-        template_params: templateParams,
-      }),
+    await sendEmailJsTemplate({
+      serviceId,
+      templateId,
+      publicKey,
+      templateParams,
     });
   } catch (error) {
-    console.error('[kiwify-hub] falha ao contatar EmailJS', error);
-    return NextResponse.json({ error: 'Falha ao enviar e-mail.' }, { status: 502 });
-  }
-
-  if (!response.ok) {
-    const message = await response.text();
-    console.error('[kiwify-hub] erro ao enviar e-mail', response.status, message);
+    if (error instanceof EmailJsApiError) {
+      console.error('[kiwify-hub] erro ao enviar e-mail', error.status, error.body);
+    } else {
+      console.error('[kiwify-hub] falha ao contatar EmailJS', error);
+    }
     return NextResponse.json({ error: 'Falha ao enviar e-mail.' }, { status: 502 });
   }
 

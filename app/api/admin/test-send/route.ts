@@ -3,11 +3,13 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { resolveDiscountCode, resolveExpiration } from '../../../../lib/cryptoId';
-import { getEmailJsConfig } from '../../../../lib/emailJsConfig';
+import {
+  EmailJsApiError,
+  getEmailJsConfig,
+  sendEmailJsTemplate,
+} from '../../../../lib/emailJsConfig';
 import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { applyDiscountToCheckoutUrl } from '../../../../lib/checkout';
-
-const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
 
 const payloadSchema = z
   .object({
@@ -242,33 +244,19 @@ export async function POST(request: NextRequest) {
     templateId = providedTemplateId.trim();
   }
 
-  let response: Response;
   try {
-    response = await fetch(EMAILJS_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        service_id: serviceId,
-        template_id: templateId,
-        user_id: publicKey,
-        template_params: templateParams,
-      }),
+    await sendEmailJsTemplate({
+      serviceId,
+      templateId,
+      publicKey,
+      templateParams,
     });
   } catch (error) {
-    console.error('[kiwify-hub] erro de rede ao enviar teste', error);
-    try {
-      await markTestAsError(supabase, recordId);
-    } catch (updateError) {
-      console.error('[kiwify-hub] falha ao marcar teste como erro', updateError);
+    if (error instanceof EmailJsApiError) {
+      console.error('[kiwify-hub] erro ao enviar teste', error.status, error.body);
+    } else {
+      console.error('[kiwify-hub] erro de rede ao enviar teste', error);
     }
-    return NextResponse.json({ error: 'Falha ao enviar e-mail.' }, { status: 502 });
-  }
-
-  if (!response.ok) {
-    const message = await response.text();
-    console.error('[kiwify-hub] erro ao enviar teste', response.status, message);
     try {
       await markTestAsError(supabase, recordId);
     } catch (updateError) {

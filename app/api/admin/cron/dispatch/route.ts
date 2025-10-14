@@ -3,18 +3,20 @@ export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import * as emailjs from '@emailjs/nodejs';
 import { applyDiscountToCheckoutUrl } from '../../../../../lib/checkout';
 import { resolveDiscountCode } from '../../../../../lib/cryptoId';
 import { readEnvValue } from '../../../../../lib/env';
+import {
+  EmailJsApiError,
+  getEmailJsConfig,
+  sendEmailJsTemplate,
+} from '../../../../../lib/emailJsConfig';
 
 const DEFAULT_DELAY_HOURS =
   Number(
     (process.env.DEFAULT_DELAY_HOURS ?? process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()
   ) || 24;
 const EXPIRE_HOURS   = Number((process.env.DEFAULT_EXPIRE_HOURS ?? '24').trim()) || 24;
-
-let emailJsInitialized = false;
 
 export async function POST(req: Request) {
   const adminToken = readEnvValue('ADMIN_TOKEN');
@@ -28,7 +30,6 @@ export async function POST(req: Request) {
   const emailServiceId = readEnvValue('EMAILJS_SERVICE_ID', 'NEXT_PUBLIC_EMAILJS_SERVICE_ID');
   const emailTemplateId = readEnvValue('EMAILJS_TEMPLATE_ID', 'NEXT_PUBLIC_EMAILJS_TEMPLATE_ID');
   const emailPublicKey = readEnvValue('EMAILJS_PUBLIC_KEY', 'NEXT_PUBLIC_EMAILJS_PUBLIC_KEY');
-  const emailPrivateKey = readEnvValue('EMAILJS_PRIVATE_KEY');
 
   if (
     !supabaseUrl ||
@@ -52,13 +53,15 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!emailJsInitialized) {
-    emailjs.init(
-      emailPrivateKey
-        ? { publicKey: emailPublicKey, privateKey: emailPrivateKey }
-        : { publicKey: emailPublicKey }
+  let emailConfig: ReturnType<typeof getEmailJsConfig>;
+  try {
+    emailConfig = getEmailJsConfig();
+  } catch (error) {
+    console.error('[cron/dispatch] invalid EmailJS configuration', error);
+    return NextResponse.json(
+      { ok: false, error: 'configuration_error', missing: (error as Error).message },
+      { status: 500 },
     );
-    emailJsInitialized = true;
   }
 
   // proteção simples por token
@@ -115,20 +118,22 @@ export async function POST(req: Request) {
     for (const r of pendingRows) {
       try {
         const discountCode = resolveDiscountCode(r.discount_code);
-        await emailjs.send(
-          emailServiceId,
-          emailTemplateId,
-          {
-            to_email: r.email,                            // To Email do template
-            title: 'Finalize sua compra • Romeike Beauty',// Subject usa {{title}}
-            name: r.customer_name ?? 'Cliente',           // {{name}}
-            product_name: r.product_title,                // {{product_name}}
-            discount_code: discountCode,                  // {{discount_code}}
-            expire_hours: String(EXPIRE_HOURS),           // {{expire_hours}}
+        await sendEmailJsTemplate({
+          serviceId: emailConfig.serviceId,
+          templateId: emailConfig.templateId,
+          publicKey: emailConfig.publicKey,
+          templateParams: {
+            to_email: r.email,
+            title: 'Finalize sua compra • Romeike Beauty',
+            name: r.customer_name ?? 'Cliente',
+            product_name: r.product_title,
+            product_title: r.product_title,
+            discount_code: discountCode,
+            expire_hours: String(EXPIRE_HOURS),
             checkout_url: applyDiscountToCheckoutUrl(r.checkout_url, discountCode),
-            email: r.email,                               // Reply-To usa {{email}}
-          }
-        );
+            email: r.email,
+          },
+        });
 
         // marca como enviado
         const { error: upErr } = await supabase
@@ -140,7 +145,11 @@ export async function POST(req: Request) {
 
         sent++;
       } catch (err) {
-        console.error('[cron/dispatch] send error for id', r.id, err);
+        if (err instanceof EmailJsApiError) {
+          console.error('[cron/dispatch] send error for id', r.id, err.status, err.body);
+        } else {
+          console.error('[cron/dispatch] send error for id', r.id, err);
+        }
         // opcional: marcar como 'failed' ou re-tentar depois
       }
     }

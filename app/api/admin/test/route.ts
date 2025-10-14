@@ -3,21 +3,14 @@ export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import emailjs from '@emailjs/nodejs';
 import * as crypto from 'crypto';
 import { applyDiscountToCheckoutUrl } from '../../../../lib/checkout';
+import {
+  EmailJsApiError,
+  getEmailJsConfig,
+  sendEmailJsTemplate,
+} from '../../../../lib/emailJsConfig';
 import { readEnvValue } from '../../../../lib/env';
-
-// --- EmailJS (Strict Mode: precisa PUBLIC + PRIVATE) ---
-const EMAIL_PUBLIC   = process.env.EMAILJS_PUBLIC_KEY!;
-const EMAIL_PRIVATE  = process.env.EMAILJS_PRIVATE_KEY!;
-const EMAIL_SERVICE  = process.env.EMAILJS_SERVICE_ID!;
-const EMAIL_TEMPLATE = process.env.EMAILJS_TEMPLATE_ID!;
-
-// inicializa uma única vez (escopo de módulo)
-if (EMAIL_PUBLIC && EMAIL_PRIVATE) {
-  emailjs.init({ publicKey: EMAIL_PUBLIC, privateKey: EMAIL_PRIVATE });
-}
 
 export async function POST(req: Request) {
   // --- Env guards úteis (erros mais claros) ---
@@ -134,32 +127,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 
-  // Envio do e-mail de teste via EmailJS (Strict Mode)
+  // Envio do e-mail de teste via EmailJS
   try {
-    if (!EMAIL_PUBLIC || !EMAIL_PRIVATE || !EMAIL_SERVICE || !EMAIL_TEMPLATE) {
-      console.warn('[emailjs] variáveis ausentes; pulando envio');
-    } else {
-      const checkoutWithDiscount = applyDiscountToCheckoutUrl(row.checkout_url, row.discount_code as any);
+    const { serviceId, templateId, publicKey } = getEmailJsConfig();
+    const checkoutWithDiscount = applyDiscountToCheckoutUrl(row.checkout_url, row.discount_code as any);
 
-      await emailjs.send(
-        EMAIL_SERVICE,
-        EMAIL_TEMPLATE,
-        {
-          to_email: data.email,
-          name: data.customer_name ?? 'Cliente',
-          product_title: data.product_title,
-          checkout_url: checkoutWithDiscount,
-          schedule_at: new Date(data.schedule_at).toLocaleString('pt-BR'),
-        },
-        {
-          publicKey: EMAIL_PUBLIC,
-          privateKey: EMAIL_PRIVATE,
-        }
-      );
-    }
+    await sendEmailJsTemplate({
+      serviceId,
+      templateId,
+      publicKey,
+      templateParams: {
+        to_email: data.email,
+        name: data.customer_name ?? 'Cliente',
+        product_name: data.product_title,
+        product_title: data.product_title,
+        checkout_url: checkoutWithDiscount,
+        schedule_at: new Date(data.schedule_at).toLocaleString('pt-BR'),
+      },
+    });
   } catch (err) {
-    // Não falhar o request por erro de envio; apenas logar
-    console.error('[kiwify-hub] erro ao enviar teste via EmailJS', err);
+    if (err instanceof EmailJsApiError) {
+      console.error('[kiwify-hub] erro ao enviar teste via EmailJS', err.status, err.body);
+    } else {
+      console.error('[kiwify-hub] erro ao enviar teste via EmailJS', err);
+    }
   }
 
   return NextResponse.json({
