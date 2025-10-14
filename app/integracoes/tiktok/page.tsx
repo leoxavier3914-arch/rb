@@ -1,3 +1,6 @@
+'use client';
+
+import { FormEvent, useState } from 'react';
 import IntegrationGuideLink from '../../../components/IntegrationGuideLink';
 import IntegrationSection from '../../../components/IntegrationSection';
 
@@ -23,8 +26,22 @@ const toggles = [
 ];
 
 export default function TiktokIntegrationsPage() {
+  const [isSaving, setIsSaving] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSaving(true);
+    setFeedbackMessage('');
+
+    window.setTimeout(() => {
+      setIsSaving(false);
+      setFeedbackMessage('Configurações salvas com sucesso.');
+    }, 600);
+  };
+
   return (
-    <form className="space-y-8">
+    <form className="space-y-8" onSubmit={handleSubmit}>
       <IntegrationSection
         title="Fluxos de relacionamento"
         description="Defina como iremos abordar os contatos gerados pelos seus conteúdos no TikTok."
@@ -134,12 +151,18 @@ export default function TiktokIntegrationsPage() {
         <IntegrationGuideLink guidePath="/guides/tiktok.md" label="Baixar regras e lógica do TikTok" />
       </IntegrationSection>
 
-      <div className="flex justify-end">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        {feedbackMessage ? (
+          <p className="text-sm font-medium text-emerald-400" role="status" aria-live="polite">
+            {feedbackMessage}
+          </p>
+        ) : null}
         <button
           type="submit"
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-brand px-6 text-sm font-semibold text-white transition hover:bg-brand/90"
+          disabled={isSaving}
+          className="inline-flex h-11 items-center justify-center rounded-xl bg-brand px-6 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          Salvar configurações
+          {isSaving ? 'Salvando...' : 'Salvar configurações'}
         </button>
       </div>
     </form>
