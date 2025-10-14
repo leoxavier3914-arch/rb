@@ -6,20 +6,24 @@ import Table from './Table';
 import Badge from './Badge';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
-import type { Sale } from '../lib/types';
-import { getTrafficCategory, type TrafficCategory, formatTrafficSourceLabel } from '../lib/traffic';
+import type { DashboardSale, DashboardSaleStatus } from '../lib/types';
+import { formatTrafficSourceLabel } from '../lib/traffic';
 
-type FilterKey = 'all' | TrafficCategory;
+type FilterKey = 'all' | DashboardSaleStatus;
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'Todos' },
-  { key: 'organic', label: 'Orgânico' },
-  { key: 'tiktok', label: 'TikTok Ads' },
-  { key: 'other', label: 'Outros canais' },
+  { key: 'approved', label: 'Vendas aprovadas' },
+  { key: 'refunded', label: 'Vendas reembolsadas' },
+  { key: 'abandoned', label: 'Carrinhos abandonados' },
+  { key: 'converted', label: 'Convertidos' },
+  { key: 'sent', label: 'E-mails enviados' },
+  { key: 'refused', label: 'Compras recusadas' },
+  { key: 'new', label: 'Carrinhos novos' },
 ];
 
 type SalesTableProps = {
-  sales: Sale[];
+  sales: DashboardSale[];
 };
 
 export default function SalesTable({ sales }: SalesTableProps) {
@@ -28,14 +32,17 @@ export default function SalesTable({ sales }: SalesTableProps) {
   const counts = useMemo(() => {
     const initial: Record<FilterKey, number> = {
       all: sales.length,
-      organic: 0,
-      tiktok: 0,
-      other: 0,
+      approved: 0,
+      refunded: 0,
+      abandoned: 0,
+      converted: 0,
+      sent: 0,
+      refused: 0,
+      new: 0,
     };
 
     for (const sale of sales) {
-      const category = getTrafficCategory(sale.traffic_source);
-      initial[category] += 1;
+      initial[sale.status] = (initial[sale.status] ?? 0) + 1;
     }
 
     return initial;
@@ -46,7 +53,7 @@ export default function SalesTable({ sales }: SalesTableProps) {
       return sales;
     }
 
-    return sales.filter((sale) => getTrafficCategory(sale.traffic_source) === filter);
+    return sales.filter((sale) => sale.status === filter);
   }, [filter, sales]);
 
   const columns = useMemo(
@@ -54,39 +61,50 @@ export default function SalesTable({ sales }: SalesTableProps) {
       {
         key: 'customer_email' as const,
         header: 'Cliente',
-        render: (sale: Sale) => (
-          <div className="flex flex-col">
-            <span className="font-medium text-white">{sale.customer_name || '—'}</span>
-            <span className="text-xs text-slate-400">{sale.customer_email || '—'}</span>
-            {sale.customer_phone ? (
-              <span className="text-xs text-slate-500">{sale.customer_phone}</span>
-            ) : null}
-          </div>
-        ),
+        render: (sale: DashboardSale) => {
+          const variant = getBadgeVariant(sale.status ?? 'approved');
+          return (
+            <div className="flex flex-col gap-1">
+              <span className="font-medium text-white">{sale.customer_name || '—'}</span>
+              <span className="text-xs text-slate-400">{sale.customer_email || '—'}</span>
+              {sale.customer_phone ? (
+                <span className="text-xs text-slate-500">{sale.customer_phone}</span>
+              ) : null}
+              <span className="mt-1 inline-flex xl:hidden">
+                <Badge variant={variant}>{STATUS_LABEL[variant] ?? sale.status}</Badge>
+              </span>
+            </div>
+          );
+        },
       },
       {
         key: 'product_name' as const,
         header: 'Produto',
-        render: (sale: Sale) => sale.product_name || '—',
+        render: (sale: DashboardSale) => sale.product_name || '—',
       },
       {
         key: 'traffic_source' as const,
         header: 'Origem',
-        render: (sale: Sale) => formatTrafficSourceLabel(sale.traffic_source),
+        render: (sale: DashboardSale) => formatTrafficSourceLabel(sale.traffic_source),
       },
       {
-        key: 'paid_at' as const,
-        header: 'Pagamento',
-        render: (sale: Sale) => formatSaoPaulo(sale.paid_at),
+        key: 'created_at' as const,
+        header: 'Criado',
+        render: (sale: DashboardSale) => formatSaoPaulo(sale.created_at),
+      },
+      {
+        key: 'updated_at' as const,
+        header: 'Atualização',
+        render: (sale: DashboardSale) => formatSaoPaulo(sale.paid_at ?? sale.updated_at ?? sale.last_reminder_at),
       },
       {
         key: 'status' as const,
         header: 'Status',
-        className: 'hidden lg:table-cell',
-        render: (sale: Sale) => {
-          const normalizedStatus = (sale.status ?? 'converted').toLowerCase();
+        className: 'hidden xl:table-cell',
+        render: (sale: DashboardSale) => {
+          const normalizedStatus = (sale.status ?? 'approved').toLowerCase();
           const variant = getBadgeVariant(normalizedStatus);
-          return <Badge variant={variant}>{STATUS_LABEL[variant] ?? sale.status ?? 'Convertido'}</Badge>;
+          return <Badge variant={variant}>{STATUS_LABEL[variant] ?? sale.status}</Badge>;
         },
       },
     ],
@@ -129,7 +147,7 @@ export default function SalesTable({ sales }: SalesTableProps) {
         })}
       </div>
 
-      <Table<Sale>
+      <Table<DashboardSale>
         columns={columns}
         data={filteredSales}
         getRowKey={(sale) => sale.id}

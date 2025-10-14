@@ -101,6 +101,28 @@ export const REFUNDED_STATUS_TOKENS = new Set([
   'payment_refunded',
 ]);
 
+export const REFUSED_STATUS_TOKENS = new Set([
+  'refused',
+  'refuse',
+  'recusado',
+  'recusada',
+  'rejected',
+  'reject',
+  'declined',
+  'denied',
+  'failed',
+  'failure',
+  'falha',
+  'cancelled',
+  'canceled',
+  'cancelado',
+  'cancelada',
+  'payment.refused',
+  'payment_refused',
+  'payment.failed',
+  'payment_failed',
+]);
+
 export const SENT_STATUS_TOKENS = new Set([
   'sent',
   'email_sent',

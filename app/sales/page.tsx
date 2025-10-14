@@ -1,116 +1,72 @@
 import Card from '../../components/Card';
-import Table from '../../components/Table';
 import SalesTable from '../../components/SalesTable';
-import { fetchApprovedSales } from '../../lib/sales';
-import { getTrafficCategory, type TrafficCategory } from '../../lib/traffic';
-import type { Sale } from '../../lib/types';
-import { parsePgTimestamp } from '../../lib/dates';
+import { fetchDashboardSales } from '../../lib/sales';
+import type { DashboardSale, DashboardSaleStatus } from '../../lib/types';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
 
-type SalesPeriodRow = {
-  period: string;
-  label: string;
-  count: number;
-};
+const STATUS_CARD_CONFIG: Array<{
+  key: DashboardSaleStatus;
+  title: string;
+  description: string;
+}> = [
+  {
+    key: 'approved',
+    title: 'Vendas aprovadas',
+    description: 'Pagamentos confirmados automaticamente em até 1 hora.',
+  },
+  {
+    key: 'refunded',
+    title: 'Vendas reembolsadas',
+    description: 'Pedidos marcados como reembolsados ou estornados.',
+  },
+  {
+    key: 'abandoned',
+    title: 'Carrinhos abandonados',
+    description: 'Pix e intenções sem pagamento após 1 hora.',
+  },
+  {
+    key: 'converted',
+    title: 'Convertidos',
+    description: 'Pagamentos concluídos após e-mail ou WhatsApp.',
+  },
+  {
+    key: 'sent',
+    title: 'E-mails enviados',
+    description: 'Lembretes disparados aguardando retorno da cliente.',
+  },
+  {
+    key: 'refused',
+    title: 'Compras recusadas',
+    description: 'Tentativas com pagamento negado ou cancelado.',
+  },
+  {
+    key: 'new',
+    title: 'Carrinhos novos',
+    description: 'Intenções de pagamento geradas há menos de 1 hora.',
+  },
+];
 
-type SalesMetrics = {
-  total: number;
-  last7DaysCount: number;
-  last30DaysCount: number;
-  channelCounts: Record<TrafficCategory, number>;
-  uniqueSources: { label: string; count: number }[];
-  dailyBreakdown: SalesPeriodRow[];
-};
-
-function computeSalesMetrics(sales: Sale[]): SalesMetrics {
-  const now = Date.now();
-  const msInDay = 24 * 60 * 60 * 1000;
-  const channelCounts: Record<TrafficCategory, number> = {
-    organic: 0,
-    tiktok: 0,
-    other: 0,
+const buildStatusCounters = (sales: DashboardSale[]) => {
+  const initial: Record<DashboardSaleStatus, number> = {
+    new: 0,
+    approved: 0,
+    abandoned: 0,
+    converted: 0,
+    sent: 0,
+    refunded: 0,
+    refused: 0,
   };
-
-  let last7DaysCount = 0;
-  let last30DaysCount = 0;
-
-  const sourcesMap = new Map<string, number>();
-  const perDay = new Map<string, { date: Date; count: number }>();
-
-  const isoFormatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-
-  const labelFormatter = new Intl.DateTimeFormat('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    day: '2-digit',
-    month: 'short',
-  });
 
   for (const sale of sales) {
-    const category = getTrafficCategory(sale.traffic_source);
-    channelCounts[category] += 1;
-
-    const normalizedSource = sale.traffic_source?.trim() ?? '';
-    const trafficLabel =
-      normalizedSource && normalizedSource.toLowerCase() !== 'unknown'
-        ? normalizedSource
-        : 'Outros canais';
-    sourcesMap.set(trafficLabel, (sourcesMap.get(trafficLabel) ?? 0) + 1);
-
-    const paidDate = parsePgTimestamp(sale.paid_at);
-    if (!paidDate) {
-      continue;
-    }
-
-    const timestamp = paidDate.getTime();
-    if (timestamp >= now - 7 * msInDay) {
-      last7DaysCount += 1;
-    }
-    if (timestamp >= now - 30 * msInDay) {
-      last30DaysCount += 1;
-    }
-
-    const periodKey = isoFormatter.format(paidDate);
-    const existing = perDay.get(periodKey);
-    if (existing) {
-      existing.count += 1;
-      if (timestamp > existing.date.getTime()) {
-        existing.date = paidDate;
-      }
-    } else {
-      perDay.set(periodKey, { date: paidDate, count: 1 });
-    }
+    initial[sale.status] = (initial[sale.status] ?? 0) + 1;
   }
 
-  const uniqueSources = Array.from(sourcesMap.entries())
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count);
-
-  const dailyBreakdown = Array.from(perDay.entries())
-    .map(([period, { date, count }]) => ({
-      period,
-      label: labelFormatter.format(date),
-      count,
-    }))
-    .sort((a, b) => b.period.localeCompare(a.period));
-
-  return {
-    total: sales.length,
-    last7DaysCount,
-    last30DaysCount,
-    channelCounts,
-    uniqueSources,
-    dailyBreakdown,
-  };
-}
+  return initial;
+};
 
 export default async function SalesPage() {
   noStore();
@@ -121,86 +77,26 @@ export default async function SalesPage() {
     redirect('/login');
   }
 
-  const sales = await fetchApprovedSales();
-  const metrics = computeSalesMetrics(sales);
-
-  const topSource = metrics.uniqueSources[0] ?? null;
-  const recentPeriods = metrics.dailyBreakdown.slice(0, 7);
-
-  const periodColumns = [
-    { key: 'label' as const, header: 'Dia' },
-    { key: 'count' as const, header: 'Vendas', className: 'text-right' },
-  ];
+  const sales = await fetchDashboardSales();
+  const statusCounters = buildStatusCounters(sales);
 
   return (
     <main className="flex flex-1 flex-col gap-10 pb-10">
       <header className="space-y-2">
         <p className="text-sm font-semibold uppercase tracking-widest text-brand">Kiwify Hub</p>
-        <h1 className="text-3xl font-bold">Vendas aprovadas</h1>
+        <h1 className="text-3xl font-bold">Status de vendas e carrinhos</h1>
         <p className="max-w-3xl text-sm text-slate-400">
-          Analise as conversões confirmadas na Kiwify, identifique os principais canais de tráfego e acompanhe a
-          evolução diária do faturamento aprovado.
+          Acompanhe cada carrinho desde que é criado como novo até a conversão final, identifique compras recusadas e
+          priorize os contatos que precisam de acompanhamento manual.
         </p>
       </header>
 
       <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <Card
-          title="Total de vendas"
-          value={metrics.total}
-          description="Registros marcados como pagos ou convertidos no Supabase."
-        />
-        <Card
-          title="Últimos 7 dias"
-          value={metrics.last7DaysCount}
-          description="Pagamentos confirmados nos últimos 7 dias."
-        />
-        <Card
-          title="Últimos 30 dias"
-          value={metrics.last30DaysCount}
-          description="Conversões registradas no período recente de 30 dias."
-        />
-        <Card
-          title="Canal principal"
-          value={topSource ? topSource.label : '—'}
-          description={
-            topSource
-              ? `${topSource.count} conversão(ões) registradas neste canal.`
-              : 'Nenhuma origem identificada até o momento.'
-          }
-        />
+        <Card title="Registros totais" value={sales.length} description="Todos os carrinhos monitorados." />
+        {STATUS_CARD_CONFIG.map(({ key, title, description }) => (
+          <Card key={key} title={title} value={statusCounters[key]} description={description} />
+        ))}
       </section>
-
-      <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        <Card
-          title="Orgânico"
-          value={metrics.channelCounts.organic}
-          description="Tráfego direto, SEO e outras origens não pagas."
-        />
-        <Card
-          title="TikTok Ads"
-          value={metrics.channelCounts.tiktok}
-          description="Conversões provenientes das campanhas de TikTok."
-        />
-        <Card
-          title="Outros canais"
-          value={metrics.channelCounts.other}
-          description="Demais origens informadas na conversão."
-        />
-      </section>
-
-      {recentPeriods.length > 0 ? (
-        <section className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold">Resumo diário recente</h2>
-            <p className="text-sm text-slate-400">Últimos dias com registros confirmados.</p>
-          </div>
-          <Table<SalesPeriodRow>
-            columns={periodColumns}
-            data={recentPeriods}
-            emptyMessage="Nenhuma conversão registrada recentemente."
-          />
-        </section>
-      ) : null}
 
       <SalesTable sales={sales} />
     </main>
