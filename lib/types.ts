@@ -2,6 +2,7 @@ export type AbandonedCart = {
   id: string;
   customer_email: string;
   customer_name: string | null;
+  customer_phone: string | null;
   product_name: string | null;
   product_id: string | null;
   status: string;
@@ -21,10 +22,24 @@ export type Sale = {
   id: string;
   customer_email: string;
   customer_name: string | null;
+  customer_phone: string | null;
   product_name: string | null;
   product_id: string | null;
-  status: string | null;
+  status: 'converted' | 'refunded';
   paid_at: string | null;
   traffic_source: string | null;
   source: string | null;
+};
+
+export type FeedbackEntry = {
+  id: string;
+  customer_email: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  product_name: string | null;
+  status: 'pending' | 'sent' | 'converted' | 'refunded';
+  paid_at: string | null;
+  last_cart_activity: string | null;
+  checkout_url: string | null;
+  origin: 'sale' | 'cart' | 'mixed';
 };

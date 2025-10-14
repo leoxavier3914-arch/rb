@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import Table from './Table';
 import Badge from './Badge';
 import { formatSaoPaulo } from '../lib/dates';
+import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
 import type { Sale } from '../lib/types';
 import { getTrafficCategory, type TrafficCategory, formatTrafficSourceLabel } from '../lib/traffic';
 
@@ -57,6 +58,9 @@ export default function SalesTable({ sales }: SalesTableProps) {
           <div className="flex flex-col">
             <span className="font-medium text-white">{sale.customer_name || '—'}</span>
             <span className="text-xs text-slate-400">{sale.customer_email || '—'}</span>
+            {sale.customer_phone ? (
+              <span className="text-xs text-slate-500">{sale.customer_phone}</span>
+            ) : null}
           </div>
         ),
       },
@@ -79,7 +83,11 @@ export default function SalesTable({ sales }: SalesTableProps) {
         key: 'status' as const,
         header: 'Status',
         className: 'hidden lg:table-cell',
-        render: (sale: Sale) => <Badge variant="converted">{sale.status || 'Convertido'}</Badge>,
+        render: (sale: Sale) => {
+          const normalizedStatus = (sale.status ?? 'converted').toLowerCase();
+          const variant = getBadgeVariant(normalizedStatus);
+          return <Badge variant={variant}>{STATUS_LABEL[variant] ?? sale.status ?? 'Convertido'}</Badge>;
+        },
       },
     ],
     [],
