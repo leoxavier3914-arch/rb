@@ -30,13 +30,15 @@ export async function POST(req: Request) {
   const emailServiceId = readEnvValue('EMAILJS_SERVICE_ID', 'NEXT_PUBLIC_EMAILJS_SERVICE_ID');
   const emailTemplateId = readEnvValue('EMAILJS_TEMPLATE_ID', 'NEXT_PUBLIC_EMAILJS_TEMPLATE_ID');
   const emailPublicKey = readEnvValue('EMAILJS_PUBLIC_KEY', 'NEXT_PUBLIC_EMAILJS_PUBLIC_KEY');
+  const emailPrivateKey = readEnvValue('EMAILJS_PRIVATE_KEY');
 
   if (
     !supabaseUrl ||
     !supabaseServiceRoleKey ||
     !emailServiceId ||
     !emailTemplateId ||
-    !emailPublicKey
+    !emailPublicKey ||
+    !emailPrivateKey
   ) {
     const missingEnv: string[] = [];
     if (!supabaseUrl) missingEnv.push('SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL');
@@ -45,6 +47,7 @@ export async function POST(req: Request) {
     if (!emailServiceId) missingEnv.push('EMAILJS_SERVICE_ID/NEXT_PUBLIC_EMAILJS_SERVICE_ID');
     if (!emailTemplateId) missingEnv.push('EMAILJS_TEMPLATE_ID/NEXT_PUBLIC_EMAILJS_TEMPLATE_ID');
     if (!emailPublicKey) missingEnv.push('EMAILJS_PUBLIC_KEY/NEXT_PUBLIC_EMAILJS_PUBLIC_KEY');
+    if (!emailPrivateKey) missingEnv.push('EMAILJS_PRIVATE_KEY');
 
     console.error('[cron/dispatch] missing environment variables', missingEnv);
     return NextResponse.json(
@@ -122,6 +125,7 @@ export async function POST(req: Request) {
           serviceId: emailConfig.serviceId,
           templateId: emailConfig.templateId,
           publicKey: emailConfig.publicKey,
+          accessToken: emailConfig.privateKey,
           templateParams: {
             to_email: r.email,
             title: 'Finalize sua compra • Romeike Beauty',

@@ -2,6 +2,7 @@ type EmailJsConfig = {
   serviceId: string;
   templateId: string;
   publicKey: string;
+  privateKey: string;
 };
 
 export class EmailJsApiError extends Error {
@@ -43,6 +44,7 @@ export function getEmailJsConfig(): EmailJsConfig {
     serviceId: getFirstAvailable('EMAILJS_SERVICE_ID', ['NEXT_PUBLIC_EMAILJS_SERVICE_ID']),
     templateId: getFirstAvailable('EMAILJS_TEMPLATE_ID', ['NEXT_PUBLIC_EMAILJS_TEMPLATE_ID']),
     publicKey: getFirstAvailable('EMAILJS_PUBLIC_KEY', ['NEXT_PUBLIC_EMAILJS_PUBLIC_KEY']),
+    privateKey: getFirstAvailable('EMAILJS_PRIVATE_KEY', []),
   };
 }
 
@@ -52,9 +54,10 @@ export async function sendEmailJsTemplate(params: {
   serviceId: string;
   templateId: string;
   publicKey: string;
+  accessToken: string;
   templateParams: EmailJsTemplateParams;
 }): Promise<void> {
-  const { serviceId, templateId, publicKey, templateParams } = params;
+  const { serviceId, templateId, publicKey, accessToken, templateParams } = params;
 
   const response = await fetch(EMAILJS_ENDPOINT, {
     method: 'POST',
@@ -65,6 +68,7 @@ export async function sendEmailJsTemplate(params: {
       service_id: serviceId,
       template_id: templateId,
       user_id: publicKey,
+      accessToken,
       template_params: templateParams,
     }),
   });
