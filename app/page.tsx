@@ -1,7 +1,7 @@
 // app/page.tsx
 import Card from '../components/Card';
 import AbandonedCartsSection from '../components/AbandonedCartsSection';
-import { getSupabaseAdmin } from '../lib/supabaseAdmin';
+import { fetchAbandonedCarts } from '../lib/abandonedCarts';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
@@ -9,67 +9,6 @@ import type { AbandonedCart } from '../lib/types';
 import { parsePgTimestamp } from '../lib/dates';
 
 export const dynamic = 'force-dynamic';
-
-const clean = (v: any) => {
-  const s = typeof v === 'string' ? v.trim() : '';
-  return s && s !== '-' && s !== '—' ? s : '';
-};
-
-async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
-  noStore();
-  try {
-    const supabase = getSupabaseAdmin();
-
-    // select('*') para não quebrar se o schema variar
-    const { data, error } = await supabase
-      .from('abandoned_emails')
-      .select('*')
-      .neq('source', 'kiwify.webhook_purchase')
-      .order('updated_at', { ascending: false });
-
-    if (error) {
-      console.error('[kiwify-hub] erro ao consultar carrinhos', error);
-      return [];
-    }
-
-    const rows = (data ?? []) as any[];
-
-    return rows.map((r): AbandonedCart => {
-      const p = (r?.payload ?? {}) as Record<string, any>;
-      const productFromPayload = clean(p.product_name) || clean(p.offer_name) || '';
-      const paid = Boolean(r?.paid);
-      const baseStatus = r?.status || 'pending';
-      const normalizedStatus = paid ? 'converted' : baseStatus;
-
-      return {
-        id: String(r.id),
-        customer_email: clean(r.customer_email) || clean(r.email) || '',
-        customer_name: clean(r.customer_name) || null,
-        product_name:
-          clean(r.product_name) ||
-          clean(r.product_title) ||
-          productFromPayload ||
-          null,
-        product_id: r.product_id ?? null,
-        status: normalizedStatus,
-        paid,
-        paid_at: r.paid_at ?? null,
-        discount_code: clean(r.discount_code) || clean((p as any)?.coupon) || null,
-        // expiração/agendamento: aceita expires_at ou schedule_at
-        expires_at: r.expires_at ?? r.schedule_at ?? null,
-        last_event: r.last_event ?? null,
-        // quando foi enviado pela última vez (se houver)
-        last_reminder_at: r.sent_at ?? r.last_reminder_at ?? null,
-        created_at: r.created_at ?? null,
-        updated_at: r.updated_at ?? null,
-        traffic_source: r.traffic_source ?? null,
-      };
-    });
-  } catch (error) {
-    console.error('[kiwify-hub] supabase indisponível', error);
-    return [];
-  }
-}
 
 function computeMetrics(carts: AbandonedCart[]) {
   const total = carts.length;

@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import type { ReactNode } from 'react';
 
-export type BadgeVariant = 'pending' | 'sent' | 'converted' | 'error';
+export type BadgeVariant = 'pending' | 'sent' | 'converted' | 'refunded' | 'error';
 
 type BadgeProps = {
   children: ReactNode;
@@ -13,6 +13,7 @@ const variantClasses: Record<BadgeVariant, string> = {
   pending: 'bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/40',
   sent: 'bg-sky-500/10 text-sky-200 ring-1 ring-sky-500/40',
   converted: 'bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-500/40',
+  refunded: 'bg-purple-500/10 text-purple-200 ring-1 ring-purple-500/40',
   error: 'bg-rose-500/10 text-rose-200 ring-1 ring-rose-500/40',
 };
 
