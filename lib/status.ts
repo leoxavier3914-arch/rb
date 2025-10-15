@@ -5,7 +5,6 @@ export const STATUS_LABEL: Record<BadgeVariant, string> = {
   approved: 'Aprovado',
   pending: 'Pendente',
   abandoned: 'Abandonado',
-  sent: 'E-mail enviado',
   converted: 'Convertido',
   refunded: 'Reembolsado',
   refused: 'Recusado',
@@ -17,7 +16,6 @@ const VARIANT_SET = new Set<BadgeVariant>([
   'approved',
   'pending',
   'abandoned',
-  'sent',
   'converted',
   'refunded',
   'refused',
@@ -39,8 +37,6 @@ const STATUS_ALIASES: Record<string, BadgeVariant> = {
   refunded: 'refunded',
   recusado: 'refused',
   refused: 'refused',
-  enviado: 'sent',
-  sent: 'sent',
 };
 
 export function getBadgeVariant(status: string): BadgeVariant {

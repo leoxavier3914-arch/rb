@@ -37,7 +37,6 @@ export type DashboardSaleStatus =
   | 'approved'
   | 'abandoned'
   | 'converted'
-  | 'sent'
   | 'refunded'
   | 'refused';
 
@@ -57,6 +56,7 @@ export type DashboardSale = {
   traffic_source: string | null;
   source: string | null;
   checkout_url: string | null;
+  email_follow_up: boolean;
 };
 
 export type FeedbackEntry = {
@@ -65,7 +65,7 @@ export type FeedbackEntry = {
   customer_name: string | null;
   customer_phone: string | null;
   product_name: string | null;
-  status: 'pending' | 'sent' | 'converted' | 'refunded';
+  status: 'pending' | 'abandoned' | 'converted' | 'refunded' | 'refused';
   paid_at: string | null;
   last_cart_activity: string | null;
   checkout_url: string | null;

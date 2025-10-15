@@ -161,9 +161,15 @@ export async function POST(req: Request) {
         });
 
         // marca como enviado
+        const sentAt = new Date().toISOString();
         const { error: upErr } = await supabase
           .from('abandoned_emails')
-          .update({ status: 'sent', sent_at: new Date().toISOString() })
+          .update({
+            last_event: 'automatic.email.sent',
+            last_reminder_at: sentAt,
+            sent_at: sentAt,
+            updated_at: sentAt,
+          })
           .eq('id', r.id);
 
         if (upErr) throw upErr;
