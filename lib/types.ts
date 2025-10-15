@@ -79,6 +79,13 @@ export type DashboardSale = {
   checkout_url: string | null;
 };
 
+export type GroupedDashboardEventSource = 'created_at' | 'updated_at' | 'paid_at' | null;
+
+export type GroupedDashboardEvent = DashboardSale & {
+  latest_timestamp: string | null;
+  latest_timestamp_source: GroupedDashboardEventSource;
+};
+
 export type FeedbackEntry = {
   id: string;
   customer_email: string;

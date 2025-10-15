@@ -1,6 +1,12 @@
 import { unstable_noStore as noStore } from 'next/cache';
 import { getSupabaseAdmin } from './supabaseAdmin';
-import type { DashboardSale, DashboardSaleStatus, Sale } from './types';
+import type {
+  DashboardSale,
+  DashboardSaleStatus,
+  GroupedDashboardEvent,
+  GroupedDashboardEventSource,
+  Sale,
+} from './types';
 import {
   APPROVED_STATUS_TOKENS,
   ABANDONED_STATUS_TOKENS,
@@ -79,6 +85,36 @@ const parseTime = (value: string | null | undefined) => {
 
   const timestamp = Date.parse(value);
   return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp;
+};
+
+const resolveLatestTimestamp = (sale: DashboardSale) => {
+  const candidates: Array<{
+    value: string | null;
+    source: GroupedDashboardEventSource;
+  }> = [
+    { value: sale.updated_at, source: 'updated_at' },
+    { value: sale.paid_at, source: 'paid_at' },
+    { value: sale.created_at, source: 'created_at' },
+  ];
+
+  let latestValue: string | null = null;
+  let latestSource: GroupedDashboardEventSource = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    const time = parseTime(candidate.value);
+    if (time > latestTime) {
+      latestTime = time;
+      latestValue = candidate.value ?? null;
+      latestSource = candidate.source;
+    }
+  }
+
+  return {
+    latestTimestamp: latestValue,
+    latestSource,
+    latestTime,
+  };
 };
 
 const ONE_HOUR_IN_MS = 60 * 60 * 1000;
@@ -256,6 +292,50 @@ export async function fetchDashboardSales(): Promise<DashboardSale[]> {
   }
 }
 
+const buildEventKey = (sale: DashboardSale) => {
+  const email = sale.customer_email?.toLowerCase() ?? '';
+  const productKey = sale.product_id?.toLowerCase() || sale.product_name?.toLowerCase() || sale.id;
+  return `${email}::${productKey}`;
+};
+
+type GroupLatestDashboardEventsParams = {
+  sales?: DashboardSale[];
+};
+
+export async function groupLatestDashboardEvents(
+  { sales: providedSales }: GroupLatestDashboardEventsParams = {},
+): Promise<GroupedDashboardEvent[]> {
+  const sales = providedSales ?? (await fetchDashboardSales());
+  const deduped = new Map<string, GroupedDashboardEvent>();
+
+  for (const sale of sales) {
+    const key = buildEventKey(sale);
+    const current = deduped.get(key);
+    const { latestTimestamp, latestSource, latestTime } = resolveLatestTimestamp(sale);
+
+    const enrichedSale: GroupedDashboardEvent = {
+      ...sale,
+      latest_timestamp: latestTimestamp,
+      latest_timestamp_source: latestSource,
+    };
+
+    if (!current) {
+      deduped.set(key, enrichedSale);
+      continue;
+    }
+
+    const currentTime = parseTime(current.latest_timestamp);
+
+    if (latestTime >= currentTime) {
+      deduped.set(key, enrichedSale);
+    }
+  }
+
+  return Array.from(deduped.values()).sort(
+    (a, b) => parseTime(b.latest_timestamp) - parseTime(a.latest_timestamp),
+  );
+}
+
 export async function fetchApprovedSales(): Promise<Sale[]> {
   noStore();
 
@@ -358,4 +438,5 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
 
 export const __testables = {
   mapRowToDashboardSale,
+  resolveLatestTimestamp,
 };
