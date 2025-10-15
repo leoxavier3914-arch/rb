@@ -23,7 +23,7 @@ describe('mapRowToDashboardSale', () => {
     expect(sale.email_follow_up).toBe(false);
   });
 
-  it('marks sale as converted when reminder is much earlier than payment', () => {
+  it('mantém venda aprovada quando o pagamento acontece após o lembrete', () => {
     const row = {
       id: '2',
       customer_email: 'user@example.com',
@@ -38,11 +38,11 @@ describe('mapRowToDashboardSale', () => {
 
     const sale = mapRowToDashboardSale(row);
 
-    expect(sale.status).toBe('converted');
+    expect(sale.status).toBe('approved');
     expect(sale.email_follow_up).toBe(true);
   });
 
-  it('uses status tokens when reminder timestamp is missing', () => {
+  it('usa tokens de status quando o lembrete não possui horário registrado', () => {
     const row = {
       id: '3',
       customer_email: 'user@example.com',
@@ -57,7 +57,7 @@ describe('mapRowToDashboardSale', () => {
 
     const sale = mapRowToDashboardSale(row);
 
-    expect(sale.status).toBe('converted');
+    expect(sale.status).toBe('approved');
     expect(sale.email_follow_up).toBe(true);
   });
 });

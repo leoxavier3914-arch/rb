@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const links = [
-  { href: '/integracoes/emails', label: 'E-mails', description: 'Templates, envios e testes' },
   { href: '/integracoes/whatsapp', label: 'WhatsApp', description: 'Fluxos e mensagens rápidas' },
   { href: '/integracoes/instagram', label: 'Instagram', description: 'Respostas e direct automatizado' },
   { href: '/integracoes/tiktok', label: 'TikTok', description: 'Mensagens para leads e comentários' },

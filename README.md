@@ -1,6 +1,6 @@
 # rb-kiwify-hub
 
-Hub interno para monitorar carrinhos abandonados da Kiwify e reenviar lembretes com desconto usando Supabase + EmailJS.
+Hub interno para monitorar em tempo real os eventos de checkout da Kiwify — novos registros, pagamentos aprovados, abandonos e recusas — utilizando Supabase como camada de persistência.
 
 ## Variáveis de ambiente
 Configure as seguintes chaves antes de rodar o projeto:
@@ -8,53 +8,33 @@ Configure as seguintes chaves antes de rodar o projeto:
 ### Supabase
 - `SUPABASE_SERVICE_ROLE_KEY` (privada; em ambientes como o Vercel pode aparecer como `SUPABASE_SERVICE_ROLE`)
 - `SUPABASE_URL` (privada — opcional; caso não defina, as rotas server usam o fallback `NEXT_PUBLIC_SUPABASE_URL`)
-- `NEXT_PUBLIC_SUPABASE_URL` (pública — obrigatória para o client e agora fallback do server)
-
-### EmailJS
-- `EMAILJS_SERVICE_ID` (ou `NEXT_PUBLIC_EMAILJS_SERVICE_ID`)
-- `EMAILJS_TEMPLATE_ID` (ou `NEXT_PUBLIC_EMAILJS_TEMPLATE_ID`)
-- `EMAILJS_PUBLIC_KEY` (ou `NEXT_PUBLIC_EMAILJS_PUBLIC_KEY`)
-- `EMAILJS_PRIVATE_KEY` (mantida apenas no server)
+- `NEXT_PUBLIC_SUPABASE_URL` (pública — obrigatória para o client e fallback do server)
 
 ### Outras variáveis
 - `KIWIFY_WEBHOOK_TOKEN`
 - `ADMIN_TOKEN`
-- `DEFAULT_DISCOUNT_CODE`
-- `DEFAULT_DELAY_HOURS` (em horas, usado para agendar o envio automático via cron; padrão 24h)
-- `DEFAULT_EXPIRE_HOURS` (em horas, usado para calcular `expires_at` e preencher o texto "24h" do template)
+- `DEFAULT_DELAY_HOURS` (em horas, usado para calcular o `schedule_at` dos eventos; padrão 24h)
+- `DEFAULT_EXPIRE_HOURS` (em horas, usado para preencher o `expires_at` dos links de checkout)
 
 Use um arquivo `.env.local` para valores de desenvolvimento.
 
 ## Rotas principais
-- `POST /api/kiwify/webhook`: recebe eventos da Kiwify e registra o carrinho no Supabase.
-- `POST /api/admin/resend`: reenviar o e-mail manualmente (necessita cookie `admin_token` válido ou header `Authorization: Bearer ADMIN_TOKEN`).
+- `POST /api/kiwify/webhook`: recebe eventos da Kiwify e registra/atualiza os dados de carrinhos e pagamentos no Supabase.
 
 ## Login administrativo
 Acesse `/login` e informe o valor configurado em `ADMIN_TOKEN` para destravar o painel protegido por cookie.
 
 ## Testes manuais
-1. Ajuste `DEFAULT_DELAY_HOURS` no `.env` (ex.: `DEFAULT_DELAY_HOURS=2`) e mantenha `DEFAULT_EXPIRE_HOURS=24` para o texto do template.
-2. Execute `POST /api/admin/test` informando um e-mail de teste e confirme no Supabase que o registro foi criado com `schedule_at ≈ agora + DEFAULT_DELAY_HOURS`.
-3. Aguarde o tempo configurado (ou ajuste manualmente o `schedule_at` para o passado) e chame `POST /api/admin/cron/dispatch`; o registro deve ser enviado apenas após o novo atraso.
-4. Valide no log/preview do EmailJS que o template continua exibindo "24 h" graças a `DEFAULT_EXPIRE_HOURS` enquanto o cron respeita o atraso configurado.
-5. Verifique na interface que registros com `source = 'kiwify.webhook_purchase'` (compras que já nasceram pagas) ficam ocultos, enquanto os carrinhos abandonados via webhook — inclusive com `source = 'kiwify.webhook'` — permanecem listados no Hub.
-
-## Backfill de registros antigos
-Para sincronizar compras aprovadas antigas (anteriores ao patch do webhook), execute o script de backfill apontando para o mesmo projeto Supabase usado em produção:
-
-```bash
-SUPABASE_URL="https://<sua-instancia>.supabase.co" \
-SUPABASE_SERVICE_ROLE_KEY="<chave-service-role>" \ # ou SUPABASE_SERVICE_ROLE
-node scripts/backfill_converted_status.mjs
-```
-
-O script percorre todos os registros marcados como pagos/convertidos e replica o status para duplicidades do mesmo e-mail + produto, garantindo consistência nas tabelas existentes.
+1. Ajuste `DEFAULT_DELAY_HOURS` e `DEFAULT_EXPIRE_HOURS` no `.env` conforme a estratégia de expiração desejada.
+2. Faça uma requisição `POST /api/kiwify/webhook` com um payload de checkout de teste (use o header `Authorization: Bearer <KIWIFY_WEBHOOK_TOKEN>`).
+3. Verifique no Supabase que o registro foi criado com o `schedule_at` correspondente ao atraso configurado e status inicial `new` ou `pending`.
+4. Atualize o payload simulando um pagamento aprovado (por exemplo, enviando `paid: true` ou `status: "approved"`) e confirme que o painel passa a exibir o evento como pagamento aprovado, mantendo o histórico do cliente/produto.
 
 ## Scripts
 - `npm run dev`
 - `npm run build`
 - `npm run start`
-- `node scripts/backfill_checkout_ids.mjs` — reprocessa registros antigos aplicando o mesmo algoritmo de `checkout_id` determinístico (e-mail + código de checkout/produto) usado pelo webhook na tabela `abandoned_emails`
+- `node scripts/backfill_checkout_ids.mjs` — reprocessa registros antigos aplicando o mesmo algoritmo determinístico de `checkout_id` usado pelo webhook na tabela `abandoned_emails`
 
 ### Backfill dos `checkout_id`
 
@@ -78,4 +58,3 @@ O script `scripts/backfill_checkout_ids.mjs` ajuda a atualizar registros existen
    Adicione `--delete-duplicates` se quiser remover automaticamente as linhas antigas com o mesmo e-mail/produto (o script preserva a melhor linha de cada grupo antes de excluir as demais).
 
 4. Caso algum registro apareça como “skipped”, complete manualmente o `customer_email`, o identificador/título do produto ou algum código/link de checkout antes de rodar novamente.
-

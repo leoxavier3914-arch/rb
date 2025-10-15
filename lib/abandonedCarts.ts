@@ -145,7 +145,7 @@ const resolveStatus = ({
   }
 
   if (paid || normalizedStatuses.some((status) => APPROVED_STATUS_TOKENS.has(status))) {
-    return 'converted';
+    return 'approved';
   }
 
   const lastReminderTime = parseTime(lastReminderAt);

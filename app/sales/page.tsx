@@ -24,11 +24,6 @@ const STATUS_CARD_CONFIG: Array<{
     description: 'Pix e intenções sem pagamento após 1 hora.',
   },
   {
-    key: 'converted',
-    title: 'Convertidos',
-    description: 'Pagamentos concluídos após contato por e-mail ou WhatsApp.',
-  },
-  {
     key: 'refused',
     title: 'Compras recusadas',
     description: 'Tentativas com pagamento negado ou cancelado.',
@@ -50,7 +45,6 @@ const buildStatusCounters = (sales: DashboardSale[]) => {
     new: 0,
     approved: 0,
     abandoned: 0,
-    converted: 0,
     refunded: 0,
     refused: 0,
   };
@@ -80,8 +74,8 @@ export default async function SalesPage() {
         <p className="text-sm font-semibold uppercase tracking-widest text-brand">Kiwify Hub</p>
         <h1 className="text-3xl font-bold">Status de vendas e carrinhos</h1>
         <p className="max-w-3xl text-sm text-slate-400">
-          Acompanhe cada carrinho desde que é criado como novo até a conversão final, identifique compras recusadas e
-          priorize os contatos que precisam de acompanhamento manual.
+          Acompanhe a evolução dos carrinhos desde a criação, identifique pagamentos confirmados e monitore abandonos ou
+          recusas em um só lugar.
         </p>
       </header>
 

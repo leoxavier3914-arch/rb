@@ -359,7 +359,7 @@ function scoreRow(row) {
   let score = 0;
   if (row.paid) score += 100;
   const status = normalizeString(row.status)?.toLowerCase();
-  if (status === 'converted') score += 50;
+  if (status === 'approved' || status === 'converted') score += 50;
   if (status === 'abandoned') score += 30;
   if (status === 'pending') score += 10;
   if (row.last_reminder_at) score += 5;
@@ -409,17 +409,21 @@ function pickTrafficSource(rows) {
 }
 
 function resolveStatus(rows, paidFlag) {
-  if (paidFlag) return 'converted';
-  const priority = ['converted', 'abandoned', 'pending'];
+  if (paidFlag) return 'approved';
+  const priority = ['approved', 'converted', 'abandoned', 'pending'];
   const found = new Set();
   for (const row of rows) {
     const value = normalizeString(row.status)?.toLowerCase();
     if (value) found.add(value);
   }
   for (const candidate of priority) {
-    if (found.has(candidate)) return candidate;
+    if (found.has(candidate)) {
+      return candidate === 'converted' ? 'approved' : candidate;
+    }
   }
-  return found.values().next().value ?? 'pending';
+  const [first] = Array.from(found.values());
+  if (!first) return 'pending';
+  return first === 'converted' ? 'approved' : first;
 }
 
 function parseArgs() {

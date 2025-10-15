@@ -6,7 +6,6 @@ export type BadgeVariant =
   | 'approved'
   | 'pending'
   | 'abandoned'
-  | 'converted'
   | 'refunded'
   | 'refused'
   | 'error';
@@ -22,7 +21,6 @@ const variantClasses: Record<BadgeVariant, string> = {
   approved: 'bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-500/40',
   pending: 'bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/40',
   abandoned: 'bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/40',
-  converted: 'bg-lime-500/10 text-lime-200 ring-1 ring-lime-500/40',
   refunded: 'bg-purple-500/10 text-purple-200 ring-1 ring-purple-500/40',
   refused: 'bg-rose-500/10 text-rose-200 ring-1 ring-rose-500/40',
   error: 'bg-slate-500/20 text-slate-200 ring-1 ring-slate-500/40',

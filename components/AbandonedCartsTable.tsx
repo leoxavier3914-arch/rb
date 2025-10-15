@@ -1,34 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
-import clsx from 'clsx';
+import { useEffect, useMemo, useState } from 'react';
 import Badge from './Badge';
 import Table from './Table';
 import type { AbandonedCart } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
-import { normalizeStatusToken, SENT_STATUS_TOKENS } from '../lib/normalization';
 
-export type AbandonedCartSortMode = 'default' | 'converted' | 'new' | 'pending' | 'abandoned';
+export type AbandonedCartSortMode = 'default' | 'approved' | 'new' | 'pending' | 'abandoned' | 'refused';
 
 type AbandonedCartsTableProps = {
   carts: AbandonedCart[];
   sortMode?: AbandonedCartSortMode;
 };
 
-type FeedbackState = {
-  type: 'success' | 'error';
-  message: string;
-};
-
 const PAGE_SIZE = 20;
-
-const STATUS_SEQUENCE: Array<Exclude<AbandonedCartSortMode, 'default'>> = [
-  'converted',
-  'new',
-  'pending',
-  'abandoned',
-];
+const STATUS_SEQUENCE = ['approved', 'new', 'pending', 'abandoned', 'refused', 'refunded'] as const;
 
 const getTimestamp = (value?: string | null) => {
   if (!value) return 0;
@@ -36,40 +23,14 @@ const getTimestamp = (value?: string | null) => {
   return Number.isNaN(time) ? 0 : time;
 };
 
-const hasEmailFollowUp = (cart: AbandonedCart) => {
-  if (cart.last_reminder_at) {
-    return true;
-  }
-
-  const event = normalizeStatusToken(cart.last_event);
-  return event ? SENT_STATUS_TOKENS.has(event) : false;
-};
-
 export default function AbandonedCartsTable({ carts, sortMode = 'default' }: AbandonedCartsTableProps) {
   const [data, setData] = useState<AbandonedCart[]>(carts);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [sendingId, setSendingId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<Record<string, FeedbackState | undefined>>({});
   const [currentPage, setCurrentPage] = useState(1);
-  const [statusIndicatorId, setStatusIndicatorId] = useState<string | null>(null);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   useEffect(() => {
     setData(carts);
     setCurrentPage(1);
-    setExpandedId(null);
-    setFeedback({});
-    setStatusIndicatorId(null);
-    setConfirmingId(null);
   }, [carts]);
-
-  const handleStatusIndicatorToggle = useCallback(
-    (event: MouseEvent<HTMLButtonElement>, id: string) => {
-      event.stopPropagation();
-      setStatusIndicatorId((current) => (current === id ? null : id));
-    },
-    [],
-  );
 
   const columns = useMemo(
     () => [
@@ -77,43 +38,12 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
         key: 'customer_name' as const,
         header: 'Cliente',
         render: (item: AbandonedCart) => (
-          <div className="flex items-start gap-3">
-            {(() => {
-              const emailReminder = hasEmailFollowUp(item);
-              if (!emailReminder && item.status !== 'converted') {
-                return null;
-              }
-
-              const isConverted = item.status === 'converted';
-              const indicatorColor = isConverted
-                ? 'bg-emerald-400 shadow-[0_0_0_2px_rgba(15,23,42,0.8)]'
-                : 'bg-sky-400 shadow-[0_0_0_2px_rgba(15,23,42,0.8)]';
-              const indicatorLabel = isConverted ? 'Convertido' : 'Contato realizado';
-
-              return (
-                <div className="relative flex items-center">
-                  <button
-                    type="button"
-                    onClick={(event) => handleStatusIndicatorToggle(event, item.id)}
-                    className="flex h-5 w-5 items-center justify-center rounded-full transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
-                    aria-label={`Status do carrinho: ${indicatorLabel}`}
-                  >
-                    <span className={`h-2.5 w-2.5 rounded-full ${indicatorColor}`} />
-                  </button>
-
-                  {statusIndicatorId === item.id ? (
-                    <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900/95 px-2 py-1 text-xs font-semibold text-white shadow-xl ring-1 ring-slate-700">
-                      <span className={isConverted ? 'text-emerald-200' : 'text-sky-200'}>{indicatorLabel}</span>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })()}
-
-            <div className="flex flex-col">
-              <span className="font-medium text-white">{item.customer_name ?? 'Nome não informado'}</span>
-              <span className="text-xs text-slate-400">{item.customer_email}</span>
-            </div>
+          <div className="flex flex-col">
+            <span className="font-medium text-white">{item.customer_name ?? 'Nome não informado'}</span>
+            <span className="text-xs text-slate-400">{item.customer_email}</span>
+            {item.customer_phone ? (
+              <span className="text-xs text-slate-500">{item.customer_phone}</span>
+            ) : null}
           </div>
         ),
       },
@@ -134,73 +64,7 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
         render: (i: AbandonedCart) => formatSaoPaulo(i.updated_at ?? i.created_at),
       },
     ],
-    [handleStatusIndicatorToggle, statusIndicatorId],
-  );
-
-  const handleRowClick = useCallback((item: AbandonedCart) => {
-    setExpandedId((current) => (current === item.id ? null : item.id));
-    setStatusIndicatorId(null);
-    setConfirmingId(null);
-  }, []);
-
-  const handleSendEmail = useCallback(
-    async (item: AbandonedCart) => {
-      if (sendingId) return;
-
-      setSendingId(item.id);
-      setFeedback((prev) => ({ ...prev, [item.id]: undefined }));
-
-      try {
-        const response = await fetch('/api/admin/resend', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ id: item.id }),
-        });
-
-        if (!response.ok) {
-          let errorMessage = 'Falha ao enviar e-mail.';
-          try {
-            const payload = (await response.json()) as { error?: string };
-            if (payload?.error) errorMessage = payload.error;
-          } catch {
-            // ignore JSON parse errors
-          }
-          throw new Error(errorMessage);
-        }
-
-        type SuccessPayload = { ok?: boolean; discountCode?: string | null; expiresAt?: string | null };
-        const payload = (await response.json()) as SuccessPayload;
-        const nowIso = new Date().toISOString();
-
-        setData((prev) =>
-          prev.map((row) =>
-            row.id === item.id
-              ? {
-                  ...row,
-                  discount_code: payload.discountCode ?? row.discount_code,
-                  expires_at: payload.expiresAt ?? row.expires_at,
-                  last_event: 'manual.email.sent',
-                  last_reminder_at: nowIso,
-                  updated_at: nowIso,
-                }
-              : row,
-          ),
-        );
-
-        setFeedback((prev) => ({ ...prev, [item.id]: { type: 'success', message: 'E-mail enviado com sucesso.' } }));
-        setConfirmingId(null);
-      } catch (error) {
-        setFeedback((prev) => ({
-          ...prev,
-          [item.id]: { type: 'error', message: error instanceof Error ? error.message : 'Falha ao enviar e-mail.' },
-        }));
-      } finally {
-        setSendingId(null);
-      }
-    },
-    [sendingId],
+    [],
   );
 
   const sortedData = useMemo(() => {
@@ -208,15 +72,15 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
       return data;
     }
 
-    const startIndex = STATUS_SEQUENCE.indexOf(sortMode as Exclude<AbandonedCartSortMode, 'default'>);
+    const startIndex = STATUS_SEQUENCE.indexOf(sortMode as (typeof STATUS_SEQUENCE)[number]);
     const sequence =
       startIndex === -1
         ? STATUS_SEQUENCE
         : [...STATUS_SEQUENCE.slice(startIndex), ...STATUS_SEQUENCE.slice(0, startIndex)];
-    const statusOrder = sequence.reduce<Record<string, number>>((acc, status, index) => {
+    const statusOrder = Array.from(sequence).reduce((acc: Record<string, number>, status, index) => {
       acc[status] = index;
       return acc;
-    }, {});
+    }, {} as Record<string, number>);
 
     return [...data].sort((a, b) => {
       const orderA = statusOrder[a.status] ?? Number.POSITIVE_INFINITY;
@@ -250,34 +114,16 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
     return sortedData.slice(startIndex, startIndex + PAGE_SIZE);
   }, [currentPage, sortedData]);
 
-  useEffect(() => {
-    if (expandedId && !paginatedData.some((row) => row.id === expandedId)) {
-      setExpandedId(null);
-    }
-  }, [expandedId, paginatedData]);
-
-  useEffect(() => {
-    if (statusIndicatorId && !paginatedData.some((row) => row.id === statusIndicatorId)) {
-      setStatusIndicatorId(null);
-    }
-  }, [paginatedData, statusIndicatorId]);
-
-  useEffect(() => {
-    if (confirmingId && !paginatedData.some((row) => row.id === confirmingId)) {
-      setConfirmingId(null);
-    }
-  }, [confirmingId, paginatedData]);
-
   const pageStart = totalItems === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const pageEnd = totalItems === 0 ? 0 : Math.min(pageStart + paginatedData.length - 1, totalItems);
 
-  const handlePreviousPage = useCallback(() => {
+  const handlePreviousPage = () => {
     setCurrentPage((prev) => Math.max(prev - 1, 1));
-  }, []);
+  };
 
-  const handleNextPage = useCallback(() => {
+  const handleNextPage = () => {
     setCurrentPage((prev) => Math.min(prev + 1, totalPages));
-  }, [totalPages]);
+  };
 
   return (
     <div className="space-y-4">
@@ -286,93 +132,6 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
         data={paginatedData}
         getRowKey={(i) => i.id}
         emptyMessage="Nenhum evento encontrado. Aguarde o primeiro webhook da Kiwify."
-        onRowClick={(item) => handleRowClick(item)}
-        expandedRowKey={expandedId}
-        renderExpandedRow={(item) => {
-          const isSending = sendingId === item.id;
-          const feedbackMessage = feedback[item.id];
-          const emailReminder = hasEmailFollowUp(item);
-          const isConfirming = confirmingId === item.id;
-          const handlePrimaryAction = () => {
-            if (isSending) return;
-            if (emailReminder && !isConfirming) {
-              setConfirmingId(item.id);
-              return;
-            }
-
-            void handleSendEmail(item);
-          };
-
-          return (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-white">
-                  Ações para {item.customer_name ?? 'Nome não informado'}
-                </p>
-                <p className="text-xs text-slate-400">
-                  Reenviar o lembrete manualmente para {item.customer_email}.
-                </p>
-              </div>
-              <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-                <button
-                  type="button"
-                  onClick={handlePrimaryAction}
-                  disabled={isSending}
-                  className={clsx(
-                    'inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
-                    emailReminder && !isConfirming
-                      ? 'bg-slate-800 text-slate-300 hover:bg-slate-800'
-                      : 'bg-brand text-white hover:bg-brand/90',
-                  )}
-                >
-                  {isSending
-                    ? 'Enviando…'
-                    : emailReminder && !isConfirming
-                      ? 'E-mail já enviado'
-                      : 'Enviar e-mail'}
-                </button>
-                {feedbackMessage ? (
-                  <span
-                    className={
-                      feedbackMessage.type === 'success'
-                        ? 'text-xs font-medium text-emerald-300'
-                        : 'text-xs font-medium text-rose-300'
-                    }
-                  >
-                    {feedbackMessage.message}
-                  </span>
-                ) : null}
-                {emailReminder ? (
-                  <div className="text-xs text-slate-400">
-                    <p>Já foi enviado um e-mail para este cliente.</p>
-                    {isConfirming ? (
-                      <div className="mt-2 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handleSendEmail(item);
-                          }}
-                          className="rounded-md bg-brand/90 px-3 py-1 font-semibold text-slate-950 transition hover:bg-brand"
-                          disabled={isSending}
-                        >
-                          Sim, reenviar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmingId(null)}
-                          className="rounded-md border border-slate-700 px-3 py-1 font-semibold text-slate-200 transition hover:bg-slate-800"
-                          disabled={isSending}
-                        >
-                          Não, manter
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          );
-        }}
       />
 
       <div className="flex flex-col items-center justify-between gap-2 text-xs text-slate-400 sm:flex-row sm:text-sm">

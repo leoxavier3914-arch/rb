@@ -163,16 +163,7 @@ const resolveDashboardStatus = ({
     return 'refused';
   }
 
-  const { hasReminderTime, reminderValidForConversion } = evaluateReminderTiming(paidAt, lastReminderAt);
-  const hasFollowUpStatus = normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status));
-  const hasFollowUpEvent =
-    reminderValidForConversion || (!hasReminderTime && hasFollowUpStatus);
-
   if (paid) {
-    if (hasFollowUpEvent) {
-      return 'converted';
-    }
-
     return 'approved';
   }
 
@@ -370,7 +361,7 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
           return null;
         }
 
-        const status: Sale['status'] = hasRefund ? 'refunded' : 'converted';
+        const status: Sale['status'] = hasRefund ? 'refunded' : 'approved';
         const paidAt = extractPaidAt(row, payload);
         const customerPhone = extractPhone(row, payload);
 
