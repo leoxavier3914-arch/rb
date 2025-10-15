@@ -1,17 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { __testables } from './sales';
 
 const { mapRowToDashboardSale } = __testables;
 
 describe('mapRowToDashboardSale', () => {
-  it('keeps approved status when payment happens shortly after a reminder', () => {
+  it('marks paid rows as approved regardless of timestamps', () => {
     const row = {
       id: '1',
       customer_email: 'user@example.com',
-      status: 'approved',
+      status: 'pending',
       paid: true,
       paid_at: '2024-08-01T10:05:00.000Z',
-      sent_at: '2024-08-01T10:03:00.000Z',
       created_at: '2024-08-01T09:50:00.000Z',
       updated_at: '2024-08-01T10:05:00.000Z',
       payload: {},
@@ -20,44 +19,42 @@ describe('mapRowToDashboardSale', () => {
     const sale = mapRowToDashboardSale(row);
 
     expect(sale.status).toBe('approved');
-    expect(sale.email_follow_up).toBe(false);
   });
 
-  it('mantém venda aprovada quando o pagamento acontece após o lembrete', () => {
+  it('propagates pending tokens when the cart is still within the grace period', () => {
     const row = {
       id: '2',
       customer_email: 'user@example.com',
-      status: 'approved',
-      paid: true,
-      paid_at: '2024-08-01T12:00:00.000Z',
-      sent_at: '2024-08-01T10:00:00.000Z',
-      created_at: '2024-08-01T09:00:00.000Z',
-      updated_at: '2024-08-01T12:00:00.000Z',
-      payload: {},
+      status: 'pending',
+      paid: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      payload: { status: 'pending' },
     };
 
     const sale = mapRowToDashboardSale(row);
 
-    expect(sale.status).toBe('approved');
-    expect(sale.email_follow_up).toBe(true);
+    expect(sale.status).toBe('pending');
   });
 
-  it('usa tokens de status quando o lembrete não possui horário registrado', () => {
+  it('marks unpaid carts older than one hour as abandoned', () => {
     const row = {
       id: '3',
       customer_email: 'user@example.com',
-      status: 'approved',
-      paid: true,
-      paid_at: '2024-08-01T12:00:00.000Z',
-      last_event: 'manual.email.sent',
-      created_at: '2024-08-01T11:00:00.000Z',
-      updated_at: '2024-08-01T12:00:00.000Z',
+      status: 'new',
+      paid: false,
+      created_at: '2024-08-01T09:00:00.000Z',
+      updated_at: '2024-08-01T09:00:00.000Z',
       payload: {},
     };
 
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-08-01T10:30:00.000Z'));
+
     const sale = mapRowToDashboardSale(row);
 
-    expect(sale.status).toBe('approved');
-    expect(sale.email_follow_up).toBe(true);
+    expect(sale.status).toBe('abandoned');
+
+    vi.useRealTimers();
   });
 });

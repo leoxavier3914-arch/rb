@@ -1018,7 +1018,7 @@ export async function POST(req: Request) {
   });
 
   const selectColumns =
-    'id, checkout_id, paid, paid_at, status, created_at, updated_at, schedule_at, last_event, last_reminder_at, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
+    'id, checkout_id, paid, paid_at, status, created_at, updated_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
 
   let existing: any = null;
   let existingOriginalProductId: string | null = null;
@@ -1226,7 +1226,6 @@ export async function POST(req: Request) {
   const baseStatus = shouldKeepExistingStatus ? existingStatus : 'new';
   const status = paid ? 'approved' : baseStatus;
 
-  const lastReminderAt = checkoutChanged ? null : existing?.last_reminder_at ?? null;
   const lastEvent = checkoutChanged
     ? null
     : paymentMeta.eventName ?? paymentMeta.statusHint ?? existing?.last_event ?? null;
@@ -1276,7 +1275,6 @@ export async function POST(req: Request) {
     traffic_source: trafficSource,
     updated_at: nowIso,
     last_event: lastEvent,
-    last_reminder_at: lastReminderAt,
   };
 
   const { error } = await supabase
