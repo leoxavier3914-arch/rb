@@ -1009,7 +1009,7 @@ export async function POST(req: Request) {
   });
 
   const selectColumns =
-    'id, checkout_id, paid, paid_at, status, created_at, updated_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
+    'id, checkout_id, paid, paid_at, status, created_at, updated_at, schedule_at, last_event, last_reminder_at, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
 
   let existing: any = null;
   let existingOriginalProductId: string | null = null;
@@ -1115,6 +1115,18 @@ export async function POST(req: Request) {
     }
   }
 
+  const normalizedCheckoutId =
+    typeof checkoutId === 'string' && checkoutId.trim().length > 0
+      ? checkoutId.trim()
+      : null;
+  const normalizedExistingCheckoutId =
+    typeof existing?.checkout_id === 'string' && existing.checkout_id.trim().length > 0
+      ? existing.checkout_id.trim()
+      : null;
+  const checkoutChanged = Boolean(
+    existing?.id && normalizedCheckoutId && normalizedCheckoutId !== normalizedExistingCheckoutId
+  );
+
   // Se encontrou registro com outro checkout_id, tenta migrar para o canônico
   if (existing?.id && existing.checkout_id && existing.checkout_id !== checkoutId) {
     console.log('[kiwify-webhook] migrating checkout_id to canonical value', {
@@ -1174,9 +1186,10 @@ export async function POST(req: Request) {
     existing?.discount_code ??
     (process.env.DEFAULT_DISCOUNT_CODE ?? null);
 
-  const scheduleAt =
-    existing?.schedule_at ??
-    new Date(now.getTime() + DEFAULT_DELAY_HOURS * 3600 * 1000).toISOString();
+  const defaultScheduleAt = new Date(now.getTime() + DEFAULT_DELAY_HOURS * 3600 * 1000).toISOString();
+  const scheduleAt = checkoutChanged
+    ? defaultScheduleAt
+    : existing?.schedule_at ?? defaultScheduleAt;
 
   const paymentMeta = extractPaymentMeta(body);
   const previouslyPaid = existing?.paid ?? false;
@@ -1198,14 +1211,16 @@ export async function POST(req: Request) {
       typeof checkoutId === 'string' &&
       existing.checkout_id === checkoutId,
   );
-  const shouldKeepExistingStatus = Boolean(
-    isSameCheckout && existingStatus && normalizedExistingStatus !== 'converted',
-  );
+  const shouldKeepExistingStatus = checkoutChanged
+    ? false
+    : Boolean(isSameCheckout && existingStatus && normalizedExistingStatus !== 'converted');
   const baseStatus = shouldKeepExistingStatus ? existingStatus : 'new';
   const status = paid ? 'converted' : baseStatus;
 
-  const lastEvent =
-    paymentMeta.eventName ?? paymentMeta.statusHint ?? existing?.last_event ?? null;
+  const lastReminderAt = checkoutChanged ? null : existing?.last_reminder_at ?? null;
+  const lastEvent = checkoutChanged
+    ? null
+    : paymentMeta.eventName ?? paymentMeta.statusHint ?? existing?.last_event ?? null;
 
   console.log('[kiwify-webhook] parsed', {
     email,
@@ -1252,6 +1267,7 @@ export async function POST(req: Request) {
     traffic_source: trafficSource,
     updated_at: nowIso,
     last_event: lastEvent,
+    last_reminder_at: lastReminderAt,
   };
 
   const { error } = await supabase
