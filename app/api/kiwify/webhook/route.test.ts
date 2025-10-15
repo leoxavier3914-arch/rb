@@ -357,6 +357,72 @@ describe('POST handler - checkout renewal', () => {
       vi.useRealTimers();
     }
   });
+
+  it('restaura o status "new" quando um checkout abandonado recebe PIX pendente', async () => {
+    vi.useFakeTimers();
+    try {
+      const baseNow = new Date('2024-08-10T09:30:00.000Z');
+      vi.setSystemTime(baseNow);
+
+      const existingRow = {
+        id: 'cart-2',
+        email: 'cliente@example.com',
+        customer_email: 'cliente@example.com',
+        customer_name: 'Cliente',
+        checkout_id: 'pix-checkout-1',
+        checkout_url: 'https://pay.example.com/?checkout=pix-checkout-1',
+        product_id: 'prod-1',
+        product_title: 'Curso Avançado',
+        status: 'abandoned',
+        schedule_at: '2024-08-01T10:00:00.000Z',
+        last_event: 'pix.pending',
+        last_reminder_at: '2024-08-02T10:00:00.000Z',
+        created_at: '2024-07-20T10:00:00.000Z',
+        updated_at: '2024-07-25T10:00:00.000Z',
+        paid: false,
+        paid_at: null,
+        payload: { status: 'abandoned' },
+        discount_code: null,
+        source: 'kiwify.webhook',
+        traffic_source: 'unknown',
+      };
+
+      fakeDatabase.rows.push(existingRow);
+
+      const pixPendingPayload = {
+        email: 'cliente@example.com',
+        checkout_id: 'pix-checkout-1',
+        checkout_url: 'https://pay.example.com/?checkout=pix-checkout-1',
+        event: 'pix.pending',
+        status: 'pending',
+        payment_method: 'pix',
+        payment_status: 'pending',
+      };
+
+      const request = new Request('https://example.com/api/kiwify/webhook', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(pixPendingPayload),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+
+      expect(fakeDatabase.rows).toHaveLength(1);
+      const updatedRow = fakeDatabase.rows[0];
+
+      expect(updatedRow.id).toBe('cart-2');
+      expect(updatedRow.checkout_id).toBe('pix-checkout-1');
+      expect(updatedRow.status).toBe('new');
+      expect(updatedRow.paid).toBe(false);
+      expect(updatedRow.last_event).toBe('pix.pending');
+      expect(updatedRow.updated_at).toBe(baseNow.toISOString());
+      expect(updatedRow.schedule_at).toBe('2024-08-01T10:00:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('fetchAbandonedCarts - manual reminder status handling', () => {
