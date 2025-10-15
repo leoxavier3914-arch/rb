@@ -1,9 +1,10 @@
 import type { AbandonedCart, FeedbackEntry, Sale } from './types';
 
 const STATUS_PRIORITY: Record<FeedbackEntry['status'], number> = {
-  refunded: 3,
-  converted: 2,
-  sent: 1,
+  refunded: 4,
+  converted: 3,
+  refused: 2,
+  abandoned: 1,
   pending: 0,
 };
 
@@ -89,7 +90,8 @@ const toFeedbackEntryFromCart = (cart: AbandonedCart): FeedbackEntry | null => {
   const status = ((): FeedbackEntry['status'] => {
     if (cart.status === 'refunded') return 'refunded';
     if (cart.status === 'converted') return 'converted';
-    if (cart.status === 'sent') return 'sent';
+    if (cart.status === 'refused') return 'refused';
+    if (cart.status === 'abandoned') return 'abandoned';
     return 'pending';
   })();
 

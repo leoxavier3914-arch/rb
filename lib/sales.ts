@@ -8,6 +8,7 @@ import {
   REFUNDED_STATUS_TOKENS,
   REFUSED_STATUS_TOKENS,
   SENT_STATUS_TOKENS,
+  NEW_STATUS_TOKENS,
   cleanText,
   coerceBoolean,
   normalizeStatusToken,
@@ -125,20 +126,18 @@ const resolveDashboardStatus = ({
 
   const reminderTime = parseTime(lastReminderAt);
   const hasReminderTime = reminderTime !== Number.NEGATIVE_INFINITY;
-  const hasSentStatus =
-    tableNormalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || hasReminderTime;
-  const hasAbandonedStatus = normalizedStatuses.some((status) => ABANDONED_STATUS_TOKENS.has(status));
-  const hasPendingStatus = normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status));
+  const hasFollowUpEvent =
+    normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || hasReminderTime;
 
   if (paid) {
-    if (hasSentStatus) {
+    if (hasFollowUpEvent) {
       const paidTime = parseTime(paidAt);
 
-      if (hasReminderTime && paidTime !== Number.NEGATIVE_INFINITY) {
-        if (paidTime >= reminderTime) {
-          return 'converted';
-        }
-      } else {
+      if (!hasReminderTime) {
+        return 'converted';
+      }
+
+      if (paidTime !== Number.NEGATIVE_INFINITY && paidTime >= reminderTime) {
         return 'converted';
       }
     }
@@ -146,22 +145,27 @@ const resolveDashboardStatus = ({
     return 'approved';
   }
 
-  if (hasSentStatus) {
-    return 'sent';
-  }
-
+  const hasAbandonedStatus = normalizedStatuses.some((status) => ABANDONED_STATUS_TOKENS.has(status));
   if (hasAbandonedStatus) {
     return 'abandoned';
   }
 
   const createdTime = parseTime(createdAt);
-
   if (createdTime === Number.NEGATIVE_INFINITY) {
-    return hasPendingStatus ? 'abandoned' : 'new';
+    const hasNewStatus = normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status));
+    const hasPendingStatus = normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status));
+    if (hasPendingStatus && !hasNewStatus) {
+      return 'abandoned';
+    }
+    return 'new';
   }
 
   const now = Date.now();
-  return now - createdTime >= ONE_HOUR_IN_MS ? 'abandoned' : 'new';
+  if (now - createdTime >= ONE_HOUR_IN_MS) {
+    return 'abandoned';
+  }
+
+  return 'new';
 };
 
 const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
@@ -226,6 +230,9 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
     lastReminderAt,
   });
 
+  const emailFollowUp =
+    Boolean(lastReminderAt) || normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status));
+
   return {
     id: String(row.id),
     customer_email: cleanText(row.customer_email) || cleanText(row.email) || '',
@@ -242,6 +249,7 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
     traffic_source: cleanText(row.traffic_source) || trafficFromPayload || null,
     source: cleanText(row.source) || null,
     checkout_url: checkoutUrl,
+    email_follow_up: emailFollowUp,
   } satisfies DashboardSale;
 };
 

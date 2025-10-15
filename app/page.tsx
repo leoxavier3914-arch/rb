@@ -15,7 +15,7 @@ function computeMetrics(carts: AbandonedCart[]) {
     total: carts.length,
     fresh: 0,
     pending: 0,
-    sent: 0,
+    contacted: 0,
     converted: 0,
     abandoned: 0,
     expired: 0,
@@ -31,9 +31,6 @@ function computeMetrics(carts: AbandonedCart[]) {
       case 'pending':
         metrics.pending += 1;
         break;
-      case 'sent':
-        metrics.sent += 1;
-        break;
       case 'converted':
         metrics.converted += 1;
         break;
@@ -42,6 +39,10 @@ function computeMetrics(carts: AbandonedCart[]) {
         break;
       default:
         break;
+    }
+
+    if (cart.last_reminder_at || (cart.last_event?.toLowerCase() ?? '').includes('email')) {
+      metrics.contacted += 1;
     }
 
     const expiration = parsePgTimestamp(cart.expires_at);
@@ -80,7 +81,11 @@ export default async function Home() {
         <Card title="Total de registros" value={metrics.total} description="Todos os carrinhos recebidos" />
         <Card title="Novos" value={metrics.fresh} description="Eventos recém recebidos" />
         <Card title="Abandonados" value={metrics.abandoned} description="Carrinhos sem pagamento após 1 hora" />
-        <Card title="E-mails enviados" value={metrics.sent} description="Lembretes já disparados" />
+        <Card
+          title="Contatos realizados"
+          value={metrics.contacted}
+          description="Clientes que já receberam algum e-mail"
+        />
         <Card title="Convertidos" value={metrics.converted} description="Clientes que finalizaram a compra" />
       </section>
 

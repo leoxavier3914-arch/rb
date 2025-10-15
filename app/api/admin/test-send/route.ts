@@ -101,11 +101,11 @@ async function markTestAsSent(
   const { error } = await supabase
     .from('abandoned_emails')
     .update({
-      status: 'sent',
       discount_code: params.discountCode,
       expires_at: params.expiresAt,
       last_event: 'manual.test.sent',
       last_reminder_at: params.sentAt,
+      updated_at: params.sentAt,
     })
     .eq('id', params.id);
 
@@ -280,5 +280,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'E-mail enviado, mas não foi possível atualizar o registro.' }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id: recordId, status: 'sent', discountCode, expiresAt });
+  return NextResponse.json({ ok: true, id: recordId, status: 'pending', contacted: true, discountCode, expiresAt });
 }

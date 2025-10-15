@@ -150,12 +150,8 @@ const resolveStatus = ({
 
   const lastReminderTime = parseTime(lastReminderAt);
   const hasValidReminderTime = lastReminderTime !== Number.NEGATIVE_INFINITY;
-  const hasSentStatus =
-    tableNormalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || hasValidReminderTime;
-
-  if (hasSentStatus) {
-    return 'sent';
-  }
+  const hasFollowUpEvent =
+    normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || hasValidReminderTime;
 
   if (normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status))) {
     return 'new';
@@ -172,13 +168,17 @@ const resolveStatus = ({
     if (now - createdTime >= ONE_HOUR_IN_MS) {
       return 'abandoned';
     }
+    if (hasFollowUpEvent) {
+      return 'pending';
+    }
+    return 'new';
   }
 
   if (normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status))) {
-    return 'pending';
+    return hasFollowUpEvent ? 'pending' : 'new';
   }
 
-  return createdTime === Number.NEGATIVE_INFINITY ? 'pending' : 'new';
+  return hasFollowUpEvent ? 'pending' : 'new';
 };
 
 export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {

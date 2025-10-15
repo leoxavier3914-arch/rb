@@ -26,7 +26,7 @@ const STATUS_CARD_CONFIG: Array<{
   {
     key: 'converted',
     title: 'Convertidos',
-    description: 'Pagamentos concluídos após e-mail ou WhatsApp.',
+    description: 'Pagamentos concluídos após contato por e-mail ou WhatsApp.',
   },
   {
     key: 'refused',
@@ -37,11 +37,6 @@ const STATUS_CARD_CONFIG: Array<{
     key: 'refunded',
     title: 'Vendas reembolsadas',
     description: 'Pedidos marcados como reembolsados ou estornados.',
-  },
-  {
-    key: 'sent',
-    title: 'E-mails enviados',
-    description: 'Lembretes disparados aguardando retorno da cliente.',
   },
   {
     key: 'new',
@@ -56,7 +51,6 @@ const buildStatusCounters = (sales: DashboardSale[]) => {
     approved: 0,
     abandoned: 0,
     converted: 0,
-    sent: 0,
     refunded: 0,
     refused: 0,
   };
@@ -79,7 +73,6 @@ export default async function SalesPage() {
 
   const sales = await fetchDashboardSales();
   const statusCounters = buildStatusCounters(sales);
-  const totalWithoutSent = sales.filter((sale) => sale.status !== 'sent').length;
 
   return (
     <main className="flex flex-1 flex-col gap-10 pb-10">
@@ -93,11 +86,7 @@ export default async function SalesPage() {
       </header>
 
       <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <Card
-          title="Registros totais"
-          value={totalWithoutSent}
-          description="Todos os status exceto e-mails enviados."
-        />
+        <Card title="Registros totais" value={sales.length} description="Todos os status acompanhados." />
         {STATUS_CARD_CONFIG.map(({ key, title, description }) => (
           <Card key={key} title={title} value={statusCounters[key]} description={description} />
         ))}
