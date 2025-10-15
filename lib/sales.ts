@@ -524,7 +524,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
   const createdAt = sale.created_at ?? sale.paid_at ?? sale.updated_at ?? null;
   const updatedAt = sale.updated_at ?? sale.paid_at ?? sale.created_at ?? null;
 
-  const snapshot: AbandonedCartSnapshot = {
+  const baseSnapshot: AbandonedCartSnapshot = {
     id: sale.id,
     checkout_id: sale.id,
     customer_email: sale.customer_email,
@@ -544,21 +544,82 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
     traffic_source: sale.traffic_source,
   };
 
-  const timestamp = sale.paid_at ?? sale.updated_at ?? sale.created_at ?? null;
+  const updates: AbandonedCartUpdate[] = [];
 
-  const update: AbandonedCartUpdate = {
-    id: `sale:${sale.id}`,
-    timestamp,
-    status: sale.status,
-    event: sale.status === 'approved' ? 'Pagamento aprovado' : 'Pedido reembolsado',
-    source: 'sale',
-    snapshot,
-  };
+  if (createdAt) {
+    updates.push({
+      id: `sale:${sale.id}:new`,
+      timestamp: createdAt,
+      status: 'new',
+      event: 'Checkout criado',
+      source: 'sale',
+      snapshot: {
+        ...baseSnapshot,
+        status: 'new',
+        paid: false,
+        paid_at: null,
+        updated_at: createdAt,
+        last_event: 'Checkout criado',
+      },
+    });
+  }
+
+  if (sale.paid_at) {
+    updates.push({
+      id: `sale:${sale.id}:approved`,
+      timestamp: sale.paid_at,
+      status: 'approved',
+      event: 'Pagamento aprovado',
+      source: 'sale',
+      snapshot: {
+        ...baseSnapshot,
+        status: 'approved',
+        paid: true,
+        paid_at: sale.paid_at,
+        updated_at: sale.paid_at,
+        last_event: 'Pagamento aprovado',
+      },
+    });
+  }
+
+  if (sale.status === 'refunded') {
+    const refundedAt = sale.updated_at ?? sale.paid_at ?? createdAt;
+    if (refundedAt) {
+      updates.push({
+        id: `sale:${sale.id}:refunded`,
+        timestamp: refundedAt,
+        status: 'refunded',
+        event: 'Pedido reembolsado',
+        source: 'sale',
+        snapshot: {
+          ...baseSnapshot,
+          status: 'refunded',
+          paid: false,
+          paid_at: sale.paid_at,
+          updated_at: refundedAt,
+          last_event: 'Pedido reembolsado',
+        },
+      });
+    }
+  }
+
+  if (updates.length === 0) {
+    updates.push({
+      id: `sale:${sale.id}`,
+      timestamp: updatedAt,
+      status: sale.status,
+      event: baseSnapshot.last_event,
+      source: 'sale',
+      snapshot: baseSnapshot,
+    });
+  }
+
+  updates.sort((a, b) => parseTime(a.timestamp) - parseTime(b.timestamp));
 
   return {
     cartKey: `sale:${sale.id}`,
-    snapshot,
-    updates: [update],
+    snapshot: baseSnapshot,
+    updates,
   };
 };
 
