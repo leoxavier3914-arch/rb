@@ -1,21 +1,38 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Badge from './Badge';
+import Badge, { type BadgeVariant } from './Badge';
 import Table from './Table';
 import type { AbandonedCart } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
 
-export type AbandonedCartSortMode = 'default' | 'approved' | 'new' | 'pending' | 'abandoned' | 'refused';
+export type AbandonedCartSortMode =
+  | 'default'
+  | 'approved'
+  | 'new'
+  | 'pending'
+  | 'abandoned'
+  | 'refused'
+  | 'refunded';
 
 type AbandonedCartsTableProps = {
   carts: AbandonedCart[];
   sortMode?: AbandonedCartSortMode;
+  visibleStatuses?: BadgeVariant[];
 };
 
 const PAGE_SIZE = 20;
-const STATUS_SEQUENCE = ['approved', 'new', 'pending', 'abandoned', 'refused', 'refunded'] as const;
+const STATUS_SEQUENCE = ['approved', 'new', 'pending', 'abandoned', 'refused', 'refunded', 'error'] as const;
+const DEFAULT_VISIBLE_STATUSES: BadgeVariant[] = [
+  'approved',
+  'new',
+  'pending',
+  'abandoned',
+  'refused',
+  'refunded',
+  'error',
+];
 
 const getTimestamp = (value?: string | null) => {
   if (!value) return 0;
@@ -23,7 +40,11 @@ const getTimestamp = (value?: string | null) => {
   return Number.isNaN(time) ? 0 : time;
 };
 
-export default function AbandonedCartsTable({ carts, sortMode = 'default' }: AbandonedCartsTableProps) {
+export default function AbandonedCartsTable({
+  carts,
+  sortMode = 'default',
+  visibleStatuses,
+}: AbandonedCartsTableProps) {
   const [data, setData] = useState<AbandonedCart[]>(carts);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -31,6 +52,20 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
     setData(carts);
     setCurrentPage(1);
   }, [carts]);
+
+  const normalizedVisibleStatuses = useMemo(() => {
+    const base = visibleStatuses && visibleStatuses.length > 0 ? visibleStatuses : DEFAULT_VISIBLE_STATUSES;
+    const unique = new Set<BadgeVariant>(base);
+    if (!unique.has('error')) {
+      unique.add('error');
+    }
+    return Array.from(unique);
+  }, [visibleStatuses]);
+
+  const visibleStatusesKey = useMemo(
+    () => normalizedVisibleStatuses.slice().sort().join('|'),
+    [normalizedVisibleStatuses],
+  );
 
   const columns = useMemo(
     () => [
@@ -71,9 +106,14 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
     [],
   );
 
+  const filteredData = useMemo(() => {
+    const visibleSet = new Set(normalizedVisibleStatuses);
+    return data.filter((item) => visibleSet.has(getBadgeVariant(item.status)));
+  }, [data, normalizedVisibleStatuses]);
+
   const sortedData = useMemo(() => {
     if (sortMode === 'default') {
-      return data;
+      return filteredData;
     }
 
     const startIndex = STATUS_SEQUENCE.indexOf(sortMode as (typeof STATUS_SEQUENCE)[number]);
@@ -86,9 +126,11 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
       return acc;
     }, {} as Record<string, number>);
 
-    return [...data].sort((a, b) => {
-      const orderA = statusOrder[a.status] ?? Number.POSITIVE_INFINITY;
-      const orderB = statusOrder[b.status] ?? Number.POSITIVE_INFINITY;
+    return [...filteredData].sort((a, b) => {
+      const variantA = getBadgeVariant(a.status);
+      const variantB = getBadgeVariant(b.status);
+      const orderA = statusOrder[variantA] ?? Number.POSITIVE_INFINITY;
+      const orderB = statusOrder[variantB] ?? Number.POSITIVE_INFINITY;
 
       if (orderA !== orderB) {
         return orderA - orderB;
@@ -98,11 +140,11 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
       const timeA = getTimestamp(a.updated_at ?? a.created_at);
       return timeB - timeA;
     });
-  }, [data, sortMode]);
+  }, [filteredData, sortMode]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [sortMode]);
+  }, [sortMode, visibleStatusesKey]);
 
   const totalItems = sortedData.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
