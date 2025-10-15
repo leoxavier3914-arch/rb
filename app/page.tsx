@@ -1,91 +1,104 @@
-// app/page.tsx
 import Card from '../components/Card';
-import AbandonedCartsSection from '../components/AbandonedCartsSection';
-import { fetchAbandonedCarts } from '../lib/abandonedCarts';
+import DashboardEventsTable from '../components/DashboardEventsTable';
+import { groupLatestDashboardEvents } from '../lib/sales';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
-import type { AbandonedCart } from '../lib/types';
-import { parsePgTimestamp } from '../lib/dates';
+import type { DashboardSaleStatus, GroupedDashboardEvent } from '../lib/types';
 
 export const dynamic = 'force-dynamic';
 
-function computeMetrics(carts: AbandonedCart[]) {
-  const metrics = {
-    total: carts.length,
-    fresh: 0,
-    pending: 0,
-    approved: 0,
-    abandoned: 0,
-    refused: 0,
-    expired: 0,
-  };
+const STATUS_CARD_CONFIG: Array<{
+  status: DashboardSaleStatus;
+  title: string;
+  description: string;
+}> = [
+  {
+    status: 'approved',
+    title: 'Pagamentos aprovados',
+    description: 'Cobranças concluídas com sucesso',
+  },
+  {
+    status: 'abandoned',
+    title: 'Abandonados',
+    description: 'Carrinhos sem pagamento após 1 hora',
+  },
+  {
+    status: 'refunded',
+    title: 'Reembolsados',
+    description: 'Pagamentos devolvidos aos clientes',
+  },
+  {
+    status: 'refused',
+    title: 'Recusados',
+    description: 'Tentativas com pagamento negado',
+  },
+  {
+    status: 'new',
+    title: 'Novos',
+    description: 'Eventos recém recebidos',
+  },
+];
 
-  const now = Date.now();
-
-  for (const cart of carts) {
-    switch (cart.status) {
-      case 'new':
-        metrics.fresh += 1;
-        break;
-      case 'pending':
-        metrics.pending += 1;
-        break;
-      case 'approved':
-        metrics.approved += 1;
-        break;
-      case 'abandoned':
-        metrics.abandoned += 1;
-        break;
-      case 'refused':
-        metrics.refused += 1;
-        break;
-      default:
-        break;
-    }
-
-    const expiration = parsePgTimestamp(cart.expires_at);
-    if (expiration && expiration.getTime() < now) {
-      metrics.expired += 1;
-    }
-  }
-
-  return metrics;
-}
+const computeStatusCounts = (events: GroupedDashboardEvent[]) => {
+  return events.reduce<Record<DashboardSaleStatus, number>>(
+    (acc, event) => {
+      acc[event.status] += 1;
+      return acc;
+    },
+    {
+      approved: 0,
+      abandoned: 0,
+      refunded: 0,
+      refused: 0,
+      new: 0,
+    },
+  );
+};
 
 export default async function Home() {
   noStore();
 
-  // auth simples por cookie
   const adminToken = process.env.ADMIN_TOKEN;
   const token = cookies().get('admin_token');
   if (!adminToken || !token || token.value !== adminToken) {
     redirect('/login');
   }
 
-  const carts = await fetchAbandonedCarts();
-  const metrics = computeMetrics(carts);
+  const events = await groupLatestDashboardEvents();
+  const statusCounts = computeStatusCounts(events);
 
   return (
     <main className="flex flex-1 flex-col gap-10 pb-10">
       <header className="space-y-2">
         <p className="text-sm font-semibold uppercase tracking-widest text-brand">Kiwify Hub</p>
-        <h1 className="text-3xl font-bold">Carrinhos abandonados</h1>
+        <h1 className="text-3xl font-bold">Dashboard de eventos</h1>
         <p className="max-w-3xl text-sm text-slate-400">
-          Visualize em tempo real os eventos recebidos pela webhook da Kiwify e acompanhe o status dos pagamentos, abandonos e
-          recusas.
+          Acompanhe os eventos da webhook da Kiwify agrupados por cliente e produto para identificar conversões
+          recentes, abandonos e reembolsos.
         </p>
       </header>
 
       <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
-        <Card title="Total de registros" value={metrics.total} description="Todos os carrinhos recebidos" />
-        <Card title="Novos" value={metrics.fresh} description="Eventos recém recebidos" />
-        <Card title="Pagamentos aprovados" value={metrics.approved} description="Cobranças concluídas com sucesso" />
-        <Card title="Abandonados" value={metrics.abandoned} description="Carrinhos sem pagamento após 1 hora" />
-        <Card title="Recusados" value={metrics.refused} description="Tentativas com pagamento negado" />
+        {STATUS_CARD_CONFIG.map((card) => (
+          <Card
+            key={card.status}
+            title={card.title}
+            value={statusCounts[card.status] ?? 0}
+            description={card.description}
+          />
+        ))}
       </section>
 
-      <AbandonedCartsSection carts={carts} expiredCount={metrics.expired} />
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Eventos</h2>
+          <p className="text-sm text-slate-400">
+            Exibindo apenas o evento mais recente por cliente e produto, ordenados pelo último movimento recebido.
+          </p>
+        </div>
+        <DashboardEventsTable events={events} />
+      </section>
     </main>
   );
 }
