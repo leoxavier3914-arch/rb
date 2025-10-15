@@ -6,18 +6,13 @@ import Table from './Table';
 import Badge from './Badge';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
-import type { DashboardSale, DashboardSaleStatus } from '../lib/types';
+import type { DashboardSale } from '../lib/types';
 import { formatTrafficSourceLabel } from '../lib/traffic';
 
-type FilterKey = 'all' | DashboardSaleStatus;
+type FilterKey = 'all';
 
 const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: 'all', label: 'Todos' },
-  { key: 'approved', label: 'Vendas aprovadas' },
-  { key: 'refunded', label: 'Vendas reembolsadas' },
-  { key: 'abandoned', label: 'Carrinhos abandonados' },
-  { key: 'refused', label: 'Compras recusadas' },
-  { key: 'new', label: 'Carrinhos novos' },
+  { key: 'all', label: 'Vendas aprovadas' },
 ];
 
 type SalesTableProps = {
@@ -28,28 +23,13 @@ export default function SalesTable({ sales }: SalesTableProps) {
   const [filter, setFilter] = useState<FilterKey>('all');
 
   const counts = useMemo(() => {
-    const initial: Record<FilterKey, number> = {
+    return {
       all: sales.length,
-      approved: 0,
-      refunded: 0,
-      abandoned: 0,
-      refused: 0,
-      new: 0,
-    };
-
-    for (const sale of sales) {
-      initial[sale.status] = (initial[sale.status] ?? 0) + 1;
-    }
-
-    return initial;
+    } satisfies Record<FilterKey, number>;
   }, [sales]);
 
   const filteredSales = useMemo(() => {
-    if (filter === 'all') {
-      return sales;
-    }
-
-    return sales.filter((sale) => sale.status === filter);
+    return sales;
   }, [filter, sales]);
 
   const columns = useMemo(
@@ -110,12 +90,7 @@ export default function SalesTable({ sales }: SalesTableProps) {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">Vendas aprovadas</h2>
-          <p className="text-sm text-slate-400">
-            Filtre as conversões por canal de origem para entender a performance de cada campanha.
-          </p>
-        </div>
+        <h2 className="text-xl font-semibold">Vendas aprovadas</h2>
       </div>
 
       <div className="flex flex-wrap gap-2">
