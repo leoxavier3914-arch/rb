@@ -1,12 +1,18 @@
 import { unstable_noStore as noStore } from 'next/cache';
 import { getSupabaseAdmin } from './supabaseAdmin';
 import type {
+  AbandonedCart,
+  AbandonedCartHistoryEntry,
+  AbandonedCartSnapshot,
+  AbandonedCartUpdate,
   DashboardSale,
   DashboardSaleStatus,
   GroupedDashboardEvent,
   GroupedDashboardEventSource,
   Sale,
+  CustomerCheckoutAggregate,
 } from './types';
+import { fetchAbandonedCarts } from './abandonedCarts';
 import {
   APPROVED_STATUS_TOKENS,
   ABANDONED_STATUS_TOKENS,
@@ -438,7 +444,264 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
   }
 }
 
+const getHistoryEntryLatestTime = (entry: AbandonedCartHistoryEntry) => {
+  const updates = entry?.updates ?? [];
+  const latestUpdate = updates[updates.length - 1];
+  const candidates = [
+    latestUpdate?.timestamp,
+    latestUpdate?.snapshot.updated_at,
+    latestUpdate?.snapshot.created_at,
+    entry?.snapshot.updated_at,
+    entry?.snapshot.created_at,
+  ];
+
+  let latest = Number.NEGATIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    const time = parseTime(candidate ?? null);
+    if (time > latest) {
+      latest = time;
+    }
+  }
+
+  return latest;
+};
+
+const getAggregateLatestTime = (aggregate: CustomerCheckoutAggregate) => {
+  const latestSaleTime = aggregate.approvedSales.reduce((acc, sale) => {
+    const time = parseTime(sale.paid_at);
+    return time > acc ? time : acc;
+  }, Number.NEGATIVE_INFINITY);
+
+  const latestHistoryTime = aggregate.history.reduce((acc, entry) => {
+    const time = getHistoryEntryLatestTime(entry);
+    return time > acc ? time : acc;
+  }, Number.NEGATIVE_INFINITY);
+
+  return Math.max(latestSaleTime, latestHistoryTime);
+};
+
+const normalizeEmailKey = (value: string | null | undefined) => {
+  const email = cleanText(value);
+  return email ? email.toLowerCase() : null;
+};
+
+type AggregateAccumulator = {
+  email: string;
+  name: string | null;
+  phone: string | null;
+  approvedSales: Sale[];
+  historyByCartKey: Map<string, AbandonedCartHistoryEntry>;
+};
+
+const ensureAggregateRecord = (
+  aggregates: Map<string, AggregateAccumulator>,
+  key: string,
+  email: string,
+) => {
+  let record = aggregates.get(key);
+
+  if (!record) {
+    record = {
+      email,
+      name: null,
+      phone: null,
+      approvedSales: [],
+      historyByCartKey: new Map(),
+    } satisfies AggregateAccumulator;
+    aggregates.set(key, record);
+    return record;
+  }
+
+  if (email && (!record.email || record.email === key)) {
+    record.email = email;
+  }
+
+  return record;
+};
+
+const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
+  const createdAt = sale.created_at ?? sale.paid_at ?? sale.updated_at ?? null;
+  const updatedAt = sale.updated_at ?? sale.paid_at ?? sale.created_at ?? null;
+
+  const snapshot: AbandonedCartSnapshot = {
+    id: sale.id,
+    checkout_id: sale.id,
+    customer_email: sale.customer_email,
+    customer_name: sale.customer_name,
+    customer_phone: sale.customer_phone,
+    product_name: sale.product_name,
+    product_id: sale.product_id,
+    status: sale.status,
+    paid: sale.status === 'approved',
+    paid_at: sale.paid_at,
+    discount_code: null,
+    expires_at: null,
+    last_event: sale.status === 'approved' ? 'Pagamento aprovado' : 'Pedido reembolsado',
+    created_at: createdAt,
+    updated_at: updatedAt,
+    checkout_url: sale.checkout_url,
+    traffic_source: sale.traffic_source,
+  };
+
+  const timestamp = sale.paid_at ?? sale.updated_at ?? sale.created_at ?? null;
+
+  const update: AbandonedCartUpdate = {
+    id: `sale:${sale.id}`,
+    timestamp,
+    status: sale.status,
+    event: sale.status === 'approved' ? 'Pagamento aprovado' : 'Pedido reembolsado',
+    source: 'sale',
+    snapshot,
+  };
+
+  return {
+    cartKey: `sale:${sale.id}`,
+    snapshot,
+    updates: [update],
+  };
+};
+
+export function buildCustomersWithCheckouts({
+  sales,
+  carts,
+}: {
+  sales: Sale[];
+  carts: AbandonedCart[];
+}): CustomerCheckoutAggregate[] {
+  const aggregates = new Map<string, AggregateAccumulator>();
+
+  const approvedSales = sales.filter((sale) => sale.status === 'approved');
+
+  for (const sale of approvedSales) {
+    const key = normalizeEmailKey(sale.customer_email);
+    if (!key) {
+      continue;
+    }
+
+    const displayEmail = cleanText(sale.customer_email) || sale.customer_email || key;
+    const record = ensureAggregateRecord(aggregates, key, displayEmail);
+
+    if (!record.name && sale.customer_name) {
+      record.name = sale.customer_name;
+    }
+
+    if (!record.phone && sale.customer_phone) {
+      record.phone = sale.customer_phone;
+    }
+
+    record.approvedSales.push(sale);
+  }
+
+  for (const cart of carts) {
+    const key = normalizeEmailKey(cart.customer_email);
+    if (!key) {
+      continue;
+    }
+
+    const displayEmail = cleanText(cart.customer_email) || cart.customer_email || key;
+    const record = ensureAggregateRecord(aggregates, key, displayEmail);
+
+    if (!record.name && cart.customer_name) {
+      record.name = cart.customer_name;
+    }
+
+    if (!record.phone && cart.customer_phone) {
+      record.phone = cart.customer_phone;
+    }
+
+    const historyEntries = cart.history ?? [];
+
+    for (const entry of historyEntries) {
+      if (!entry?.cartKey) {
+        continue;
+      }
+
+      const existing = record.historyByCartKey.get(entry.cartKey);
+
+      if (!existing) {
+        record.historyByCartKey.set(entry.cartKey, entry);
+        continue;
+      }
+
+      const existingTime = getHistoryEntryLatestTime(existing);
+      const candidateTime = getHistoryEntryLatestTime(entry);
+
+      if (candidateTime >= existingTime) {
+        record.historyByCartKey.set(entry.cartKey, entry);
+      }
+    }
+  }
+
+  aggregates.forEach((record) => {
+    const existingEntries = Array.from(record.historyByCartKey.values());
+
+    for (const sale of record.approvedSales) {
+      if (!sale.id) {
+        continue;
+      }
+
+      const hasMatchingHistory = existingEntries.some((entry) => {
+        const snapshot = entry.snapshot;
+        const snapshotId = snapshot.checkout_id ?? snapshot.id;
+        return snapshotId ? snapshotId === sale.id : false;
+      });
+
+      if (hasMatchingHistory) {
+        continue;
+      }
+
+      const syntheticEntry = createHistoryEntryFromSale(sale);
+      record.historyByCartKey.set(syntheticEntry.cartKey, syntheticEntry);
+      existingEntries.push(syntheticEntry);
+    }
+  });
+
+  const result: CustomerCheckoutAggregate[] = Array.from(aggregates.values()).map((record) => {
+    const sortedSales = record.approvedSales
+      .slice()
+      .sort((a, b) => parseTime(b.paid_at) - parseTime(a.paid_at));
+
+    const historyEntries = Array.from(record.historyByCartKey.values()).sort((a, b) => {
+      const diff = getHistoryEntryLatestTime(b) - getHistoryEntryLatestTime(a);
+      if (diff !== 0) {
+        return diff;
+      }
+
+      return a.cartKey.localeCompare(b.cartKey);
+    });
+
+    return {
+      email: record.email || '',
+      name: record.name ?? null,
+      phone: record.phone ?? null,
+      approvedSales: sortedSales,
+      history: historyEntries,
+    } satisfies CustomerCheckoutAggregate;
+  });
+
+  result.sort((a, b) => {
+    const diff = getAggregateLatestTime(b) - getAggregateLatestTime(a);
+    if (diff !== 0) {
+      return diff;
+    }
+
+    return a.email.localeCompare(b.email);
+  });
+
+  return result;
+}
+
+export async function fetchCustomersWithCheckouts(): Promise<CustomerCheckoutAggregate[]> {
+  noStore();
+
+  const [sales, carts] = await Promise.all([fetchApprovedSales(), fetchAbandonedCarts()]);
+
+  return buildCustomersWithCheckouts({ sales, carts });
+}
+
 export const __testables = {
   mapRowToDashboardSale,
   resolveLatestTimestamp,
+  buildCustomersWithCheckouts,
 };

@@ -443,7 +443,7 @@ type DetailItemProps = {
   value: ReactNode;
 };
 
-function DetailItem({ label, value }: DetailItemProps) {
+export function DetailItem({ label, value }: DetailItemProps) {
   return (
     <>
       <dt className="font-semibold text-slate-400">{label}</dt>
@@ -466,7 +466,7 @@ type HistoryCheckoutListItemProps = {
   onSelect: (key: string) => void;
 };
 
-function HistoryCheckoutListItem({ entry, active, isCurrent, onSelect }: HistoryCheckoutListItemProps) {
+export function HistoryCheckoutListItem({ entry, active, isCurrent, onSelect }: HistoryCheckoutListItemProps) {
   const handleSelect = useCallback(() => {
     onSelect(entry.cartKey);
   }, [entry.cartKey, onSelect]);
@@ -522,7 +522,7 @@ type UpdateListItemProps = {
   onSelect: (id: string) => void;
 };
 
-function UpdateListItem({ update, active, onSelect }: UpdateListItemProps) {
+export function UpdateListItem({ update, active, onSelect }: UpdateListItemProps) {
   const handleSelect = useCallback(() => {
     onSelect(update.id);
   }, [onSelect, update.id]);

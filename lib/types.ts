@@ -56,6 +56,14 @@ export type Sale = {
   checkout_url: string | null;
 };
 
+export type CustomerCheckoutAggregate = {
+  email: string;
+  name: string | null;
+  phone: string | null;
+  approvedSales: Sale[];
+  history: AbandonedCartHistoryEntry[];
+};
+
 export type DashboardSaleStatus =
   | 'new'
   | 'approved'
