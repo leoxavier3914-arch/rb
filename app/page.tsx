@@ -7,7 +7,6 @@ import { redirect } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
 import type { AbandonedCart } from '../lib/types';
 import { parsePgTimestamp } from '../lib/dates';
-import { normalizeStatusToken, SENT_STATUS_TOKENS } from '../lib/normalization';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,9 +15,9 @@ function computeMetrics(carts: AbandonedCart[]) {
     total: carts.length,
     fresh: 0,
     pending: 0,
-    contacted: 0,
-    converted: 0,
+    approved: 0,
     abandoned: 0,
+    refused: 0,
     expired: 0,
   };
 
@@ -32,20 +31,17 @@ function computeMetrics(carts: AbandonedCart[]) {
       case 'pending':
         metrics.pending += 1;
         break;
-      case 'converted':
-        metrics.converted += 1;
+      case 'approved':
+        metrics.approved += 1;
         break;
       case 'abandoned':
         metrics.abandoned += 1;
         break;
+      case 'refused':
+        metrics.refused += 1;
+        break;
       default:
         break;
-    }
-
-    const lastEventToken = normalizeStatusToken(cart.last_event);
-
-    if (cart.last_reminder_at || (lastEventToken && SENT_STATUS_TOKENS.has(lastEventToken))) {
-      metrics.contacted += 1;
     }
 
     const expiration = parsePgTimestamp(cart.expires_at);
@@ -76,20 +72,17 @@ export default async function Home() {
         <p className="text-sm font-semibold uppercase tracking-widest text-brand">Kiwify Hub</p>
         <h1 className="text-3xl font-bold">Carrinhos abandonados</h1>
         <p className="max-w-3xl text-sm text-slate-400">
-          Visualize os eventos recebidos pela webhook da Kiwify e envie manualmente um novo lembrete com desconto.
+          Visualize em tempo real os eventos recebidos pela webhook da Kiwify e acompanhe o status dos pagamentos, abandonos e
+          recusas.
         </p>
       </header>
 
       <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
         <Card title="Total de registros" value={metrics.total} description="Todos os carrinhos recebidos" />
         <Card title="Novos" value={metrics.fresh} description="Eventos recém recebidos" />
+        <Card title="Pagamentos aprovados" value={metrics.approved} description="Cobranças concluídas com sucesso" />
         <Card title="Abandonados" value={metrics.abandoned} description="Carrinhos sem pagamento após 1 hora" />
-        <Card
-          title="Contatos realizados"
-          value={metrics.contacted}
-          description="Clientes que já receberam algum e-mail"
-        />
-        <Card title="Convertidos" value={metrics.converted} description="Clientes que finalizaram a compra" />
+        <Card title="Recusados" value={metrics.refused} description="Tentativas com pagamento negado" />
       </section>
 
       <AbandonedCartsSection carts={carts} expiredCount={metrics.expired} />

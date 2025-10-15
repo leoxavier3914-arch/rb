@@ -393,7 +393,8 @@ export function computeAdPerformance(rows: RawAdEvent[]): AdPerformance[] {
 
     const paid = coerceBoolean(row.paid);
     const status = cleanText(row.status);
-    const isConverted = paid || status === 'converted' || status === 'pagamento aprovado';
+    const isApproved =
+      paid || status === 'approved' || status === 'pagamento aprovado' || status === 'converted';
 
     const accumulator: AdAccumulator = existing ?? {
       key,
@@ -438,10 +439,10 @@ export function computeAdPerformance(rows: RawAdEvent[]): AdPerformance[] {
     }
 
     accumulator.totalCheckouts += 1;
-    if (!isConverted) {
+    if (!isApproved) {
       accumulator.abandonedCarts += 1;
     }
-    if (paid) {
+    if (isApproved) {
       accumulator.paymentsApproved += 1;
     }
 

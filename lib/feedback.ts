@@ -2,7 +2,7 @@ import type { AbandonedCart, FeedbackEntry, Sale } from './types';
 
 const STATUS_PRIORITY: Record<FeedbackEntry['status'], number> = {
   refunded: 4,
-  converted: 3,
+  approved: 3,
   refused: 2,
   abandoned: 1,
   pending: 0,
@@ -58,7 +58,7 @@ const updateStatus = (current: FeedbackEntry['status'], incoming: FeedbackEntry[
 };
 
 const toFeedbackEntryFromSale = (sale: Sale): FeedbackEntry | null => {
-  const status = sale.status === 'refunded' ? 'refunded' : 'converted';
+  const status = sale.status === 'refunded' ? 'refunded' : 'approved';
   const contactKey = getKeyFromContact(sale.customer_email, sale.customer_phone);
 
   if (!contactKey) {
@@ -89,7 +89,7 @@ const toFeedbackEntryFromCart = (cart: AbandonedCart): FeedbackEntry | null => {
   const lastActivity = cart.updated_at ?? cart.created_at ?? null;
   const status = ((): FeedbackEntry['status'] => {
     if (cart.status === 'refunded') return 'refunded';
-    if (cart.status === 'converted') return 'converted';
+    if (cart.status === 'approved' || cart.status === 'converted') return 'approved';
     if (cart.status === 'refused') return 'refused';
     if (cart.status === 'abandoned') return 'abandoned';
     return 'pending';

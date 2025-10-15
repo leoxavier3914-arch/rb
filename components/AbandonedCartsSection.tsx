@@ -15,37 +15,42 @@ export default function AbandonedCartsSection({ carts, expiredCount }: Abandoned
 
   const { buttonLabel, buttonTitle } = useMemo(() => {
       switch (sortMode) {
-        case 'converted':
+        case 'approved':
           return {
-            buttonLabel: 'Convertidos primeiro',
-            buttonTitle: 'Ordenar com convertidos no topo, seguidos de pendentes e abandonados.',
+            buttonLabel: 'Pagos primeiro',
+            buttonTitle: 'Ordenar com pagamentos aprovados no topo, seguidos de pendentes e abandonados.',
           };
         case 'new':
           return {
             buttonLabel: 'Novos primeiro',
-            buttonTitle: 'Ordenar com os novos eventos no topo, seguidos de pendentes e convertidos.',
+            buttonTitle: 'Ordenar com os novos eventos no topo, seguidos de pendentes e pagos.',
           };
       case 'pending':
         return {
           buttonLabel: 'Pendentes primeiro',
-          buttonTitle: 'Ordenar com pendentes no topo, seguidos de convertidos.',
+          buttonTitle: 'Ordenar com pendentes no topo, seguidos de pagamentos aprovados.',
         };
       case 'abandoned':
         return {
           buttonLabel: 'Abandonados primeiro',
           buttonTitle: 'Ordenar com carrinhos abandonados no topo, seguidos dos demais status.',
         };
+        case 'refused':
+          return {
+            buttonLabel: 'Recusados primeiro',
+            buttonTitle: 'Ordenar com pagamentos recusados no topo.',
+          };
       default:
         return {
           buttonLabel: 'Ordenar por status',
-          buttonTitle: 'Ordenar por status: convertidos, novos, pendentes e abandonados.',
+          buttonTitle: 'Ordenar por status: pagos, novos, pendentes, abandonados e recusados.',
         };
     }
   }, [sortMode]);
 
   const handleToggleSort = () => {
     setSortMode((current) => {
-      const sequence: AbandonedCartSortMode[] = ['default', 'converted', 'new', 'pending', 'abandoned'];
+      const sequence: AbandonedCartSortMode[] = ['default', 'approved', 'new', 'pending', 'abandoned', 'refused'];
       const currentIndex = sequence.indexOf(current);
       const nextIndex = currentIndex === -1 ? 1 : (currentIndex + 1) % sequence.length;
       return sequence[nextIndex];

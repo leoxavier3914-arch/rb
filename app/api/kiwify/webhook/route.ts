@@ -406,8 +406,10 @@ function pickPreferredExisting(
     if (!current) return candidate;
     if (!candidate) return current;
 
-    const currentPaid = Boolean(current.paid) || current.status === 'converted';
-    const candidatePaid = Boolean(candidate.paid) || candidate.status === 'converted';
+    const isApprovedStatus = (status: string | null | undefined) =>
+      status === 'approved' || status === 'converted';
+    const currentPaid = Boolean(current.paid) || isApprovedStatus(current.status);
+    const candidatePaid = Boolean(candidate.paid) || isApprovedStatus(candidate.status);
     if (candidatePaid !== currentPaid) {
       return candidatePaid ? candidate : current;
     }
@@ -627,10 +629,10 @@ async function propagateConvertedStatus(args: {
     }
 
     const candidateStatus = normalizeStatusForMatch(candidate.status);
-    const alreadyConverted = Boolean(candidate.paid) && candidateStatus === 'converted';
+    const alreadyApproved = Boolean(candidate.paid) && candidateStatus === 'approved';
     const hasPaidAt = Boolean(candidate.paid_at);
 
-    if (alreadyConverted && hasPaidAt) {
+    if (alreadyApproved && hasPaidAt) {
       continue;
     }
 
@@ -638,7 +640,7 @@ async function propagateConvertedStatus(args: {
       id: candidate.id,
       checkout_id: candidate.checkout_id ?? null,
       paid: true,
-      status: 'converted',
+      status: 'approved',
       paid_at: candidate.paid_at ?? paidAt ?? nowIso,
       last_event: candidate.last_event ?? lastEvent ?? null,
       product_id: candidate.product_id ?? null,
@@ -653,7 +655,7 @@ async function propagateConvertedStatus(args: {
   const payload = updates.map((item) => ({
     id: item.id,
     paid: true,
-    status: 'converted',
+    status: 'approved',
     paid_at: item.paid_at,
     last_event: item.last_event,
     updated_at: nowIso,
@@ -661,7 +663,7 @@ async function propagateConvertedStatus(args: {
 
   const { error } = await supabase.from('abandoned_emails').upsert(payload);
   if (error) {
-    console.warn('[kiwify-webhook] failed to propagate converted status', error, {
+    console.warn('[kiwify-webhook] failed to propagate approved status', error, {
       ids: payload.map((row) => row.id),
     });
   }
@@ -787,7 +789,7 @@ const NEGATIVE_STATUS_KEYWORDS = [
   'analise',
 ];
 
-const TERMINAL_STATUSES = new Set(['converted', 'refunded', 'refused']);
+const TERMINAL_STATUSES = new Set(['approved', 'converted', 'refunded', 'refused']);
 
 function isTerminalStatus(value: string | null | undefined): boolean {
   const normalized = normalizeStatusForMatch(value);
@@ -1222,7 +1224,7 @@ export async function POST(req: Request) {
     ? false
     : Boolean(isSameCheckout && existingStatus && isTerminalExistingStatus);
   const baseStatus = shouldKeepExistingStatus ? existingStatus : 'new';
-  const status = paid ? 'converted' : baseStatus;
+  const status = paid ? 'approved' : baseStatus;
 
   const lastReminderAt = checkoutChanged ? null : existing?.last_reminder_at ?? null;
   const lastEvent = checkoutChanged

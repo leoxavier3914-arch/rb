@@ -33,9 +33,7 @@ const DIRECT_PURCHASE_SOURCE = 'kiwify.webhook_purchase';
 
 const getConversionLabel = (sale: Sale): string => {
   const source = sale.source?.toLowerCase() ?? '';
-  const status = sale.status?.toLowerCase() ?? '';
-
-  if (source !== DIRECT_PURCHASE_SOURCE && status.includes('convert')) {
+  if (source && source !== DIRECT_PURCHASE_SOURCE) {
     return 'Carrinho recuperado';
   }
 
@@ -119,10 +117,10 @@ export default async function ClientsPage() {
   }
 
   const sales = await fetchApprovedSales();
-  const convertedSales = sales.filter((sale) => sale.status === 'converted');
-  const clients = groupSalesByClient(convertedSales);
+  const approvedSales = sales.filter((sale) => sale.status === 'approved');
+  const clients = groupSalesByClient(approvedSales);
   const totalPurchases = clients.reduce((acc, client) => acc + client.purchases.length, 0);
-  const topProducts = getTopProducts(convertedSales);
+  const topProducts = getTopProducts(approvedSales);
 
   return (
     <main className="flex flex-1 flex-col gap-10 pb-10">
