@@ -12,6 +12,7 @@ import type {
 } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
+import { PURCHASE_TYPE_LABEL, resolvePurchaseType } from '../lib/purchaseType';
 
 export type AbandonedCartSortMode =
   | 'default'
@@ -265,6 +266,10 @@ export default function AbandonedCartsTable({
     const activeHistory = historyEntries.find((entry) => entry.cartKey === effectiveHistoryKey);
 
     const updates = activeHistory?.updates ?? [];
+    const purchaseType = activeHistory
+      ? resolvePurchaseType(activeHistory.updates, activeHistory.snapshot)
+      : resolvePurchaseType(updates, toSnapshot(selectedCart));
+    const purchaseTypeLabel = purchaseType ? PURCHASE_TYPE_LABEL[purchaseType] : null;
     const latestUpdate = updates[updates.length - 1];
     const activeUpdateId = selectedUpdateId ?? latestUpdate?.id ?? null;
     const orderedUpdates = updates.length > 0 ? [...updates].reverse() : [];
@@ -283,18 +288,26 @@ export default function AbandonedCartsTable({
               {historyEntries.length === 0 ? (
                 <p className="text-sm text-slate-400">Nenhum carrinho encontrado para o cliente.</p>
               ) : (
-                historyEntries.map((entry) => (
-                  <HistoryCheckoutListItem
-                    key={entry.cartKey}
-                    entry={entry}
-                    active={entry.cartKey === effectiveHistoryKey}
-                    isCurrent={entry.cartKey === selectedCart.cart_key}
-                    onSelect={(key) => {
-                      setSelectedHistoryKey(key);
-                      setSelectedUpdateId(null);
-                    }}
-                  />
-                ))
+                historyEntries.map((entry) => {
+                  const entryPurchaseType = resolvePurchaseType(entry.updates, entry.snapshot);
+                  const entryPurchaseTypeLabel = entryPurchaseType
+                    ? PURCHASE_TYPE_LABEL[entryPurchaseType]
+                    : null;
+
+                  return (
+                    <HistoryCheckoutListItem
+                      key={entry.cartKey}
+                      entry={entry}
+                      active={entry.cartKey === effectiveHistoryKey}
+                      isCurrent={entry.cartKey === selectedCart.cart_key}
+                      purchaseTypeLabel={entryPurchaseTypeLabel}
+                      onSelect={(key) => {
+                        setSelectedHistoryKey(key);
+                        setSelectedUpdateId(null);
+                      }}
+                    />
+                  );
+                })
               )}
             </div>
           </section>
@@ -312,6 +325,7 @@ export default function AbandonedCartsTable({
                     key={update.id}
                     update={update}
                     active={update.id === activeUpdateId}
+                    purchaseTypeLabel={purchaseTypeLabel}
                     onSelect={(id) => setSelectedUpdateId(id)}
                   />
                 ))
@@ -462,10 +476,17 @@ type HistoryCheckoutListItemProps = {
   entry: AbandonedCartHistoryEntry;
   active: boolean;
   isCurrent: boolean;
+  purchaseTypeLabel?: string | null;
   onSelect: (key: string) => void;
 };
 
-export function HistoryCheckoutListItem({ entry, active, isCurrent, onSelect }: HistoryCheckoutListItemProps) {
+export function HistoryCheckoutListItem({
+  entry,
+  active,
+  isCurrent,
+  purchaseTypeLabel,
+  onSelect,
+}: HistoryCheckoutListItemProps) {
   const handleSelect = useCallback(() => {
     onSelect(entry.cartKey);
   }, [entry.cartKey, onSelect]);
@@ -496,6 +517,9 @@ export function HistoryCheckoutListItem({ entry, active, isCurrent, onSelect }: 
           </span>
           <span className="text-xs text-slate-400">{formatDate(timestamp)}</span>
           <span className="text-xs text-slate-500">{paymentLabel}</span>
+          {purchaseTypeLabel ? (
+            <span className="text-xs text-slate-500">Tipo: {purchaseTypeLabel}</span>
+          ) : null}
           <span className="text-[10px] uppercase tracking-widest text-slate-500">
             {entry.updates.length === 1
               ? '1 atualização registrada'
@@ -518,10 +542,11 @@ export function HistoryCheckoutListItem({ entry, active, isCurrent, onSelect }: 
 type UpdateListItemProps = {
   update: AbandonedCartUpdate;
   active: boolean;
+  purchaseTypeLabel?: string | null;
   onSelect: (id: string) => void;
 };
 
-export function UpdateListItem({ update, active, onSelect }: UpdateListItemProps) {
+export function UpdateListItem({ update, active, purchaseTypeLabel, onSelect }: UpdateListItemProps) {
   const handleSelect = useCallback(() => {
     onSelect(update.id);
   }, [onSelect, update.id]);
@@ -547,6 +572,9 @@ export function UpdateListItem({ update, active, onSelect }: UpdateListItemProps
       </div>
       {update.event ? <p className="mt-1 text-xs text-slate-400">{update.event}</p> : null}
       <p className="mt-1 text-xs text-slate-500">{paymentLabel}</p>
+      {purchaseTypeLabel ? (
+        <p className="mt-1 text-xs text-slate-500">Tipo: {purchaseTypeLabel}</p>
+      ) : null}
       {update.source ? <p className="mt-1 text-xs text-slate-500">Fonte: {update.source}</p> : null}
     </button>
   );

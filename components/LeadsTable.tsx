@@ -7,6 +7,7 @@ import Badge from './Badge';
 import { DetailItem, HistoryCheckoutListItem, UpdateListItem } from './AbandonedCartsTable';
 import { formatSaoPaulo } from '../lib/dates';
 import { STATUS_LABEL, getBadgeVariant } from '../lib/status';
+import { PURCHASE_TYPE_LABEL, resolvePurchaseType } from '../lib/purchaseType';
 import type { AbandonedCartHistoryEntry, AbandonedCartUpdate } from '../lib/types';
 import type { LeadRecord } from '../lib/leads';
 
@@ -192,6 +193,13 @@ export default function LeadsTable({ leads }: LeadsTableProps) {
   );
 
   const orderedUpdates = useMemo(() => updates.slice().reverse(), [updates]);
+  const purchaseType = useMemo(() => {
+    if (!activeHistory) {
+      return null;
+    }
+    return resolvePurchaseType(activeHistory.updates, activeHistory.snapshot);
+  }, [activeHistory]);
+  const purchaseTypeLabel = purchaseType ? PURCHASE_TYPE_LABEL[purchaseType] : null;
 
   const selectedSnapshot = selected?.snapshot ?? activeHistory?.snapshot ?? null;
 
@@ -204,18 +212,26 @@ export default function LeadsTable({ leads }: LeadsTableProps) {
             {selectedLead.history.length === 0 ? (
               <p className="text-sm text-slate-400">Nenhum checkout registrado.</p>
             ) : (
-              selectedLead.history.map((entry) => (
-                <HistoryCheckoutListItem
-                  key={entry.cartKey}
-                  entry={entry}
-                  active={entry.cartKey === selectedHistoryKey}
-                  isCurrent={entry.cartKey === selectedLead.activeCartKey}
-                  onSelect={(cartKey) => {
-                    setSelectedHistoryKey(cartKey);
-                    setSelectedUpdateId(null);
-                  }}
-                />
-              ))
+              selectedLead.history.map((entry) => {
+                const entryPurchaseType = resolvePurchaseType(entry.updates, entry.snapshot);
+                const entryPurchaseTypeLabel = entryPurchaseType
+                  ? PURCHASE_TYPE_LABEL[entryPurchaseType]
+                  : null;
+
+                return (
+                  <HistoryCheckoutListItem
+                    key={entry.cartKey}
+                    entry={entry}
+                    active={entry.cartKey === selectedHistoryKey}
+                    isCurrent={entry.cartKey === selectedLead.activeCartKey}
+                    purchaseTypeLabel={entryPurchaseTypeLabel}
+                    onSelect={(cartKey) => {
+                      setSelectedHistoryKey(cartKey);
+                      setSelectedUpdateId(null);
+                    }}
+                  />
+                );
+              })
             )}
           </div>
         </section>
@@ -233,6 +249,7 @@ export default function LeadsTable({ leads }: LeadsTableProps) {
                   key={update.id}
                   update={update}
                   active={update.id === selectedUpdateId}
+                  purchaseTypeLabel={purchaseTypeLabel}
                   onSelect={(id) => setSelectedUpdateId(id)}
                 />
               ))
