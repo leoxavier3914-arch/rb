@@ -95,4 +95,56 @@ describe('enrichUpdatesWithMilestones', () => {
     const approvedEvents = enriched.filter((update) => update.status === 'approved');
     expect(approvedEvents.some((update) => update.timestamp === '2024-01-01T11:30:00.000Z')).toBe(true);
   });
+
+  it('reuses webhook approved update when timestamp differs from paid_at', () => {
+    const snapshot = {
+      ...baseSnapshot,
+      status: 'approved',
+      paid: true,
+      paid_at: '2024-01-01T11:30:00.000Z',
+    };
+
+    const updates: AbandonedCartUpdate[] = [
+      {
+        id: 'update-new',
+        timestamp: snapshot.created_at,
+        status: 'new',
+        event: 'Checkout criado',
+        source: 'webhook',
+        snapshot: {
+          ...snapshot,
+          status: 'new',
+          paid: false,
+          paid_at: null,
+          updated_at: snapshot.created_at,
+          last_event: 'Checkout criado',
+        },
+      },
+      {
+        id: 'update-approved',
+        timestamp: '2024-01-01T11:45:00.000Z',
+        status: 'approved',
+        event: 'Pagamento aprovado',
+        source: 'webhook',
+        snapshot: {
+          ...snapshot,
+          status: 'approved',
+          updated_at: '2024-01-01T11:45:00.000Z',
+          last_event: 'Pagamento aprovado',
+          paid_at: '2024-01-01T11:45:00.000Z',
+        },
+      },
+    ];
+
+    const enriched = enrichUpdatesWithMilestones(updates, snapshot);
+
+    expect(enriched.filter((update) => update.source === 'sistema')).toHaveLength(0);
+
+    const approvedUpdates = enriched.filter((update) => update.status === 'approved');
+    expect(approvedUpdates).toHaveLength(1);
+    expect(approvedUpdates[0]?.id).toBe('update-approved');
+    expect(approvedUpdates[0]?.timestamp).toBe(snapshot.paid_at);
+    expect(approvedUpdates[0]?.snapshot.paid).toBe(true);
+    expect(approvedUpdates[0]?.snapshot.paid_at).toBe(snapshot.paid_at);
+  });
 });
