@@ -145,16 +145,29 @@ const enrichUpdatesWithMilestones = (
   if (baseSnapshot.paid_at) {
     const approvedStatus = normalizeStatusToken('approved');
     if (approvedStatus) {
-      const hasApprovedAtPaidAt = sorted.some((update) => {
-        if (normalizeStatusToken(update.status ?? update.snapshot.status) !== approvedStatus) {
-          return false;
-        }
+      const approvedIndex = sorted.findIndex(
+        (update) => normalizeStatusToken(update.status ?? update.snapshot.status) === approvedStatus,
+      );
 
-        const timestamp = getUpdateTimestamp(update);
-        return timestamp === baseSnapshot.paid_at;
-      });
+      if (approvedIndex >= 0) {
+        const existing = sorted[approvedIndex];
+        const timestamp = baseSnapshot.paid_at;
+        const snapshot = cloneSnapshot(existing.snapshot, {
+          status: approvedStatus,
+          updated_at: timestamp,
+          paid: true,
+          paid_at: baseSnapshot.paid_at,
+          last_event: STATUS_EVENT_MESSAGES.approved,
+        });
 
-      if (!hasApprovedAtPaidAt) {
+        sorted[approvedIndex] = {
+          ...existing,
+          status: approvedStatus,
+          timestamp,
+          event: STATUS_EVENT_MESSAGES.approved,
+          snapshot,
+        } satisfies AbandonedCartUpdate;
+      } else {
         sorted.push(
           createSyntheticUpdate(baseSnapshot, 'approved', baseSnapshot.paid_at, {
             paid: true,

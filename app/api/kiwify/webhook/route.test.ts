@@ -498,7 +498,7 @@ describe('fetchAbandonedCarts - histórico completo', () => {
     expect(carts).toHaveLength(2);
 
     const firstCart = carts.find((cart) => cart.cart_key === 'checkout:checkout-1');
-    expect(firstCart?.updates).toHaveLength(4);
+    expect(firstCart?.updates).toHaveLength(3);
     expect(
       firstCart?.updates.map((update) => ({
         status: update.status,
@@ -508,7 +508,6 @@ describe('fetchAbandonedCarts - histórico completo', () => {
       { status: 'new', lastEvent: 'Checkout criado' },
       { status: 'abandoned', lastEvent: 'Checkout abandonado' },
       { status: 'approved', lastEvent: 'Pagamento aprovado' },
-      { status: 'approved', lastEvent: 'payment.approved' },
     ]);
     expect(firstCart?.history).toHaveLength(2);
     expect(firstCart?.history.map((entry) => entry.cartKey)).toEqual([
@@ -520,7 +519,7 @@ describe('fetchAbandonedCarts - histórico completo', () => {
     expect(secondCart?.history).toHaveLength(2);
 
     const relatedFromSecond = secondCart?.history.find((entry) => entry.cartKey === 'checkout:checkout-1');
-    expect(relatedFromSecond?.updates).toHaveLength(4);
+    expect(relatedFromSecond?.updates).toHaveLength(3);
   });
 
   it('aplica limite configurado ao consultar o histórico', async () => {
