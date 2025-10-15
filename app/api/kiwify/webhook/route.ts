@@ -1083,10 +1083,20 @@ export async function POST(req: Request) {
       (becamePaidNow ? now.toISOString() : null)
     : null;
 
-  const baseStatus =
-    existing?.status && existing.status !== 'converted'
+  const existingStatus =
+    typeof existing?.status === 'string' && existing.status.trim().length > 0
       ? existing.status
-      : 'pending';
+      : null;
+  const normalizedExistingStatus = existingStatus?.toLowerCase() ?? null;
+  const isSameCheckout = Boolean(
+    typeof existing?.checkout_id === 'string' &&
+      typeof checkoutId === 'string' &&
+      existing.checkout_id === checkoutId,
+  );
+  const shouldKeepExistingStatus = Boolean(
+    isSameCheckout && existingStatus && normalizedExistingStatus !== 'converted',
+  );
+  const baseStatus = shouldKeepExistingStatus ? existingStatus : 'new';
   const status = paid ? 'converted' : baseStatus;
 
   const lastEvent =

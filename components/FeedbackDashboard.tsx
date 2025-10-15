@@ -168,6 +168,11 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
     templateId: '',
     enabled: true,
   };
+  const deliverySettings = emailIntegration.delivery ?? {
+    manualEnabled: true,
+    automaticEnabled: true,
+    smartDelayEnabled: false,
+  };
   const manualTemplate =
     emailIntegration.templates.find((template) => template.id === manualFlowSetting.templateId) ??
     null;
@@ -175,7 +180,8 @@ export default function FeedbackDashboard({ entries }: FeedbackDashboardProps) {
   const manualTemplateHtml = manualTemplate?.html ?? '';
   const manualTemplateName = manualTemplate?.name ?? '';
   const manualTemplateSubject = manualTemplate?.subject ?? '';
-  const isManualFlowEnabled = manualFlowSetting.enabled !== false;
+  const isManualFlowEnabled =
+    manualFlowSetting.enabled !== false && deliverySettings.manualEnabled !== false;
   const hasManualTemplateConfigured = Boolean(manualTemplate);
 
   const isEmailConfigured = Boolean(

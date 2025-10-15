@@ -27,12 +27,19 @@ export type EmailFlowSetting = {
   enabled: boolean;
 };
 
+export type EmailDeliverySettings = {
+  manualEnabled: boolean;
+  automaticEnabled: boolean;
+  smartDelayEnabled: boolean;
+};
+
 export type EmailIntegrationSettings = {
   emailConfig: EmailJsClientConfig;
   fromEmail: string;
   templates: EmailTemplate[];
   selectedTemplateId: string;
   flowSettings: Record<EmailFlowKey, EmailFlowSetting>;
+  delivery: EmailDeliverySettings;
 };
 
 export const DEFAULT_FROM_EMAIL = 'contato@kiwifyhub.com';
@@ -138,6 +145,26 @@ const ensureBoolean = (value: unknown, fallback: boolean): boolean => {
   return fallback;
 };
 
+const ensureDeliverySettings = (value: unknown): EmailDeliverySettings => {
+  const fallback: EmailDeliverySettings = {
+    manualEnabled: true,
+    automaticEnabled: true,
+    smartDelayEnabled: false,
+  };
+
+  if (!value || typeof value !== 'object') {
+    return { ...fallback };
+  }
+
+  const candidate = value as Partial<EmailDeliverySettings>;
+
+  return {
+    manualEnabled: ensureBoolean(candidate?.manualEnabled, fallback.manualEnabled),
+    automaticEnabled: ensureBoolean(candidate?.automaticEnabled, fallback.automaticEnabled),
+    smartDelayEnabled: ensureBoolean(candidate?.smartDelayEnabled, fallback.smartDelayEnabled),
+  };
+};
+
 const ensureEmailConfig = (
   _value: unknown,
   defaultEmailConfig: EmailJsClientConfig,
@@ -199,6 +226,11 @@ export const normalizeEmailIntegrationSettings = (
     templates: baseTemplates,
     selectedTemplateId: baseTemplates[0]?.id ?? '',
     flowSettings: createDefaultFlowSettings(baseTemplates),
+    delivery: {
+      manualEnabled: true,
+      automaticEnabled: true,
+      smartDelayEnabled: false,
+    },
   };
 
   if (!value || typeof value !== 'object') {
@@ -229,12 +261,15 @@ export const normalizeEmailIntegrationSettings = (
   const defaultFlowSettings = createDefaultFlowSettings(templates);
   const flowSettings = normalizeFlowSettings(candidate.flowSettings, templates, defaultFlowSettings);
 
+  const delivery = ensureDeliverySettings((candidate as Partial<EmailIntegrationSettings>)?.delivery);
+
   return {
     emailConfig,
     fromEmail,
     templates,
     selectedTemplateId,
     flowSettings,
+    delivery,
   };
 };
 

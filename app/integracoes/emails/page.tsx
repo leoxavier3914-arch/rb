@@ -6,30 +6,36 @@ import IntegrationSection from '../../../components/IntegrationSection';
 import {
   EMAIL_FLOW_CONFIGS,
   EMAIL_INTEGRATIONS_STORAGE_KEY,
+  EmailDeliverySettings,
   EmailIntegrationSettings,
   EmailTemplate,
   normalizeEmailIntegrationSettings,
   syncFlowSettingsWithTemplates,
 } from '../../../lib/emailIntegrations';
 
-const toggles = [
+const toggles: Array<{
+  id: string;
+  label: string;
+  description: string;
+  key: keyof EmailDeliverySettings;
+}> = [
   {
     id: 'manual-email-delivery',
     label: 'Envio manual',
     description: 'Habilite para disparar feedbacks de forma individual diretamente pelo dashboard.',
-    defaultChecked: true,
+    key: 'manualEnabled',
   },
   {
     id: 'automatic-email-delivery',
     label: 'Envio automático',
     description: 'Aciona envios automáticos para clientes conforme as regras do fluxo configurado.',
-    defaultChecked: true,
+    key: 'automaticEnabled',
   },
   {
     id: 'smart-delay-email',
     label: 'Delay inteligente',
     description: 'Distribui os envios ao longo do dia para evitar bloqueios de provedores.',
-    defaultChecked: false,
+    key: 'smartDelayEnabled',
   },
 ];
 
@@ -49,7 +55,7 @@ export default function EmailIntegrationsPage() {
   );
 
   const [settings, setSettings] = useState<EmailIntegrationSettings>(defaultSettings);
-  const { templates, selectedTemplateId, fromEmail, emailConfig, flowSettings } = settings;
+  const { templates, selectedTemplateId, fromEmail, emailConfig, flowSettings, delivery } = settings;
   
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -110,6 +116,47 @@ export default function EmailIntegrationsPage() {
       console.warn('[kiwify-hub] não foi possível carregar as configurações de e-mail', error);
     }
   }, [defaultEmailConfig, defaultSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRemoteSettings = async () => {
+      try {
+        const response = await fetch('/api/integracoes/emails/settings');
+        if (!response?.ok) {
+          return;
+        }
+
+        type RemoteSettings = {
+          manualEmailEnabled?: boolean;
+          automaticEmailEnabled?: boolean;
+          smartDelayEnabled?: boolean;
+        };
+
+        const payload = (await response.json()) as RemoteSettings;
+        if (cancelled) {
+          return;
+        }
+
+        setSettings((prev) => ({
+          ...prev,
+          delivery: {
+            manualEnabled: payload.manualEmailEnabled ?? prev.delivery.manualEnabled,
+            automaticEnabled: payload.automaticEmailEnabled ?? prev.delivery.automaticEnabled,
+            smartDelayEnabled: payload.smartDelayEnabled ?? prev.delivery.smartDelayEnabled,
+          },
+        }));
+      } catch (error) {
+        console.warn('[kiwify-hub] não foi possível carregar preferências remotas de e-mail', error);
+      }
+    };
+
+    loadRemoteSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null,
@@ -180,23 +227,39 @@ export default function EmailIntegrationsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState('');
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSaving(true);
     setFeedbackMessage('');
-    window.setTimeout(() => {
-      try {
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(EMAIL_INTEGRATIONS_STORAGE_KEY, JSON.stringify(settings));
-        }
-        setFeedbackMessage('Configurações salvas com sucesso.');
-      } catch (error) {
-        console.warn('[kiwify-hub] não foi possível salvar as configurações de e-mail', error);
-        setFeedbackMessage('Não foi possível salvar as configurações. Tente novamente.');
-      } finally {
-        setIsSaving(false);
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(EMAIL_INTEGRATIONS_STORAGE_KEY, JSON.stringify(settings));
       }
-    }, 600);
+
+      const response = await fetch('/api/integracoes/emails/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          manualEmailEnabled: delivery.manualEnabled,
+          automaticEmailEnabled: delivery.automaticEnabled,
+          smartDelayEnabled: delivery.smartDelayEnabled,
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Falha ao salvar preferências remotas.');
+      }
+
+      setFeedbackMessage('Configurações salvas com sucesso.');
+    } catch (error) {
+      console.warn('[kiwify-hub] não foi possível salvar as configurações de e-mail', error);
+      setFeedbackMessage('Não foi possível salvar as configurações. Tente novamente.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const renderTemplateField = <Field extends keyof EmailTemplate>(
@@ -293,7 +356,9 @@ export default function EmailIntegrationsPage() {
         description="Determine como o fluxo de e-mails será executado em sua operação."
       >
         <div className="grid gap-4">
-          {toggles.map((toggle) => (
+          {toggles.map((toggle) => {
+            const isEnabled = delivery[toggle.key];
+            return (
             <label
               key={toggle.id}
               htmlFor={toggle.id}
@@ -309,12 +374,22 @@ export default function EmailIntegrationsPage() {
                   id={toggle.id}
                   name={toggle.id}
                   type="checkbox"
-                  defaultChecked={toggle.defaultChecked}
+                  checked={isEnabled}
                   className="h-5 w-10 accent-brand"
+                  onChange={(event) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      delivery: {
+                        ...prev.delivery,
+                        [toggle.key]: event.target.checked,
+                      },
+                    }))
+                  }
                 />
               </div>
             </label>
-          ))}
+          );
+          })}
         </div>
       </IntegrationSection>
 
