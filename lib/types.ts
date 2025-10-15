@@ -30,6 +30,7 @@ export type Sale = {
   paid_at: string | null;
   traffic_source: string | null;
   source: string | null;
+  email_follow_up: boolean;
 };
 
 export type DashboardSaleStatus =
