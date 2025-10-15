@@ -7,7 +7,6 @@ import {
   PENDING_STATUS_TOKENS,
   REFUNDED_STATUS_TOKENS,
   REFUSED_STATUS_TOKENS,
-  SENT_STATUS_TOKENS,
   NEW_STATUS_TOKENS,
   cleanText,
   coerceBoolean,
@@ -83,7 +82,6 @@ const parseTime = (value: string | null | undefined) => {
 };
 
 const ONE_HOUR_IN_MS = 60 * 60 * 1000;
-const CONVERSION_FOLLOW_UP_MINIMUM_DELAY_MS = ONE_HOUR_IN_MS;
 
 const pickTimestamp = (...candidates: Array<unknown>) => {
   for (const candidate of candidates) {
@@ -102,58 +100,14 @@ const pickTimestamp = (...candidates: Array<unknown>) => {
 
 type ResolveStatusParams = {
   normalizedStatuses: string[];
-  tableNormalizedStatuses: string[];
   paid: boolean;
-  paidAt: string | null;
   createdAt: string | null;
-  lastReminderAt: string | null;
-};
-
-const evaluateReminderTiming = (paidAt: string | null, lastReminderAt: string | null) => {
-  const paidTime = parseTime(paidAt);
-  const reminderTime = parseTime(lastReminderAt);
-
-  if (reminderTime === Number.NEGATIVE_INFINITY) {
-    return {
-      hasReminderTime: false,
-      reminderValidForConversion: false,
-      reminderValidForDisplay: false,
-    };
-  }
-
-  if (paidTime === Number.NEGATIVE_INFINITY) {
-    return {
-      hasReminderTime: true,
-      reminderValidForConversion: false,
-      reminderValidForDisplay: true,
-    };
-  }
-
-  if (!Number.isFinite(paidTime) || paidTime < reminderTime) {
-    return {
-      hasReminderTime: true,
-      reminderValidForConversion: false,
-      reminderValidForDisplay: false,
-    };
-  }
-
-  const delay = paidTime - reminderTime;
-  const meetsDelay = delay >= CONVERSION_FOLLOW_UP_MINIMUM_DELAY_MS;
-
-  return {
-    hasReminderTime: true,
-    reminderValidForConversion: meetsDelay,
-    reminderValidForDisplay: meetsDelay,
-  };
 };
 
 const resolveDashboardStatus = ({
   normalizedStatuses,
-  tableNormalizedStatuses,
   paid,
-  paidAt,
   createdAt,
-  lastReminderAt,
 }: ResolveStatusParams): DashboardSaleStatus => {
   if (normalizedStatuses.some((status) => REFUNDED_STATUS_TOKENS.has(status))) {
     return 'refunded';
@@ -173,18 +127,19 @@ const resolveDashboardStatus = ({
   }
 
   const createdTime = parseTime(createdAt);
-  if (createdTime === Number.NEGATIVE_INFINITY) {
-    const hasNewStatus = normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status));
-    const hasPendingStatus = normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status));
-    if (hasPendingStatus && !hasNewStatus) {
+  if (createdTime !== Number.NEGATIVE_INFINITY) {
+    const now = Date.now();
+    if (now - createdTime >= ONE_HOUR_IN_MS) {
       return 'abandoned';
     }
-    return 'new';
   }
 
-  const now = Date.now();
-  if (now - createdTime >= ONE_HOUR_IN_MS) {
-    return 'abandoned';
+  if (normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status))) {
+    return 'pending';
+  }
+
+  if (normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status))) {
+    return 'new';
   }
 
   return 'new';
@@ -231,30 +186,11 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
     pickTimestamp(row.created_at, payload.created_at, payload.createdAt) ?? row.created_at ?? null;
   const updatedAt =
     pickTimestamp(row.updated_at, payload.updated_at, payload.updatedAt) ?? row.updated_at ?? null;
-  const lastReminderAt =
-    pickTimestamp(
-      row.sent_at,
-      row.last_reminder_at,
-      payload.sent_at,
-      payload.sentAt,
-      payload.manual_sent_at,
-      payload.manualSentAt,
-      payload.last_reminder_at,
-      payload.lastReminderAt,
-    ) ?? null;
-
   const status = resolveDashboardStatus({
     normalizedStatuses,
-    tableNormalizedStatuses,
     paid,
-    paidAt,
     createdAt,
-    lastReminderAt,
   });
-
-  const { hasReminderTime, reminderValidForDisplay } = evaluateReminderTiming(paidAt, lastReminderAt);
-  const hasFollowUpStatus = normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status));
-  const emailFollowUp = reminderValidForDisplay || (!hasReminderTime && hasFollowUpStatus);
 
   return {
     id: String(row.id),
@@ -268,11 +204,9 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
     updated_at: updatedAt,
     paid_at: paidAt ?? null,
     last_event: cleanText(row.last_event) || null,
-    last_reminder_at: lastReminderAt,
     traffic_source: cleanText(row.traffic_source) || trafficFromPayload || null,
     source: cleanText(row.source) || null,
     checkout_url: checkoutUrl,
-    email_follow_up: emailFollowUp,
   } satisfies DashboardSale;
 };
 
@@ -368,21 +302,6 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
           pickTimestamp(row.created_at, payload.created_at, payload.createdAt) ?? row.created_at ?? null;
         const updatedAt =
           pickTimestamp(row.updated_at, payload.updated_at, payload.updatedAt) ?? row.updated_at ?? null;
-        const lastReminderAt =
-          pickTimestamp(
-            row.sent_at,
-            row.last_reminder_at,
-            payload.sent_at,
-            payload.sentAt,
-            payload.manual_sent_at,
-            payload.manualSentAt,
-            payload.last_reminder_at,
-            payload.lastReminderAt,
-          ) ?? null;
-        const { hasReminderTime, reminderValidForDisplay } = evaluateReminderTiming(paidAt, lastReminderAt);
-        const hasFollowUpStatus = normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status));
-        const emailFollowUp = reminderValidForDisplay || (!hasReminderTime && hasFollowUpStatus);
-
         const hasAbandonedStatus = normalizedStatuses.some((status) => ABANDONED_STATUS_TOKENS.has(status));
         const createdTime = parseTime(createdAt);
         const paidTime = parseTime(paidAt);
@@ -406,7 +325,6 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
           paid_at: paidAt ?? null,
           traffic_source: cleanText(row.traffic_source) || trafficFromPayload || null,
           source: cleanText(row.source) || null,
-          email_follow_up: emailFollowUp,
           abandoned_before_payment: abandonedBeforePayment,
         } satisfies Sale;
       })

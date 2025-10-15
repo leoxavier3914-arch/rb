@@ -15,7 +15,6 @@ const buildSale = (overrides: Partial<Sale> = {}): Sale => ({
   paid_at: '2024-01-01T00:00:00.000Z',
   traffic_source: null,
   source: null,
-  email_follow_up: false,
   abandoned_before_payment: false,
   ...overrides,
 });
@@ -24,11 +23,6 @@ describe('getConversionLabel', () => {
   it('returns "Aprovado retorno" for sales that were abandoned before payment', () => {
     const sale = buildSale({ abandoned_before_payment: true });
     expect(getConversionLabel(sale)).toBe('Aprovado retorno');
-  });
-
-  it('returns "Aprovado direto" even when follow-up emails were sent', () => {
-    const sale = buildSale({ email_follow_up: true });
-    expect(getConversionLabel(sale)).toBe('Aprovado direto');
   });
 
   it('returns "Aprovado direto" for non-direct conversion sources when not abandoned', () => {

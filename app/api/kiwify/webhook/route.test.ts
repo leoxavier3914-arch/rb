@@ -310,7 +310,6 @@ describe('POST handler - checkout renewal', () => {
         status: 'paused',
         schedule_at: '2024-06-20T10:00:00.000Z',
         last_event: 'previous_event',
-        last_reminder_at: '2024-06-21T10:00:00.000Z',
         created_at: '2024-06-01T10:00:00.000Z',
         updated_at: '2024-06-10T10:00:00.000Z',
         paid: false,
@@ -348,7 +347,6 @@ describe('POST handler - checkout renewal', () => {
       expect(updatedRow.status).toBe('new');
       expect(updatedRow.checkout_url).toBe('https://pay.example.com/?checkout=new-checkout-123');
       expect(updatedRow.last_event).toBeNull();
-      expect(updatedRow.last_reminder_at).toBeNull();
       expect(updatedRow.updated_at).toBe(baseNow.toISOString());
 
       const expectedScheduleAt = new Date(baseNow.getTime() + 24 * 3600 * 1000).toISOString();
@@ -376,7 +374,6 @@ describe('POST handler - checkout renewal', () => {
         status: 'abandoned',
         schedule_at: '2024-08-01T10:00:00.000Z',
         last_event: 'pix.pending',
-        last_reminder_at: '2024-08-02T10:00:00.000Z',
         created_at: '2024-07-20T10:00:00.000Z',
         updated_at: '2024-07-25T10:00:00.000Z',
         paid: false,
@@ -425,8 +422,8 @@ describe('POST handler - checkout renewal', () => {
   });
 });
 
-describe('fetchAbandonedCarts - manual reminder status handling', () => {
-  it('mantém carrinho como pendente quando apenas o payload indica envio manual', async () => {
+describe('fetchAbandonedCarts - status resolution', () => {
+  it('mantém carrinho como pendente quando status persistido é pending', async () => {
     const nowIso = new Date().toISOString();
 
     fakeDatabase.rows.push({
@@ -435,7 +432,6 @@ describe('fetchAbandonedCarts - manual reminder status handling', () => {
       customer_email: 'cliente@example.com',
       status: 'pending',
       last_event: null,
-      last_reminder_at: null,
       created_at: nowIso,
       updated_at: nowIso,
       paid: false,
