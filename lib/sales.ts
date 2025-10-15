@@ -83,6 +83,7 @@ const parseTime = (value: string | null | undefined) => {
 };
 
 const ONE_HOUR_IN_MS = 60 * 60 * 1000;
+const CONVERSION_FOLLOW_UP_MINIMUM_DELAY_MS = ONE_HOUR_IN_MS;
 
 const pickTimestamp = (...candidates: Array<unknown>) => {
   for (const candidate of candidates) {
@@ -108,6 +109,44 @@ type ResolveStatusParams = {
   lastReminderAt: string | null;
 };
 
+const evaluateReminderTiming = (paidAt: string | null, lastReminderAt: string | null) => {
+  const paidTime = parseTime(paidAt);
+  const reminderTime = parseTime(lastReminderAt);
+
+  if (reminderTime === Number.NEGATIVE_INFINITY) {
+    return {
+      hasReminderTime: false,
+      reminderValidForConversion: false,
+      reminderValidForDisplay: false,
+    };
+  }
+
+  if (paidTime === Number.NEGATIVE_INFINITY) {
+    return {
+      hasReminderTime: true,
+      reminderValidForConversion: false,
+      reminderValidForDisplay: true,
+    };
+  }
+
+  if (!Number.isFinite(paidTime) || paidTime < reminderTime) {
+    return {
+      hasReminderTime: true,
+      reminderValidForConversion: false,
+      reminderValidForDisplay: false,
+    };
+  }
+
+  const delay = paidTime - reminderTime;
+  const meetsDelay = delay >= CONVERSION_FOLLOW_UP_MINIMUM_DELAY_MS;
+
+  return {
+    hasReminderTime: true,
+    reminderValidForConversion: meetsDelay,
+    reminderValidForDisplay: meetsDelay,
+  };
+};
+
 const resolveDashboardStatus = ({
   normalizedStatuses,
   tableNormalizedStatuses,
@@ -124,22 +163,14 @@ const resolveDashboardStatus = ({
     return 'refused';
   }
 
-  const reminderTime = parseTime(lastReminderAt);
-  const hasReminderTime = reminderTime !== Number.NEGATIVE_INFINITY;
+  const { hasReminderTime, reminderValidForConversion } = evaluateReminderTiming(paidAt, lastReminderAt);
+  const hasFollowUpStatus = normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status));
   const hasFollowUpEvent =
-    normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || hasReminderTime;
+    reminderValidForConversion || (!hasReminderTime && hasFollowUpStatus);
 
   if (paid) {
     if (hasFollowUpEvent) {
-      const paidTime = parseTime(paidAt);
-
-      if (!hasReminderTime) {
-        return 'converted';
-      }
-
-      if (paidTime !== Number.NEGATIVE_INFINITY && paidTime >= reminderTime) {
-        return 'converted';
-      }
+      return 'converted';
     }
 
     return 'approved';
@@ -230,8 +261,9 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
     lastReminderAt,
   });
 
-  const emailFollowUp =
-    Boolean(lastReminderAt) || normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status));
+  const { hasReminderTime, reminderValidForDisplay } = evaluateReminderTiming(paidAt, lastReminderAt);
+  const hasFollowUpStatus = normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status));
+  const emailFollowUp = reminderValidForDisplay || (!hasReminderTime && hasFollowUpStatus);
 
   return {
     id: String(row.id),
@@ -383,3 +415,7 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
     return [];
   }
 }
+
+export const __testables = {
+  mapRowToDashboardSale,
+};
