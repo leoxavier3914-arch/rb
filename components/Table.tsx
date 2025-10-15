@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { Fragment, type Key, type ReactNode } from 'react';
 
 type Column<T> = {
-  key: keyof T;
+  key: Key | keyof T;
   header: string;
   className?: string;
   render?: (item: T) => ReactNode;
@@ -79,11 +79,30 @@ export default function Table<T extends Record<string, unknown>>({
                       )}
                       onClick={() => onRowClick?.(item, index)}
                     >
-                      {columns.map((column) => (
-                        <td key={String(column.key)} className={clsx('px-4 py-3 text-sm text-slate-200', column.className)}>
-                          {column.render ? column.render(item) : String(item[column.key] ?? '')}
-                        </td>
-                      ))}
+                      {columns.map((column) => {
+                        const content = column.render
+                          ? column.render(item)
+                          : (() => {
+                              const key = column.key;
+                              if (typeof key === 'string' || typeof key === 'number') {
+                                const value = item[key as keyof T];
+                                if (value === undefined || value === null) {
+                                  return '';
+                                }
+                                return typeof value === 'string' ? value : String(value);
+                              }
+                              return '';
+                            })();
+
+                        return (
+                          <td
+                            key={String(column.key)}
+                            className={clsx('px-4 py-3 text-sm text-slate-200', column.className)}
+                          >
+                            {content}
+                          </td>
+                        );
+                      })}
                     </tr>
                     {isExpanded && renderExpandedRow ? (
                       <tr className="bg-slate-900/70">
