@@ -118,11 +118,12 @@ const getUniqueProducts = (sales: Sale[]) => {
 const formatDate = (value: string | null | undefined) => (value ? formatSaoPaulo(value) : '—');
 
 const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
+  const canonicalId = sale.id.trim() || sale.id;
   const createdAt = sale.created_at ?? sale.paid_at ?? sale.updated_at ?? null;
   const updatedAt = sale.updated_at ?? sale.paid_at ?? sale.created_at ?? null;
   const baseSnapshot: AbandonedCartSnapshot = {
-    id: sale.id,
-    checkout_id: sale.id,
+    id: canonicalId,
+    checkout_id: canonicalId,
     customer_email: sale.customer_email,
     customer_name: sale.customer_name,
     customer_phone: sale.customer_phone,
@@ -144,7 +145,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
 
   if (createdAt) {
     updates.push({
-      id: `sale:${sale.id}:new`,
+      id: `sale:${canonicalId}:new`,
       timestamp: createdAt,
       status: 'new',
       event: 'Checkout criado',
@@ -162,7 +163,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
 
   if (sale.paid_at) {
     updates.push({
-      id: `sale:${sale.id}:approved`,
+      id: `sale:${canonicalId}:approved`,
       timestamp: sale.paid_at,
       status: 'approved',
       event: 'Pagamento aprovado',
@@ -182,7 +183,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
     const refundedAt = sale.updated_at ?? sale.paid_at ?? createdAt;
     if (refundedAt) {
       updates.push({
-        id: `sale:${sale.id}:refunded`,
+        id: `sale:${canonicalId}:refunded`,
         timestamp: refundedAt,
         status: 'refunded',
         event: 'Pedido reembolsado',
@@ -201,7 +202,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
 
   if (updates.length === 0) {
     updates.push({
-      id: `sale:${sale.id}`,
+      id: `sale:${canonicalId}`,
       timestamp: updatedAt,
       status: sale.status,
       event: baseSnapshot.last_event,
@@ -217,7 +218,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
   });
 
   return {
-    cartKey: `sale:${sale.id}`,
+    cartKey: `sale:${canonicalId}`,
     snapshot: baseSnapshot,
     updates,
   };
@@ -243,7 +244,15 @@ const buildCombinedHistoryEntries = (
     const hasMatchingHistory = Array.from(entriesByKey.values()).some((entry) => {
       const snapshot = entry.snapshot;
       const snapshotId = snapshot.checkout_id ?? snapshot.id;
-      return snapshotId ? snapshotId === sale.id : false;
+      if (!snapshotId) {
+        return false;
+      }
+
+      const normalizedSnapshotId =
+        typeof snapshotId === 'string' ? snapshotId.trim() : String(snapshotId).trim();
+      const normalizedSaleId = sale.id.trim() || sale.id;
+
+      return normalizedSnapshotId ? normalizedSnapshotId === normalizedSaleId : false;
     });
 
     if (hasMatchingHistory) {

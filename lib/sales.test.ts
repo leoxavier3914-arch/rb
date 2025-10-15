@@ -79,6 +79,21 @@ describe('mapRowToDashboardSale', () => {
 
     expect(sale.checkout_url).toBe('https://checkout.kiwify.com/from-row');
   });
+
+  it('uses the checkout id when available and trims whitespace', () => {
+    const row = {
+      id: 'fallback-id',
+      checkout_id: '  checkout-123  ',
+      customer_email: 'user@example.com',
+      status: 'approved',
+      paid: true,
+      payload: {},
+    };
+
+    const sale = mapRowToDashboardSale(row);
+
+    expect(sale.id).toBe('checkout-123');
+  });
 });
 
 describe('groupLatestDashboardEvents', () => {
@@ -244,7 +259,7 @@ describe('fetchCustomersWithCheckouts', () => {
 
   it('creates synthetic history entries when a sale has no recorded cart history', async () => {
     const sale: Sale = {
-      id: 'sale-2',
+      id: '  sale-2  ',
       customer_email: 'other@example.com',
       customer_name: 'Outra Pessoa',
       customer_phone: null,
@@ -266,6 +281,7 @@ describe('fetchCustomersWithCheckouts', () => {
     const customer = result[0];
     expect(customer.history).toHaveLength(1);
     const syntheticEntry = customer.history[0];
+    expect(syntheticEntry.cartKey).toBe('sale:sale-2');
     expect(syntheticEntry.snapshot.checkout_id).toBe('sale-2');
     expect(syntheticEntry.updates).toHaveLength(2);
     expect(syntheticEntry.updates[0].status).toBe('new');
