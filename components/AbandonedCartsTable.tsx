@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import Badge, { type BadgeVariant } from './Badge';
 import Table from './Table';
+import Modal from './Modal';
 import type { AbandonedCart } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
@@ -47,6 +48,7 @@ export default function AbandonedCartsTable({
 }: AbandonedCartsTableProps) {
   const [data, setData] = useState<AbandonedCart[]>(carts);
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedCart, setSelectedCart] = useState<AbandonedCart | null>(null);
 
   useEffect(() => {
     setData(carts);
@@ -66,6 +68,14 @@ export default function AbandonedCartsTable({
     () => normalizedVisibleStatuses.slice().sort().join('|'),
     [normalizedVisibleStatuses],
   );
+
+  const handleOpenDetails = useCallback((cart: AbandonedCart) => {
+    setSelectedCart(cart);
+  }, []);
+
+  const handleCloseDetails = useCallback(() => {
+    setSelectedCart(null);
+  }, []);
 
   const columns = useMemo(
     () => [
@@ -102,8 +112,25 @@ export default function AbandonedCartsTable({
         header: 'Atualizado em',
         render: (i: AbandonedCart) => (i.updated_at ? formatSaoPaulo(i.updated_at) : '—'),
       },
+      {
+        key: 'actions',
+        header: 'Ações',
+        className: 'text-right',
+        render: (item: AbandonedCart) => (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleOpenDetails(item);
+            }}
+            className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 sm:text-sm"
+          >
+            Ver detalhes
+          </button>
+        ),
+      },
     ],
-    [],
+    [handleOpenDetails],
   );
 
   const filteredData = useMemo(() => {
@@ -172,43 +199,132 @@ export default function AbandonedCartsTable({
   };
 
   return (
-    <div className="space-y-4">
-      <Table<AbandonedCart>
-        columns={columns}
-        data={paginatedData}
-        getRowKey={(i) => i.id}
-        emptyMessage="Nenhum evento encontrado. Aguarde o primeiro webhook da Kiwify."
-      />
+    <Fragment>
+      <div className="space-y-4">
+        <Table<AbandonedCart>
+          columns={columns}
+          data={paginatedData}
+          getRowKey={(i) => i.id}
+          emptyMessage="Nenhum evento encontrado. Aguarde o primeiro webhook da Kiwify."
+        />
 
-      <div className="flex flex-col items-center justify-between gap-2 text-xs text-slate-400 sm:flex-row sm:text-sm">
-        <span>
-          {totalItems === 0
-            ? 'Nenhum registro disponível.'
-            : `Exibindo ${pageStart}–${pageEnd} de ${totalItems} registros`}
-        </span>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handlePreviousPage}
-            disabled={currentPage === 1 || totalItems === 0}
-            className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
-          >
-            Anterior
-          </button>
-          <span className="font-semibold text-slate-300">
-            {totalItems === 0 ? '—' : `Página ${currentPage} de ${totalPages}`}
+        <div className="flex flex-col items-center justify-between gap-2 text-xs text-slate-400 sm:flex-row sm:text-sm">
+          <span>
+            {totalItems === 0
+              ? 'Nenhum registro disponível.'
+              : `Exibindo ${pageStart}–${pageEnd} de ${totalItems} registros`}
           </span>
-          <button
-            type="button"
-            onClick={handleNextPage}
-            disabled={currentPage === totalPages || totalItems === 0}
-            className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
-          >
-            Próxima
-          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePreviousPage}
+              disabled={currentPage === 1 || totalItems === 0}
+              className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+            >
+              Anterior
+            </button>
+            <span className="font-semibold text-slate-300">
+              {totalItems === 0 ? '—' : `Página ${currentPage} de ${totalPages}`}
+            </span>
+            <button
+              type="button"
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages || totalItems === 0}
+              className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+            >
+              Próxima
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+      <Modal
+        open={Boolean(selectedCart)}
+        onClose={handleCloseDetails}
+        title={selectedCart ? `Detalhes de ${selectedCart.customer_name ?? selectedCart.customer_email}` : 'Detalhes do cliente'}
+      >
+        {selectedCart ? (
+          <div className="space-y-6">
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Cliente</h3>
+              <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
+                <DetailItem label="Nome" value={selectedCart.customer_name ?? '—'} />
+                <DetailItem label="E-mail" value={selectedCart.customer_email} />
+                <DetailItem label="Telefone" value={selectedCart.customer_phone ?? '—'} />
+              </dl>
+            </section>
+
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Carrinho</h3>
+              <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
+                <DetailItem label="Produto" value={selectedCart.product_name ?? '—'} />
+                <DetailItem label="ID do produto" value={selectedCart.product_id ?? '—'} />
+                <DetailItem
+                  label="Status"
+                  value={(() => {
+                    const statusVariant = getBadgeVariant(selectedCart.status);
+                    const statusLabel = STATUS_LABEL[statusVariant] ?? selectedCart.status;
+                    return <Badge variant={statusVariant}>{statusLabel}</Badge>;
+                  })()}
+                />
+                <DetailItem label="Pago" value={selectedCart.paid ? 'Sim' : 'Não'} />
+                <DetailItem label="Checkout ID" value={selectedCart.checkout_id ?? '—'} />
+                <DetailItem label="Cupom" value={selectedCart.discount_code ?? '—'} />
+                <DetailItem label="Origem do tráfego" value={selectedCart.traffic_source ?? '—'} />
+                <DetailItem
+                  label="Link do checkout"
+                  value={
+                    selectedCart.checkout_url ? (
+                      <a
+                        href={selectedCart.checkout_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand hover:underline"
+                      >
+                        Abrir checkout
+                      </a>
+                    ) : (
+                      '—'
+                    )
+                  }
+                />
+              </dl>
+            </section>
+
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Atualizações</h3>
+              <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
+                <DetailItem label="Criado em" value={formatDate(selectedCart.created_at)} />
+                <DetailItem label="Atualizado em" value={formatDate(selectedCart.updated_at)} />
+                <DetailItem label="Pago em" value={formatDate(selectedCart.paid_at)} />
+                <DetailItem label="Expira em" value={formatDate(selectedCart.expires_at)} />
+                <DetailItem label="Último evento" value={selectedCart.last_event ?? '—'} />
+              </dl>
+            </section>
+          </div>
+        ) : null}
+      </Modal>
+    </Fragment>
   );
 }
+
+type DetailItemProps = {
+  label: string;
+  value: ReactNode;
+};
+
+function DetailItem({ label, value }: DetailItemProps) {
+  return (
+    <>
+      <dt className="font-semibold text-slate-400">{label}</dt>
+      <dd className="text-slate-100">{value}</dd>
+    </>
+  );
+}
+
+const formatDate = (value: string | null | undefined) => {
+  if (!value) {
+    return '—';
+  }
+  return formatSaoPaulo(value);
+};
