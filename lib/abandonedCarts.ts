@@ -6,6 +6,7 @@ import {
   ABANDONED_STATUS_TOKENS,
   NEW_STATUS_TOKENS,
   PENDING_STATUS_TOKENS,
+  REFUSED_STATUS_TOKENS,
   REFUNDED_STATUS_TOKENS,
   SENT_STATUS_TOKENS,
   cleanText,
@@ -123,6 +124,10 @@ const resolveStatus = ({
   createdAt: string | null;
   lastReminderAt: string | null;
 }) => {
+  if (normalizedStatuses.some((status) => REFUSED_STATUS_TOKENS.has(status))) {
+    return 'refused';
+  }
+
   if (normalizedStatuses.some((status) => REFUNDED_STATUS_TOKENS.has(status))) {
     return 'refunded';
   }
