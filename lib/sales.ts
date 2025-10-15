@@ -364,6 +364,20 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
         const status: Sale['status'] = hasRefund ? 'refunded' : 'approved';
         const paidAt = extractPaidAt(row, payload);
         const customerPhone = extractPhone(row, payload);
+        const lastReminderAt =
+          pickTimestamp(
+            row.sent_at,
+            row.last_reminder_at,
+            payload.sent_at,
+            payload.sentAt,
+            payload.manual_sent_at,
+            payload.manualSentAt,
+            payload.last_reminder_at,
+            payload.lastReminderAt,
+          ) ?? null;
+        const { hasReminderTime, reminderValidForDisplay } = evaluateReminderTiming(paidAt, lastReminderAt);
+        const hasFollowUpStatus = normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status));
+        const emailFollowUp = reminderValidForDisplay || (!hasReminderTime && hasFollowUpStatus);
 
         return {
           id: String(row.id),
@@ -377,6 +391,7 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
           paid_at: paidAt ?? null,
           traffic_source: cleanText(row.traffic_source) || trafficFromPayload || null,
           source: cleanText(row.source) || null,
+          email_follow_up: emailFollowUp,
         } satisfies Sale;
       })
       .filter((sale): sale is Sale => sale !== null);
