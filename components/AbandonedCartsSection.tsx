@@ -14,43 +14,38 @@ export default function AbandonedCartsSection({ carts, expiredCount }: Abandoned
   const [sortMode, setSortMode] = useState<AbandonedCartSortMode>('default');
 
   const { buttonLabel, buttonTitle } = useMemo(() => {
-    switch (sortMode) {
-      case 'converted':
-        return {
-          buttonLabel: 'Convertidos primeiro',
-          buttonTitle: 'Ordenar com convertidos no topo, seguidos de pendentes e e-mails enviados.',
-        };
-      case 'new':
-        return {
-          buttonLabel: 'Novos primeiro',
-          buttonTitle: 'Ordenar com os novos eventos no topo, seguidos de pendentes e e-mails enviados.',
-        };
+      switch (sortMode) {
+        case 'converted':
+          return {
+            buttonLabel: 'Convertidos primeiro',
+            buttonTitle: 'Ordenar com convertidos no topo, seguidos de pendentes e abandonados.',
+          };
+        case 'new':
+          return {
+            buttonLabel: 'Novos primeiro',
+            buttonTitle: 'Ordenar com os novos eventos no topo, seguidos de pendentes e convertidos.',
+          };
       case 'pending':
         return {
           buttonLabel: 'Pendentes primeiro',
-          buttonTitle: 'Ordenar com pendentes no topo, seguidos de e-mails enviados e convertidos.',
+          buttonTitle: 'Ordenar com pendentes no topo, seguidos de convertidos.',
         };
       case 'abandoned':
         return {
           buttonLabel: 'Abandonados primeiro',
           buttonTitle: 'Ordenar com carrinhos abandonados no topo, seguidos dos demais status.',
         };
-      case 'sent':
-        return {
-          buttonLabel: 'E-mails enviados primeiro',
-          buttonTitle: 'Ordenar com e-mails enviados no topo, seguidos de convertidos e pendentes.',
-        };
       default:
         return {
           buttonLabel: 'Ordenar por status',
-          buttonTitle: 'Ordenar por status: convertidos, pendentes e e-mails enviados.',
+          buttonTitle: 'Ordenar por status: convertidos, novos, pendentes e abandonados.',
         };
     }
   }, [sortMode]);
 
   const handleToggleSort = () => {
     setSortMode((current) => {
-      const sequence: AbandonedCartSortMode[] = ['default', 'converted', 'new', 'pending', 'abandoned', 'sent'];
+      const sequence: AbandonedCartSortMode[] = ['default', 'converted', 'new', 'pending', 'abandoned'];
       const currentIndex = sequence.indexOf(current);
       const nextIndex = currentIndex === -1 ? 1 : (currentIndex + 1) % sequence.length;
       return sequence[nextIndex];
