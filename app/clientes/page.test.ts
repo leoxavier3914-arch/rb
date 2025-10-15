@@ -10,14 +10,22 @@ const buildSale = (overrides: Partial<Sale> = {}): Sale => ({
   product_name: 'Product',
   product_id: 'prod',
   status: 'approved',
+  created_at: '2023-12-31T23:00:00.000Z',
+  updated_at: '2024-01-01T00:00:00.000Z',
   paid_at: '2024-01-01T00:00:00.000Z',
   traffic_source: null,
   source: null,
   email_follow_up: false,
+  abandoned_before_payment: false,
   ...overrides,
 });
 
 describe('getConversionLabel', () => {
+  it('returns "Aprovado retorno" when the sale was abandoned before payment', () => {
+    const sale = buildSale({ abandoned_before_payment: true });
+    expect(getConversionLabel(sale)).toBe('Aprovado retorno');
+  });
+
   it('returns "Aprovado retorno" for follow-up approvals', () => {
     const sale = buildSale({ email_follow_up: true });
     expect(getConversionLabel(sale)).toBe('Aprovado retorno');
