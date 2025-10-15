@@ -57,11 +57,15 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
         },
       },
       { key: 'discount_code' as const, header: 'Cupom', render: (i: AbandonedCart) => i.discount_code ?? '—' },
-      { key: 'expires_at' as const, header: 'Expira em', render: (i: AbandonedCart) => formatSaoPaulo(i.expires_at) },
+      {
+        key: 'created_at' as const,
+        header: 'Criado em',
+        render: (i: AbandonedCart) => (i.created_at ? formatSaoPaulo(i.created_at) : '—'),
+      },
       {
         key: 'updated_at' as const,
         header: 'Atualizado em',
-        render: (i: AbandonedCart) => formatSaoPaulo(i.updated_at ?? i.created_at),
+        render: (i: AbandonedCart) => (i.updated_at ? formatSaoPaulo(i.updated_at) : '—'),
       },
     ],
     [],
