@@ -107,12 +107,74 @@ const getLatestCheckoutTimestamp = (client: CustomerCheckoutAggregate) => {
   return Math.max(latestSale, latestHistory);
 };
 
-const getUniqueProducts = (sales: Sale[]) => {
-  const unique = new Set<string>();
-  for (const sale of sales) {
-    unique.add(sale.product_name ?? 'Produto não informado');
+const getSaleTimestamp = (sale: Sale) => {
+  if (!sale?.paid_at) {
+    return Number.NEGATIVE_INFINITY;
   }
-  return Array.from(unique);
+  const time = Date.parse(sale.paid_at);
+  return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+};
+
+const getUpdateTimestamp = (update: AbandonedCartUpdate) => {
+  const candidates = [
+    update?.timestamp,
+    update?.snapshot?.updated_at,
+    update?.snapshot?.created_at,
+  ];
+
+  let latest = Number.NEGATIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    const time = Date.parse(candidate);
+    if (!Number.isNaN(time) && time > latest) {
+      latest = time;
+    }
+  }
+
+  return latest;
+};
+
+export const getUniqueProducts = (client: CustomerCheckoutAggregate) => {
+  const seen = new Set<string>();
+  const products: string[] = [];
+
+  const addProduct = (name: string | null | undefined) => {
+    const value = name ?? 'Produto não informado';
+    if (seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    products.push(value);
+  };
+
+  const sortedSales = [...client.approvedSales].sort(
+    (a, b) => getSaleTimestamp(b) - getSaleTimestamp(a),
+  );
+  for (const sale of sortedSales) {
+    addProduct(sale.product_name);
+  }
+
+  const sortedHistory = [...client.history].sort(
+    (a, b) => getHistoryEntryTimestamp(b) - getHistoryEntryTimestamp(a),
+  );
+
+  for (const entry of sortedHistory) {
+    const updates = entry?.updates ?? [];
+    if (updates.length > 0) {
+      const sortedUpdates = [...updates].sort(
+        (a, b) => getUpdateTimestamp(b) - getUpdateTimestamp(a),
+      );
+      for (const update of sortedUpdates) {
+        addProduct(update?.snapshot?.product_name);
+      }
+    }
+    addProduct(entry?.snapshot?.product_name);
+  }
+
+  return products;
 };
 
 const formatDate = (value: string | null | undefined) => (value ? formatSaoPaulo(value) : '—');
@@ -420,7 +482,7 @@ export default function ClientsContent({ clients }: ClientsContentProps) {
         key: 'products',
         header: 'Produtos comprados',
         render: (item: CustomerCheckoutAggregate) => {
-          const products = getUniqueProducts(item.approvedSales);
+          const products = getUniqueProducts(item);
           if (products.length === 0) {
             return '—';
           }
