@@ -16,6 +16,7 @@ const buildSale = (overrides: Partial<Sale> = {}): Sale => ({
   traffic_source: null,
   source: null,
   abandoned_before_payment: false,
+  checkout_url: null,
   ...overrides,
 });
 
