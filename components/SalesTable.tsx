@@ -17,7 +17,6 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'refunded', label: 'Vendas reembolsadas' },
   { key: 'abandoned', label: 'Carrinhos abandonados' },
   { key: 'converted', label: 'Convertidos' },
-  { key: 'sent', label: 'E-mails enviados' },
   { key: 'refused', label: 'Compras recusadas' },
   { key: 'new', label: 'Carrinhos novos' },
 ];
@@ -36,7 +35,6 @@ export default function SalesTable({ sales }: SalesTableProps) {
       refunded: 0,
       abandoned: 0,
       converted: 0,
-      sent: 0,
       refused: 0,
       new: 0,
     };

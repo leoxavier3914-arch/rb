@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import clsx from 'clsx';
 import Badge from './Badge';
 import Table from './Table';
 import type { AbandonedCart } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
 
-export type AbandonedCartSortMode = 'default' | 'converted' | 'new' | 'pending' | 'abandoned' | 'sent';
+export type AbandonedCartSortMode = 'default' | 'converted' | 'new' | 'pending' | 'abandoned';
 
 type AbandonedCartsTableProps = {
   carts: AbandonedCart[];
@@ -26,13 +27,21 @@ const STATUS_SEQUENCE: Array<Exclude<AbandonedCartSortMode, 'default'>> = [
   'new',
   'pending',
   'abandoned',
-  'sent',
 ];
 
 const getTimestamp = (value?: string | null) => {
   if (!value) return 0;
   const time = Date.parse(value);
   return Number.isNaN(time) ? 0 : time;
+};
+
+const hasEmailFollowUp = (cart: AbandonedCart) => {
+  if (cart.last_reminder_at) {
+    return true;
+  }
+
+  const event = cart.last_event?.toLowerCase() ?? '';
+  return event.includes('email');
 };
 
 export default function AbandonedCartsTable({ carts, sortMode = 'default' }: AbandonedCartsTableProps) {
@@ -42,6 +51,7 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
   const [feedback, setFeedback] = useState<Record<string, FeedbackState | undefined>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [statusIndicatorId, setStatusIndicatorId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   useEffect(() => {
     setData(carts);
@@ -49,6 +59,7 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
     setExpandedId(null);
     setFeedback({});
     setStatusIndicatorId(null);
+    setConfirmingId(null);
   }, [carts]);
 
   const handleStatusIndicatorToggle = useCallback(
@@ -66,32 +77,37 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
         header: 'Cliente',
         render: (item: AbandonedCart) => (
           <div className="flex items-start gap-3">
-            {item.status === 'sent' || item.status === 'converted' ? (
-              <div className="relative flex items-center">
-                <button
-                  type="button"
-                  onClick={(event) => handleStatusIndicatorToggle(event, item.id)}
-                  className="flex h-5 w-5 items-center justify-center rounded-full transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
-                  aria-label={`Status do carrinho: ${item.status === 'converted' ? 'Convertido' : 'Aguardando'}`}
-                >
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      item.status === 'converted'
-                        ? 'bg-emerald-400 shadow-[0_0_0_2px_rgba(15,23,42,0.8)]'
-                        : 'bg-amber-400 shadow-[0_0_0_2px_rgba(15,23,42,0.8)]'
-                    }`}
-                  />
-                </button>
+            {(() => {
+              const emailReminder = hasEmailFollowUp(item);
+              if (!emailReminder && item.status !== 'converted') {
+                return null;
+              }
 
-                {statusIndicatorId === item.id ? (
-                  <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900/95 px-2 py-1 text-xs font-semibold text-white shadow-xl ring-1 ring-slate-700">
-                    <span className={item.status === 'converted' ? 'text-emerald-200' : 'text-amber-200'}>
-                      {item.status === 'converted' ? 'Convertido' : 'Aguardando'}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+              const isConverted = item.status === 'converted';
+              const indicatorColor = isConverted
+                ? 'bg-emerald-400 shadow-[0_0_0_2px_rgba(15,23,42,0.8)]'
+                : 'bg-sky-400 shadow-[0_0_0_2px_rgba(15,23,42,0.8)]';
+              const indicatorLabel = isConverted ? 'Convertido' : 'Contato realizado';
+
+              return (
+                <div className="relative flex items-center">
+                  <button
+                    type="button"
+                    onClick={(event) => handleStatusIndicatorToggle(event, item.id)}
+                    className="flex h-5 w-5 items-center justify-center rounded-full transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+                    aria-label={`Status do carrinho: ${indicatorLabel}`}
+                  >
+                    <span className={`h-2.5 w-2.5 rounded-full ${indicatorColor}`} />
+                  </button>
+
+                  {statusIndicatorId === item.id ? (
+                    <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900/95 px-2 py-1 text-xs font-semibold text-white shadow-xl ring-1 ring-slate-700">
+                      <span className={isConverted ? 'text-emerald-200' : 'text-sky-200'}>{indicatorLabel}</span>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()}
 
             <div className="flex flex-col">
               <span className="font-medium text-white">{item.customer_name ?? 'Nome não informado'}</span>
@@ -123,6 +139,7 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
   const handleRowClick = useCallback((item: AbandonedCart) => {
     setExpandedId((current) => (current === item.id ? null : item.id));
     setStatusIndicatorId(null);
+    setConfirmingId(null);
   }, []);
 
   const handleSendEmail = useCallback(
@@ -154,24 +171,25 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
 
         type SuccessPayload = { ok?: boolean; discountCode?: string | null; expiresAt?: string | null };
         const payload = (await response.json()) as SuccessPayload;
+        const nowIso = new Date().toISOString();
 
         setData((prev) =>
           prev.map((row) =>
             row.id === item.id
               ? {
                   ...row,
-                  status: row.paid ? 'converted' : 'sent',
                   discount_code: payload.discountCode ?? row.discount_code,
                   expires_at: payload.expiresAt ?? row.expires_at,
                   last_event: 'manual.email.sent',
-                  last_reminder_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
+                  last_reminder_at: nowIso,
+                  updated_at: nowIso,
                 }
               : row,
           ),
         );
 
         setFeedback((prev) => ({ ...prev, [item.id]: { type: 'success', message: 'E-mail enviado com sucesso.' } }));
+        setConfirmingId(null);
       } catch (error) {
         setFeedback((prev) => ({
           ...prev,
@@ -243,6 +261,12 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
     }
   }, [paginatedData, statusIndicatorId]);
 
+  useEffect(() => {
+    if (confirmingId && !paginatedData.some((row) => row.id === confirmingId)) {
+      setConfirmingId(null);
+    }
+  }, [confirmingId, paginatedData]);
+
   const pageStart = totalItems === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const pageEnd = totalItems === 0 ? 0 : Math.min(pageStart + paginatedData.length - 1, totalItems);
 
@@ -266,6 +290,17 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
         renderExpandedRow={(item) => {
           const isSending = sendingId === item.id;
           const feedbackMessage = feedback[item.id];
+          const emailReminder = hasEmailFollowUp(item);
+          const isConfirming = confirmingId === item.id;
+          const handlePrimaryAction = () => {
+            if (isSending) return;
+            if (emailReminder && !isConfirming) {
+              setConfirmingId(item.id);
+              return;
+            }
+
+            void handleSendEmail(item);
+          };
 
           return (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -280,11 +315,20 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
               <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
                 <button
                   type="button"
-                  onClick={() => handleSendEmail(item)}
+                  onClick={handlePrimaryAction}
                   disabled={isSending}
-                  className="inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  className={clsx(
+                    'inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
+                    emailReminder && !isConfirming
+                      ? 'bg-slate-800 text-slate-300 hover:bg-slate-800'
+                      : 'bg-brand text-white hover:bg-brand/90',
+                  )}
                 >
-                  {isSending ? 'Enviando…' : 'Enviar e-mail'}
+                  {isSending
+                    ? 'Enviando…'
+                    : emailReminder && !isConfirming
+                      ? 'E-mail já enviado'
+                      : 'Enviar e-mail'}
                 </button>
                 {feedbackMessage ? (
                   <span
@@ -296,6 +340,33 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
                   >
                     {feedbackMessage.message}
                   </span>
+                ) : null}
+                {emailReminder ? (
+                  <div className="text-xs text-slate-400">
+                    <p>Já foi enviado um e-mail para este cliente.</p>
+                    {isConfirming ? (
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleSendEmail(item);
+                          }}
+                          className="rounded-md bg-brand/90 px-3 py-1 font-semibold text-slate-950 transition hover:bg-brand"
+                          disabled={isSending}
+                        >
+                          Sim, reenviar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingId(null)}
+                          className="rounded-md border border-slate-700 px-3 py-1 font-semibold text-slate-200 transition hover:bg-slate-800"
+                          disabled={isSending}
+                        >
+                          Não, manter
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             </div>

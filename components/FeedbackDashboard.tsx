@@ -38,7 +38,8 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: 'Todos' },
   { key: 'converted', label: 'Convertidos' },
   { key: 'pending', label: 'Pendentes' },
-  { key: 'sent', label: 'E-mails enviados' },
+  { key: 'abandoned', label: 'Abandonados' },
+  { key: 'refused', label: 'Recusados' },
   { key: 'refunded', label: 'Reembolsados' },
 ];
 

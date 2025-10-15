@@ -159,16 +159,14 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const nextStatus = record.status === 'converted' ? record.status : 'sent';
-
   const { error: updateError } = await supabase
     .from('abandoned_emails')
     .update({
-      status: nextStatus,
       discount_code: resolvedDiscount,
       expires_at: expiresAt,
       last_event: 'manual.email.sent',
       last_reminder_at: now,
+      sent_at: now,
       updated_at: now,
     })
     .eq('id', id);

@@ -360,8 +360,9 @@ function scoreRow(row) {
   if (row.paid) score += 100;
   const status = normalizeString(row.status)?.toLowerCase();
   if (status === 'converted') score += 50;
-  if (status === 'sent') score += 30;
+  if (status === 'abandoned') score += 30;
   if (status === 'pending') score += 10;
+  if (row.last_reminder_at) score += 5;
   if (row.sent_at) score += 5;
   if (row.updated_at) score += 1;
   return score;
@@ -409,7 +410,7 @@ function pickTrafficSource(rows) {
 
 function resolveStatus(rows, paidFlag) {
   if (paidFlag) return 'converted';
-  const priority = ['converted', 'sent', 'pending'];
+  const priority = ['converted', 'abandoned', 'pending'];
   const found = new Set();
   for (const row of rows) {
     const value = normalizeString(row.status)?.toLowerCase();
