@@ -267,7 +267,10 @@ describe('fetchCustomersWithCheckouts', () => {
     expect(customer.history).toHaveLength(1);
     const syntheticEntry = customer.history[0];
     expect(syntheticEntry.snapshot.checkout_id).toBe('sale-2');
-    expect(syntheticEntry.updates).toHaveLength(1);
-    expect(syntheticEntry.updates[0].status).toBe('approved');
+    expect(syntheticEntry.updates).toHaveLength(2);
+    expect(syntheticEntry.updates[0].status).toBe('new');
+    expect(syntheticEntry.updates[1].status).toBe('approved');
+    expect(syntheticEntry.updates[0].timestamp).toBe('2024-05-02T08:00:00.000Z');
+    expect(syntheticEntry.updates[1].timestamp).toBe('2024-05-02T09:15:00.000Z');
   });
 });
