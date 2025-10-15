@@ -51,17 +51,24 @@ const cloneSnapshot = (
   ...overrides,
 });
 
+type CreateSyntheticUpdateOptions = {
+  snapshotSource?: AbandonedCartSnapshot;
+};
+
 const createSyntheticUpdate = (
   baseSnapshot: AbandonedCartSnapshot,
   status: string,
   timestamp: string,
   overrides: Partial<AbandonedCartSnapshot> = {},
+  options: CreateSyntheticUpdateOptions = {},
 ): AbandonedCartUpdate => {
   const normalizedStatus = normalizeStatusToken(status) ?? status;
   const event =
     overrides.last_event || STATUS_EVENT_MESSAGES[normalizedStatus] || 'Status atualizado';
 
-  const snapshot = cloneSnapshot(baseSnapshot, {
+  const snapshotSource = options.snapshotSource ?? baseSnapshot;
+
+  const snapshot = cloneSnapshot(snapshotSource, {
     status: normalizedStatus,
     updated_at: timestamp,
     last_event: event,
@@ -108,6 +115,8 @@ const enrichUpdatesWithMilestones = (
   const creationTimestamp =
     baseSnapshot.created_at ?? getUpdateTimestamp(sorted[0]) ?? baseSnapshot.updated_at ?? null;
 
+  const creationSnapshot = sorted[0]?.snapshot ?? baseSnapshot;
+
   if (creationTimestamp) {
     const creationStatus = normalizeStatusToken('new');
     if (creationStatus && !hasStatus(creationStatus)) {
@@ -116,7 +125,9 @@ const enrichUpdatesWithMilestones = (
           paid: false,
           paid_at: null,
           last_event: STATUS_EVENT_MESSAGES.new,
-        }),
+        },
+        { snapshotSource: creationSnapshot },
+        ),
       );
     }
 
@@ -132,11 +143,17 @@ const enrichUpdatesWithMilestones = (
         const updateTime = parseTime(getUpdateTimestamp(update));
         if (updateTime <= creationTime) {
           const abandonedAt = new Date(creationTime + ONE_HOUR_IN_MS).toISOString();
-          sorted[index] = createSyntheticUpdate(baseSnapshot, 'abandoned', abandonedAt, {
-            paid: false,
-            paid_at: baseSnapshot.paid_at,
-            last_event: STATUS_EVENT_MESSAGES.abandoned,
-          });
+          sorted[index] = createSyntheticUpdate(
+            baseSnapshot,
+            'abandoned',
+            abandonedAt,
+            {
+              paid: false,
+              paid_at: baseSnapshot.paid_at,
+              last_event: STATUS_EVENT_MESSAGES.abandoned,
+            },
+            { snapshotSource: update.snapshot },
+          );
         }
       }
     }
@@ -169,11 +186,16 @@ const enrichUpdatesWithMilestones = (
         } satisfies AbandonedCartUpdate;
       } else {
         sorted.push(
-          createSyntheticUpdate(baseSnapshot, 'approved', baseSnapshot.paid_at, {
-            paid: true,
-            paid_at: baseSnapshot.paid_at,
-            last_event: STATUS_EVENT_MESSAGES.approved,
-          }),
+          createSyntheticUpdate(
+            baseSnapshot,
+            'approved',
+            baseSnapshot.paid_at,
+            {
+              paid: true,
+              paid_at: baseSnapshot.paid_at,
+              last_event: STATUS_EVENT_MESSAGES.approved,
+            },
+          ),
         );
       }
     }
@@ -224,11 +246,25 @@ const enrichUpdatesWithMilestones = (
         overrides.paid_at = baseSnapshot.paid_at;
       }
 
+      const finalSnapshotSource =
+        sorted
+          .slice()
+          .reverse()
+          .find(
+            (update) => normalizeStatusToken(update.status ?? update.snapshot.status) === finalStatus,
+          )?.snapshot ?? baseSnapshot;
+
       sorted.push(
-        createSyntheticUpdate(baseSnapshot, finalStatus, timestamp, {
-          ...overrides,
-          last_event: STATUS_EVENT_MESSAGES[finalStatus] ?? baseSnapshot.last_event ?? null,
-        }),
+        createSyntheticUpdate(
+          baseSnapshot,
+          finalStatus,
+          timestamp,
+          {
+            ...overrides,
+            last_event: STATUS_EVENT_MESSAGES[finalStatus] ?? baseSnapshot.last_event ?? null,
+          },
+          { snapshotSource: finalSnapshotSource },
+        ),
       );
     }
   }

@@ -45,7 +45,7 @@ export default async function ClientsPage() {
   const customersWithApprovedSales = customers.filter((customer) => customer.approvedSales.length > 0);
   const approvedSales = collectApprovedSales(customersWithApprovedSales);
   const totalPurchases = approvedSales.length;
-  const topProducts = getTopProducts(customers);
+  const topProducts = getTopProducts(customersWithApprovedSales);
   const totalCustomersWithApproved = customersWithApprovedSales.length;
   const averageOrders = totalCustomersWithApproved
     ? (totalPurchases / totalCustomersWithApproved).toFixed(1)
@@ -103,12 +103,12 @@ export default async function ClientsPage() {
         </ol>
       </section>
 
-      {customers.length === 0 ? (
+      {customersWithApprovedSales.length === 0 ? (
         <p className="rounded-lg border border-dashed border-slate-800 bg-slate-950/40 p-6 text-center text-sm text-slate-400">
           Nenhum checkout encontrado até o momento.
         </p>
       ) : (
-        <ClientsContent clients={customers} />
+        <ClientsContent clients={customersWithApprovedSales} />
       )}
     </main>
   );

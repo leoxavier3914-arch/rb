@@ -147,4 +147,79 @@ describe('enrichUpdatesWithMilestones', () => {
     expect(approvedUpdates[0]?.snapshot.paid).toBe(true);
     expect(approvedUpdates[0]?.snapshot.paid_at).toBe(snapshot.paid_at);
   });
+
+  it('preserves original checkout data when synthesizing creation events', () => {
+    const originalSnapshot: AbandonedCartSnapshot = {
+      ...baseSnapshot,
+      customer_name: 'Cliente Original',
+      product_name: 'Produto Inicial',
+      created_at: '2024-01-01T09:00:00.000Z',
+      updated_at: '2024-01-01T09:00:00.000Z',
+    };
+
+    const latestSnapshot: AbandonedCartSnapshot = {
+      ...originalSnapshot,
+      customer_name: 'Cliente Atualizado',
+      product_name: 'Produto Atualizado',
+      status: 'approved',
+      paid: true,
+      paid_at: '2024-01-01T10:30:00.000Z',
+      updated_at: '2024-01-01T10:30:00.000Z',
+    };
+
+    const updates: AbandonedCartUpdate[] = [
+      {
+        id: 'update-initial',
+        timestamp: originalSnapshot.created_at,
+        status: 'pending',
+        event: 'Pagamento pendente',
+        source: 'webhook',
+        snapshot: originalSnapshot,
+      },
+      {
+        id: 'update-final',
+        timestamp: latestSnapshot.updated_at,
+        status: 'approved',
+        event: 'Pagamento aprovado',
+        source: 'webhook',
+        snapshot: latestSnapshot,
+      },
+    ];
+
+    const enriched = enrichUpdatesWithMilestones(updates, latestSnapshot);
+
+    const creationUpdate = enriched.find((update) => update.status === 'new');
+    expect(creationUpdate?.snapshot.customer_name).toBe('Cliente Original');
+    expect(creationUpdate?.snapshot.product_name).toBe('Produto Inicial');
+  });
+
+  it('keeps original snapshot fields when adjusting abandoned transitions', () => {
+    const creationSnapshot: AbandonedCartSnapshot = {
+      ...baseSnapshot,
+      customer_name: 'Cliente Especial',
+      product_name: 'Produto Único',
+      created_at: '2024-01-01T09:00:00.000Z',
+      updated_at: '2024-01-01T09:00:00.000Z',
+    };
+
+    const abandonedUpdate: AbandonedCartUpdate = {
+      id: 'update-abandoned',
+      timestamp: creationSnapshot.created_at,
+      status: 'abandoned',
+      event: 'Checkout abandonado',
+      source: 'webhook',
+      snapshot: {
+        ...creationSnapshot,
+        status: 'abandoned',
+        updated_at: creationSnapshot.created_at,
+        last_event: 'Checkout abandonado',
+      },
+    };
+
+    const enriched = enrichUpdatesWithMilestones([abandonedUpdate], creationSnapshot);
+
+    const abandoned = enriched.find((update) => update.status === 'abandoned');
+    expect(abandoned?.snapshot.customer_name).toBe('Cliente Especial');
+    expect(abandoned?.snapshot.product_name).toBe('Produto Único');
+  });
 });
