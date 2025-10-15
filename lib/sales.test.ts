@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as sales from './sales';
-import type { DashboardSale } from './types';
+import type { DashboardSale, AbandonedCart, Sale } from './types';
 
 const { mapRowToDashboardSale } = sales.__testables;
 
@@ -168,5 +168,106 @@ describe('groupLatestDashboardEvents', () => {
     expect(grouped[0].latest_timestamp_source).toBe('created_at');
     expect(grouped[1].id).toBe('4');
     expect(grouped[1].latest_timestamp_source).toBe('paid_at');
+  });
+});
+
+describe('fetchCustomersWithCheckouts', () => {
+  it('merges approved sales with cart history per customer', async () => {
+    const sale: Sale = {
+      id: 'sale-1',
+      customer_email: 'user@example.com',
+      customer_name: 'Cliente Teste',
+      customer_phone: '5511999999999',
+      product_name: 'Produto A',
+      product_id: 'prod-a',
+      status: 'approved',
+      created_at: '2024-05-01T10:00:00.000Z',
+      updated_at: '2024-05-01T11:00:00.000Z',
+      paid_at: '2024-05-01T11:10:00.000Z',
+      traffic_source: null,
+      source: null,
+      abandoned_before_payment: false,
+      checkout_url: 'https://checkout.example.com/sale-1',
+    };
+
+    const baseSnapshot = {
+      id: 'cart-1',
+      checkout_id: 'sale-1',
+      customer_email: 'user@example.com',
+      customer_name: 'Cliente Teste',
+      customer_phone: '5511999999999',
+      product_name: 'Produto A',
+      product_id: 'prod-a',
+      status: 'approved',
+      paid: true,
+      paid_at: '2024-05-01T11:10:00.000Z',
+      discount_code: null,
+      expires_at: null,
+      last_event: 'payment.approved',
+      created_at: '2024-05-01T10:00:00.000Z',
+      updated_at: '2024-05-01T11:10:00.000Z',
+      checkout_url: 'https://checkout.example.com/sale-1',
+      traffic_source: null,
+    } as const;
+
+    const update = {
+      id: 'update-1',
+      timestamp: '2024-05-01T11:10:00.000Z',
+      status: 'approved',
+      event: 'payment.approved',
+      source: 'webhook',
+      snapshot: baseSnapshot,
+    } as const;
+
+    const cart: AbandonedCart = {
+      ...baseSnapshot,
+      cart_key: 'checkout:sale-1',
+      updates: [update],
+      history: [
+        {
+          cartKey: 'checkout:sale-1',
+          snapshot: baseSnapshot,
+          updates: [update],
+        },
+      ],
+    };
+
+    const result = sales.buildCustomersWithCheckouts({ sales: [sale], carts: [cart] });
+
+    expect(result).toHaveLength(1);
+    const customer = result[0];
+    expect(customer.email).toBe('user@example.com');
+    expect(customer.approvedSales).toHaveLength(1);
+    expect(customer.history).toHaveLength(1);
+    expect(customer.history[0].cartKey).toBe('checkout:sale-1');
+  });
+
+  it('creates synthetic history entries when a sale has no recorded cart history', async () => {
+    const sale: Sale = {
+      id: 'sale-2',
+      customer_email: 'other@example.com',
+      customer_name: 'Outra Pessoa',
+      customer_phone: null,
+      product_name: 'Produto B',
+      product_id: 'prod-b',
+      status: 'approved',
+      created_at: '2024-05-02T08:00:00.000Z',
+      updated_at: '2024-05-02T09:00:00.000Z',
+      paid_at: '2024-05-02T09:15:00.000Z',
+      traffic_source: null,
+      source: null,
+      abandoned_before_payment: false,
+      checkout_url: 'https://checkout.example.com/sale-2',
+    };
+
+    const result = sales.buildCustomersWithCheckouts({ sales: [sale], carts: [] });
+
+    expect(result).toHaveLength(1);
+    const customer = result[0];
+    expect(customer.history).toHaveLength(1);
+    const syntheticEntry = customer.history[0];
+    expect(syntheticEntry.snapshot.checkout_id).toBe('sale-2');
+    expect(syntheticEntry.updates).toHaveLength(1);
+    expect(syntheticEntry.updates[0].status).toBe('approved');
   });
 });
