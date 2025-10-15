@@ -172,11 +172,6 @@ export default function DashboardEventsTable({ events }: DashboardEventsTablePro
               </div>
             ),
           },
-          {
-            key: 'last_event',
-            header: 'Último evento',
-            render: (event) => event.last_event || '—',
-          },
         ]}
         data={filteredEvents}
         emptyMessage="Nenhum evento encontrado para o filtro selecionado."

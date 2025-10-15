@@ -301,7 +301,6 @@ export default function LeadsTable({ leads }: LeadsTableProps) {
             <DetailItem label="Atualizado em" value={formatDate(selectedSnapshot?.updated_at)} />
             <DetailItem label="Pago em" value={formatDate(selectedSnapshot?.paid_at)} />
             <DetailItem label="Expira em" value={formatDate(selectedSnapshot?.expires_at)} />
-            <DetailItem label="Último evento" value={selectedSnapshot?.last_event ?? '—'} />
             <DetailItem label="Fonte" value={selected?.source ?? '—'} />
           </dl>
         </section>
