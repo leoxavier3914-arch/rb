@@ -35,6 +35,7 @@ export default function SalesTable({ sales }: SalesTableProps) {
       abandoned: 0,
       refused: 0,
       new: 0,
+      pending: 0,
     };
 
     for (const sale of sales) {

@@ -47,6 +47,7 @@ const buildStatusCounters = (sales: DashboardSale[]) => {
     abandoned: 0,
     refunded: 0,
     refused: 0,
+    pending: 0,
   };
 
   for (const sale of sales) {

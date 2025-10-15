@@ -12,7 +12,6 @@ export type AbandonedCart = {
   discount_code: string | null;
   expires_at: string | null; // schedule_at / expires_at
   last_event: string | null;
-  last_reminder_at: string | null; // sent_at
   created_at: string | null;
   updated_at: string | null;
   checkout_url?: string | null;
@@ -32,7 +31,6 @@ export type Sale = {
   paid_at: string | null;
   traffic_source: string | null;
   source: string | null;
-  email_follow_up: boolean;
   abandoned_before_payment: boolean;
 };
 
@@ -41,7 +39,8 @@ export type DashboardSaleStatus =
   | 'approved'
   | 'abandoned'
   | 'refunded'
-  | 'refused';
+  | 'refused'
+  | 'pending';
 
 export type DashboardSale = {
   id: string;
@@ -55,11 +54,9 @@ export type DashboardSale = {
   updated_at: string | null;
   paid_at: string | null;
   last_event: string | null;
-  last_reminder_at: string | null;
   traffic_source: string | null;
   source: string | null;
   checkout_url: string | null;
-  email_follow_up: boolean;
 };
 
 export type FeedbackEntry = {

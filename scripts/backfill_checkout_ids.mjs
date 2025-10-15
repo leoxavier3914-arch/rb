@@ -362,8 +362,6 @@ function scoreRow(row) {
   if (status === 'approved' || status === 'converted') score += 50;
   if (status === 'abandoned') score += 30;
   if (status === 'pending') score += 10;
-  if (row.last_reminder_at) score += 5;
-  if (row.sent_at) score += 5;
   if (row.updated_at) score += 1;
   return score;
 }
@@ -461,7 +459,6 @@ async function fetchAllRows(client, pageSize = 1000) {
           'traffic_source',
           'last_event',
           'schedule_at',
-          'sent_at',
           'expires_at',
           'created_at',
           'updated_at',
@@ -508,7 +505,6 @@ function buildUpdatePayload(rows, deterministicId, canonicalId) {
     traffic_source: pickTrafficSource(ranked),
     last_event: pickFirst(ranked, 'last_event', normalizeString),
     schedule_at: pickFirst(ranked, 'schedule_at', Boolean),
-    sent_at: pickFirst(ranked, 'sent_at', Boolean),
     expires_at: pickFirst(ranked, 'expires_at', Boolean),
     paid: paidFlag,
     paid_at: bestPaidAt ?? null,
