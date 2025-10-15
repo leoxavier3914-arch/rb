@@ -1,4 +1,4 @@
-export type AbandonedCart = {
+export type AbandonedCartSnapshot = {
   id: string;
   checkout_id: string | null;
   customer_email: string;
@@ -16,6 +16,19 @@ export type AbandonedCart = {
   updated_at: string | null;
   checkout_url?: string | null;
   traffic_source?: string | null;
+};
+
+export type AbandonedCartUpdate = {
+  id: string;
+  timestamp: string | null;
+  status: string | null;
+  event: string | null;
+  source: string | null;
+  snapshot: AbandonedCartSnapshot;
+};
+
+export type AbandonedCart = AbandonedCartSnapshot & {
+  updates: AbandonedCartUpdate[];
 };
 
 export type Sale = {
