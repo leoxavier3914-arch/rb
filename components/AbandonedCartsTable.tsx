@@ -9,9 +9,13 @@ import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
 
 export type AbandonedCartSortMode = 'default' | 'approved' | 'new' | 'pending' | 'abandoned' | 'refused';
 
+export const ABANDONED_CART_STATUS_FILTERS = ['new', 'abandoned', 'approved', 'refused'] as const;
+export type AbandonedCartStatusFilter = (typeof ABANDONED_CART_STATUS_FILTERS)[number];
+
 type AbandonedCartsTableProps = {
   carts: AbandonedCart[];
   sortMode?: AbandonedCartSortMode;
+  selectedStatuses?: AbandonedCartStatusFilter[];
 };
 
 const PAGE_SIZE = 20;
@@ -23,7 +27,11 @@ const getTimestamp = (value?: string | null) => {
   return Number.isNaN(time) ? 0 : time;
 };
 
-export default function AbandonedCartsTable({ carts, sortMode = 'default' }: AbandonedCartsTableProps) {
+export default function AbandonedCartsTable({
+  carts,
+  sortMode = 'default',
+  selectedStatuses,
+}: AbandonedCartsTableProps) {
   const [data, setData] = useState<AbandonedCart[]>(carts);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -71,9 +79,27 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
     [],
   );
 
+  const filteredData = useMemo(() => {
+    if (!selectedStatuses) {
+      return data;
+    }
+
+    if (selectedStatuses.length === 0) {
+      return [];
+    }
+
+    if (selectedStatuses.length === ABANDONED_CART_STATUS_FILTERS.length) {
+      return data;
+    }
+
+    const allowed = new Set(selectedStatuses);
+
+    return data.filter((item) => allowed.has(item.status as AbandonedCartStatusFilter));
+  }, [data, selectedStatuses]);
+
   const sortedData = useMemo(() => {
     if (sortMode === 'default') {
-      return data;
+      return filteredData;
     }
 
     const startIndex = STATUS_SEQUENCE.indexOf(sortMode as (typeof STATUS_SEQUENCE)[number]);
@@ -86,7 +112,7 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
       return acc;
     }, {} as Record<string, number>);
 
-    return [...data].sort((a, b) => {
+    return [...filteredData].sort((a, b) => {
       const orderA = statusOrder[a.status] ?? Number.POSITIVE_INFINITY;
       const orderB = statusOrder[b.status] ?? Number.POSITIVE_INFINITY;
 
@@ -98,11 +124,11 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
       const timeA = getTimestamp(a.updated_at ?? a.created_at);
       return timeB - timeA;
     });
-  }, [data, sortMode]);
+  }, [filteredData, sortMode]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [sortMode]);
+  }, [sortMode, selectedStatuses]);
 
   const totalItems = sortedData.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
