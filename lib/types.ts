@@ -27,8 +27,16 @@ export type AbandonedCartUpdate = {
   snapshot: AbandonedCartSnapshot;
 };
 
-export type AbandonedCart = AbandonedCartSnapshot & {
+export type AbandonedCartHistoryEntry = {
+  cartKey: string;
+  snapshot: AbandonedCartSnapshot;
   updates: AbandonedCartUpdate[];
+};
+
+export type AbandonedCart = AbandonedCartSnapshot & {
+  cart_key: string;
+  updates: AbandonedCartUpdate[];
+  history: AbandonedCartHistoryEntry[];
 };
 
 export type Sale = {

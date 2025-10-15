@@ -1,6 +1,11 @@
 import { unstable_noStore as noStore } from 'next/cache';
 import { getSupabaseAdmin } from './supabaseAdmin';
-import type { AbandonedCart, AbandonedCartSnapshot, AbandonedCartUpdate } from './types';
+import type {
+  AbandonedCart,
+  AbandonedCartHistoryEntry,
+  AbandonedCartSnapshot,
+  AbandonedCartUpdate,
+} from './types';
 import {
   APPROVED_STATUS_TOKENS,
   ABANDONED_STATUS_TOKENS,
@@ -120,6 +125,42 @@ const pickTimestamp = (...candidates: Array<unknown>) => {
   }
 
   return null;
+};
+
+const DEFAULT_HISTORY_LIMIT = 1000;
+
+const resolveHistoryLimit = () => {
+  const rawValue = process.env.ABANDONED_CARTS_HISTORY_LIMIT;
+  if (!rawValue) {
+    return DEFAULT_HISTORY_LIMIT;
+  }
+
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_HISTORY_LIMIT;
+  }
+
+  const normalized = Math.floor(parsed);
+  return normalized > 0 ? normalized : DEFAULT_HISTORY_LIMIT;
+};
+
+const buildCustomerKey = (snapshot: AbandonedCartSnapshot) => {
+  const email = snapshot.customer_email?.trim().toLowerCase();
+  if (email) {
+    return `email:${email}`;
+  }
+
+  const phone = snapshot.customer_phone?.replace(/\D+/g, '');
+  if (phone) {
+    return `phone:${phone}`;
+  }
+
+  const name = snapshot.customer_name?.trim().toLowerCase();
+  if (name) {
+    return `name:${name}`;
+  }
+
+  return `id:${snapshot.id}`;
 };
 
 const buildSnapshotFromRow = (row: Record<string, any>): AbandonedCartSnapshot => {
@@ -252,11 +293,14 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
   try {
     const supabase = getSupabaseAdmin();
 
+    const historyLimit = resolveHistoryLimit();
+
     const { data, error } = await supabase
       .from('abandoned_emails')
       .select('*')
       .neq('source', 'kiwify.webhook_purchase')
-      .order('updated_at', { ascending: false });
+      .order('updated_at', { ascending: false })
+      .limit(historyLimit);
 
     if (error) {
       console.error('[kiwify-hub] erro ao consultar carrinhos', error);
@@ -265,31 +309,105 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
 
     const rows = (data ?? []) as Record<string, any>[];
 
-    const grouped = new Map<string, { snapshot: AbandonedCartSnapshot; updates: AbandonedCartUpdate[] }>();
+    const grouped = new Map<
+      string,
+      { snapshot: AbandonedCartSnapshot; updates: AbandonedCartUpdate[]; customerKey: string }
+    >();
+    const historyByCustomer = new Map<
+      string,
+      Map<string, { snapshot: AbandonedCartSnapshot; updates: AbandonedCartUpdate[] }>
+    >();
 
     rows.forEach((row) => {
       const update = buildUpdateFromRow(row);
       const key = buildCartKey(update.snapshot);
+      const customerKey = buildCustomerKey(update.snapshot);
+      const timestamp = parseTime(
+        update.timestamp ?? update.snapshot.updated_at ?? update.snapshot.created_at,
+      );
       const existing = grouped.get(key);
 
       if (!existing) {
-        grouped.set(key, { snapshot: update.snapshot, updates: [update] });
-        return;
+        grouped.set(key, { snapshot: update.snapshot, updates: [update], customerKey });
+      } else {
+        existing.updates.push(update);
+
+        const existingTime = parseTime(
+          existing.snapshot.updated_at ?? existing.snapshot.created_at ?? null,
+        );
+
+        if (timestamp >= existingTime) {
+          existing.snapshot = update.snapshot;
+        }
       }
 
-      existing.updates.push(update);
+      let customerHistory = historyByCustomer.get(customerKey);
+      if (!customerHistory) {
+        customerHistory = new Map();
+        historyByCustomer.set(customerKey, customerHistory);
+      }
 
-      const currentTime = parseTime(update.timestamp ?? update.snapshot.updated_at ?? update.snapshot.created_at);
-      const existingTime = parseTime(existing.snapshot.updated_at ?? existing.snapshot.created_at ?? null);
+      const existingHistory = customerHistory.get(key);
 
-      if (currentTime >= existingTime) {
-        existing.snapshot = update.snapshot;
+      if (!existingHistory) {
+        customerHistory.set(key, { snapshot: update.snapshot, updates: [update] });
+      } else {
+        existingHistory.updates.push(update);
+
+        const existingHistoryTime = parseTime(
+          existingHistory.snapshot.updated_at ?? existingHistory.snapshot.created_at ?? null,
+        );
+
+        if (timestamp >= existingHistoryTime) {
+          existingHistory.snapshot = update.snapshot;
+        }
       }
     });
 
-    return Array.from(grouped.values()).map(({ snapshot, updates }) => ({
-      ...snapshot,
-      updates: updates
+    const normalizedHistory = new Map<string, AbandonedCartHistoryEntry[]>();
+
+    historyByCustomer.forEach((cartHistory, customerKey) => {
+      const entries: AbandonedCartHistoryEntry[] = Array.from(cartHistory.entries()).map(
+        ([cartKey, { snapshot, updates }]) => ({
+          cartKey,
+          snapshot,
+          updates: updates
+            .slice()
+            .sort((a, b) => {
+              const timeA = parseTime(a.timestamp ?? a.snapshot.updated_at ?? a.snapshot.created_at);
+              const timeB = parseTime(b.timestamp ?? b.snapshot.updated_at ?? b.snapshot.created_at);
+
+              if (timeA !== timeB) {
+                return timeA - timeB;
+              }
+
+              return a.id.localeCompare(b.id);
+            }),
+        }),
+      );
+
+      entries.sort((a, b) => {
+        const lastUpdateA = a.updates[a.updates.length - 1];
+        const lastUpdateB = b.updates[b.updates.length - 1];
+        const timeA = parseTime(
+          lastUpdateA?.timestamp ?? lastUpdateA?.snapshot.updated_at ?? lastUpdateA?.snapshot.created_at,
+        );
+        const timeB = parseTime(
+          lastUpdateB?.timestamp ?? lastUpdateB?.snapshot.updated_at ?? lastUpdateB?.snapshot.created_at,
+        );
+
+        if (timeA !== timeB) {
+          return timeB - timeA;
+        }
+
+        return a.snapshot.id.localeCompare(b.snapshot.id);
+      });
+
+      normalizedHistory.set(customerKey, entries);
+    });
+
+    return Array.from(grouped.entries()).map(([cartKey, { snapshot, updates, customerKey }]) => {
+      const sortedUpdates = updates
         .slice()
         .sort((a, b) => {
           const timeA = parseTime(a.timestamp ?? a.snapshot.updated_at ?? a.snapshot.created_at);
@@ -300,8 +418,21 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
           }
 
           return a.id.localeCompare(b.id);
-        }),
-    }));
+        });
+
+      const historyEntries = normalizedHistory.get(customerKey) ?? [];
+
+      return {
+        ...snapshot,
+        cart_key: cartKey,
+        updates: sortedUpdates,
+        history: historyEntries.map((entry) => ({
+          cartKey: entry.cartKey,
+          snapshot: entry.snapshot,
+          updates: entry.cartKey === cartKey ? sortedUpdates : entry.updates,
+        })),
+      } satisfies AbandonedCart;
+    });
   } catch (error) {
     console.error('[kiwify-hub] supabase indisponível', error);
     return [];
