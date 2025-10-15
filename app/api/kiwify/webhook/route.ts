@@ -438,6 +438,57 @@ function pickPreferredExisting(
   return deduped.reduce(pickBetter, null);
 }
 
+function shouldKeepExistingCandidate(
+  row: any,
+  options: {
+    normalizedProductIdFromPayload: string | null;
+    normalizedProductTitleFromPayload: string | null;
+    checkoutIdCandidateSet: Set<string>;
+  }
+): boolean {
+  if (!row) return false;
+
+  const checkoutId =
+    typeof row.checkout_id === 'string' ? row.checkout_id.trim() : null;
+  if (checkoutId && options.checkoutIdCandidateSet.has(checkoutId)) {
+    return true;
+  }
+
+  const normalizedRowProductId = normalizeProductComponent(row.product_id);
+  const normalizedRowProductTitle = normalizeProductComponent(row.product_title);
+
+  const payloadHasProduct =
+    Boolean(options.normalizedProductIdFromPayload) ||
+    Boolean(options.normalizedProductTitleFromPayload);
+  const rowHasProduct = Boolean(normalizedRowProductId || normalizedRowProductTitle);
+
+  if (!payloadHasProduct) {
+    return true;
+  }
+
+  if (
+    options.normalizedProductIdFromPayload &&
+    normalizedRowProductId &&
+    normalizedRowProductId !== options.normalizedProductIdFromPayload
+  ) {
+    return false;
+  }
+
+  if (
+    options.normalizedProductTitleFromPayload &&
+    normalizedRowProductTitle &&
+    normalizedRowProductTitle !== options.normalizedProductTitleFromPayload
+  ) {
+    return false;
+  }
+
+  if (payloadHasProduct && !rowHasProduct) {
+    return false;
+  }
+
+  return true;
+}
+
 async function propagateConvertedStatus(args: {
   supabase: SupabaseClient;
   checkoutIdCandidates: Iterable<string>;
@@ -908,6 +959,10 @@ export async function POST(req: Request) {
   const nameFromPayload = findNameDeep(body);
   const productTitleFromPayload = findProductNameDeep(body);
   const productIdFromPayload = findProductIdDeep(body);
+  const normalizedProductIdFromPayload = normalizeProductComponent(productIdFromPayload);
+  const normalizedProductTitleFromPayload = normalizeProductComponent(
+    productTitleFromPayload
+  );
   const checkoutUrlFromPayload = findCheckoutUrlDeep(body);
   const trackingParamsFromPayload = extractTrackingParams(body);
   const discountCodeFromPayload = findDiscountDeep(body);
@@ -918,6 +973,11 @@ export async function POST(req: Request) {
   });
   const canonicalCheckoutId = checkoutIdResolution.primary;
   const checkoutIdCandidates = checkoutIdResolution.candidates;
+  const checkoutIdCandidateSet = new Set(
+    checkoutIdCandidates
+      .map((value) => (typeof value === 'string' ? value.trim() : null))
+      .filter((value): value is string => Boolean(value))
+  );
   let checkoutId = canonicalCheckoutId;
 
   const now = new Date();
@@ -952,6 +1012,8 @@ export async function POST(req: Request) {
     'id, checkout_id, paid, paid_at, status, created_at, updated_at, schedule_at, last_event, checkout_url, discount_code, source, traffic_source, customer_name, product_title, product_id';
 
   let existing: any = null;
+  let existingOriginalProductId: string | null = null;
+  let existingOriginalProductTitle: string | null = null;
 
   if (checkoutIdCandidates.length) {
     const { data, error } = await supabase
@@ -966,6 +1028,28 @@ export async function POST(req: Request) {
       console.warn('[kiwify-webhook] failed to load existing record', error);
     } else {
       existing = data;
+      existingOriginalProductId = existing?.product_id ?? null;
+      existingOriginalProductTitle = existing?.product_title ?? null;
+      if (
+        existing &&
+        !shouldKeepExistingCandidate(existing, {
+          normalizedProductIdFromPayload,
+          normalizedProductTitleFromPayload,
+          checkoutIdCandidateSet,
+        })
+      ) {
+        console.log('[kiwify-webhook] discarding existing candidate due to product mismatch', {
+          existingId: existing?.id ?? null,
+          existingCheckoutId: existing?.checkout_id ?? null,
+          existingProductId: existingOriginalProductId,
+          existingProductTitle: existingOriginalProductTitle,
+          payloadProductId: productIdFromPayload ?? null,
+          payloadProductTitle: productTitleFromPayload ?? null,
+        });
+        existing = null;
+        existingOriginalProductId = null;
+        existingOriginalProductTitle = null;
+      }
     }
   }
 
@@ -1008,7 +1092,26 @@ export async function POST(req: Request) {
     }
 
     if (fallbackRows.length) {
-      existing = pickPreferredExisting(fallbackRows, checkoutIdCandidates) ?? existing;
+      const filteredRows = fallbackRows.filter((row) =>
+        shouldKeepExistingCandidate(row, {
+          normalizedProductIdFromPayload,
+          normalizedProductTitleFromPayload,
+          checkoutIdCandidateSet,
+        })
+      );
+
+      if (filteredRows.length) {
+        const picked = pickPreferredExisting(filteredRows, checkoutIdCandidates);
+        if (picked) {
+          existing = picked;
+          existingOriginalProductId = existing?.product_id ?? null;
+          existingOriginalProductTitle = existing?.product_title ?? null;
+        }
+      } else {
+        existing = null;
+        existingOriginalProductId = null;
+        existingOriginalProductTitle = null;
+      }
     }
   }
 
@@ -1045,6 +1148,8 @@ export async function POST(req: Request) {
         console.warn('[kiwify-webhook] lookup after migration failure also failed', canonicalError);
       } else if (canonicalRow) {
         existing = pickPreferredExisting([existing, canonicalRow], checkoutIdCandidates) ?? canonicalRow;
+        existingOriginalProductId = existing?.product_id ?? null;
+        existingOriginalProductTitle = existing?.product_title ?? null;
       }
     } else {
       existing.checkout_id = checkoutId;

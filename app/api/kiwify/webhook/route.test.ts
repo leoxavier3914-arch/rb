@@ -1,5 +1,181 @@
-import { describe, expect, it } from 'vitest';
+import crypto from 'node:crypto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { fakeDatabase, createClientMock, createClientFactory } = vi.hoisted(() => {
+  type FakeDatabase = { rows: any[] };
+
+  class FakeSelectBuilder {
+    private filters: Array<(row: any) => boolean> = [];
+    private orderColumn: string | null = null;
+    private orderAscending = true;
+    private limitValue: number | null = null;
+
+    constructor(private readonly db: FakeDatabase) {}
+
+    eq(column: string, value: any) {
+      this.filters.push((row) => row?.[column] === value);
+      return this;
+    }
+
+    in(column: string, values: any[]) {
+      const normalizedValues = values
+        .map((value) => {
+          if (value === null || value === undefined) return null;
+          if (typeof value === 'string') return value;
+          if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+          return null;
+        })
+        .filter((value): value is string => Boolean(value));
+      const set = new Set(normalizedValues);
+      this.filters.push((row) => {
+        const current = row?.[column];
+        if (current === null || current === undefined) return false;
+        const normalized = typeof current === 'string' ? current : String(current);
+        return set.has(normalized);
+      });
+      return this;
+    }
+
+    order(column: string, options?: { ascending?: boolean }) {
+      this.orderColumn = column;
+      this.orderAscending = options?.ascending ?? true;
+      return this;
+    }
+
+    limit(value: number) {
+      this.limitValue = typeof value === 'number' ? value : null;
+      return this;
+    }
+
+    maybeSingle() {
+      const results = this.execute();
+      return Promise.resolve({ data: results[0] ?? null, error: null });
+    }
+
+    then<TResult1 = { data: any[]; error: null }, TResult2 = never>(
+      onfulfilled?: ((value: { data: any[]; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
+      onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+    ) {
+      const result = { data: this.execute(), error: null as null };
+      return Promise.resolve(result).then(onfulfilled, onrejected);
+    }
+
+    private execute() {
+      let rows = this.db.rows.map((row) => ({ ...row }));
+      for (const filter of this.filters) {
+        rows = rows.filter((row) => filter(row));
+      }
+      if (this.orderColumn) {
+        const column = this.orderColumn;
+        const ascending = this.orderAscending;
+        rows.sort((a, b) => {
+          const av = a?.[column];
+          const bv = b?.[column];
+          if (av === bv) return 0;
+          if (av === undefined || av === null) return ascending ? -1 : 1;
+          if (bv === undefined || bv === null) return ascending ? 1 : -1;
+
+          const aTime = typeof av === 'string' ? Date.parse(av) : Number.NaN;
+          const bTime = typeof bv === 'string' ? Date.parse(bv) : Number.NaN;
+          const bothDates = !Number.isNaN(aTime) && !Number.isNaN(bTime);
+          if (bothDates) {
+            return ascending ? aTime - bTime : bTime - aTime;
+          }
+
+          const aStr = typeof av === 'string' ? av : String(av);
+          const bStr = typeof bv === 'string' ? bv : String(bv);
+          if (aStr === bStr) return 0;
+          if (ascending) return aStr > bStr ? 1 : -1;
+          return aStr > bStr ? -1 : 1;
+        });
+      }
+      if (typeof this.limitValue === 'number') {
+        rows = rows.slice(0, this.limitValue);
+      }
+      return rows;
+    }
+  }
+
+  class FakeSupabaseTable {
+    constructor(private readonly db: FakeDatabase) {}
+
+    select(_columns: string) {
+      return new FakeSelectBuilder(this.db);
+    }
+
+    upsert(row: any, options?: { onConflict?: string }) {
+      const normalized = { ...row };
+      const onConflict = options?.onConflict;
+      if (onConflict === 'checkout_id' && normalized.checkout_id) {
+        const index = this.db.rows.findIndex(
+          (existing) => existing.checkout_id === normalized.checkout_id
+        );
+        if (index >= 0) {
+          this.db.rows[index] = { ...this.db.rows[index], ...normalized };
+          return Promise.resolve({ data: this.db.rows[index], error: null });
+        }
+      }
+      this.db.rows.push({ ...normalized });
+      return Promise.resolve({ data: normalized, error: null });
+    }
+
+    update(values: Record<string, any>) {
+      return {
+        eq: async (column: string, value: any) => {
+          const updated: any[] = [];
+          this.db.rows = this.db.rows.map((row) => {
+            if (row?.[column] === value) {
+              const next = { ...row, ...values };
+              updated.push(next);
+              return next;
+            }
+            return row;
+          });
+          return { data: updated, error: null };
+        },
+      };
+    }
+  }
+
+  class FakeSupabaseClient {
+    constructor(private readonly db: FakeDatabase) {}
+
+    from(table: string) {
+      if (table !== 'abandoned_emails') {
+        throw new Error(`Unsupported table: ${table}`);
+      }
+      return new FakeSupabaseTable(this.db);
+    }
+  }
+
+  const fakeDatabase: FakeDatabase = { rows: [] };
+  const createClientFactory = () => new FakeSupabaseClient(fakeDatabase);
+  const createClientMock = vi.fn(createClientFactory);
+
+  return { fakeDatabase, createClientMock, createClientFactory };
+});
+
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: createClientMock,
+}));
+
+import { POST } from './route';
 import { extractTrafficSource } from './traffic';
+
+beforeEach(() => {
+  fakeDatabase.rows.length = 0;
+  createClientMock.mockClear();
+  createClientMock.mockImplementation(createClientFactory);
+  process.env.SUPABASE_URL = 'https://example.supabase.co';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
+  vi.spyOn(crypto, 'randomUUID').mockImplementation(() => `uuid-${fakeDatabase.rows.length + 1}`);
+});
+
+afterEach(() => {
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  vi.restoreAllMocks();
+});
 
 const baseCheckout = 'https://pay.example.com/checkout';
 
@@ -47,5 +223,60 @@ describe('extractTrafficSource - manual reminders', () => {
     const result = extractTrafficSource({}, checkoutUrl, 'tiktok.organic');
 
     expect(result).toBe('tiktok.organic.email');
+  });
+});
+
+describe('POST handler - product separation', () => {
+  it('cria um novo registro quando o produto muda para o mesmo e-mail', async () => {
+    const payloadA = {
+      email: 'cliente@example.com',
+      product_id: 'prod-1',
+      product_title: 'Curso Avançado',
+      checkout_url: 'https://pay.kiwify.com.br/prod-1',
+      status: 'pending',
+    };
+
+    const requestA = new Request('https://example.com/api/kiwify/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payloadA),
+    });
+
+    const responseA = await POST(requestA);
+    expect(responseA.status).toBe(200);
+    expect(await responseA.json()).toEqual({ ok: true });
+    expect(fakeDatabase.rows).toHaveLength(1);
+    expect(fakeDatabase.rows[0].product_id).toBe('prod-1');
+    expect(fakeDatabase.rows[0].product_title).toBe('Curso Avançado');
+
+    const payloadB = {
+      email: 'cliente@example.com',
+      product_id: 'prod-2',
+      product_title: 'Curso Essencial',
+      checkout_url: 'https://pay.kiwify.com.br/prod-2',
+      status: 'pending',
+    };
+
+    const requestB = new Request('https://example.com/api/kiwify/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payloadB),
+    });
+
+    const responseB = await POST(requestB);
+    expect(responseB.status).toBe(200);
+    expect(await responseB.json()).toEqual({ ok: true });
+
+    expect(fakeDatabase.rows).toHaveLength(2);
+    const productIds = new Set(fakeDatabase.rows.map((row) => row.product_id));
+    expect(productIds.has('prod-1')).toBe(true);
+    expect(productIds.has('prod-2')).toBe(true);
+
+    const productTitles = new Set(fakeDatabase.rows.map((row) => row.product_title));
+    expect(productTitles.has('Curso Avançado')).toBe(true);
+    expect(productTitles.has('Curso Essencial')).toBe(true);
+
+    const checkoutIds = new Set(fakeDatabase.rows.map((row) => row.checkout_id));
+    expect(checkoutIds.size).toBe(2);
   });
 });
