@@ -455,6 +455,7 @@ const buildSnapshotFromRow = (row: Record<string, any>): AbandonedCartSnapshot =
     normalizedStatuses,
     paid: basePaid,
     createdAt,
+    updatedAt,
   });
   const paid = status === 'refunded' ? false : basePaid;
   const checkoutUrl = extractCheckoutUrl(row, payload);
@@ -502,10 +503,12 @@ export const resolveStatus = ({
   normalizedStatuses,
   paid,
   createdAt,
+  updatedAt,
 }: {
   normalizedStatuses: string[];
   paid: boolean;
   createdAt: string | null;
+  updatedAt: string | null;
 }) => {
   if (normalizedStatuses.some((status) => REFUSED_STATUS_TOKENS.has(status))) {
     return 'refused';
@@ -520,16 +523,16 @@ export const resolveStatus = ({
   }
 
   const hasAbandonedStatus = normalizedStatuses.some((status) => ABANDONED_STATUS_TOKENS.has(status));
-  if (hasAbandonedStatus) {
-    return 'abandoned';
-  }
-
   const createdTime = parseTime(createdAt);
-  if (createdTime !== Number.NEGATIVE_INFINITY) {
-    const now = Date.now();
-    if (now - createdTime >= ONE_HOUR_IN_MS) {
-      return 'abandoned';
-    }
+  const updatedTime = parseTime(updatedAt);
+  const now = Date.now();
+  const isOverdue =
+    createdTime !== Number.NEGATIVE_INFINITY &&
+    ((updatedTime !== Number.NEGATIVE_INFINITY && updatedTime - createdTime >= ONE_HOUR_IN_MS) ||
+      now - createdTime >= ONE_HOUR_IN_MS);
+
+  if (isOverdue && !paid) {
+    return 'abandoned';
   }
 
   if (normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status))) {
@@ -537,6 +540,10 @@ export const resolveStatus = ({
   }
 
   if (normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status))) {
+    return 'new';
+  }
+
+  if (hasAbandonedStatus) {
     return 'new';
   }
 
