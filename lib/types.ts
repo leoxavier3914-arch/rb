@@ -1,5 +1,6 @@
 export type AbandonedCart = {
   id: string;
+  checkout_id: string | null;
   customer_email: string;
   customer_name: string | null;
   customer_phone: string | null;

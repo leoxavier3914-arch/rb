@@ -84,6 +84,16 @@ const extractPhone = (row: Record<string, any>, payload: Record<string, unknown>
 };
 
 const buildCartKey = (cart: AbandonedCart) => {
+  const checkoutId = cart.checkout_id?.trim();
+  if (checkoutId) {
+    return `checkout:${checkoutId}`;
+  }
+
+  const id = cart.id?.trim();
+  if (id) {
+    return `id:${id}`;
+  }
+
   const email = cart.customer_email?.toLowerCase();
   if (email) {
     return `email:${email}`;
@@ -231,11 +241,13 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
         });
         const paid = status === 'refunded' ? false : basePaid;
         const checkoutUrl = extractCheckoutUrl(row, payload);
+        const checkoutId = typeof row.checkout_id === 'string' ? cleanText(row.checkout_id) : null;
         const customerPhone = extractPhone(row, payload);
         const paidAt = extractPaidAt(row, payload);
 
         return {
           id: String(row.id),
+          checkout_id: checkoutId,
           customer_email: cleanText(row.customer_email) || cleanText(row.email) || '',
           customer_name: cleanText(row.customer_name) || null,
           customer_phone: customerPhone,
