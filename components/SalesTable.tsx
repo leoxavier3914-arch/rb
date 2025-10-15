@@ -13,11 +13,10 @@ type FilterKey = 'all' | DashboardSaleStatus;
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'Todos' },
-  { key: 'approved', label: 'Vendas aprovadas' },
-  { key: 'refunded', label: 'Vendas reembolsadas' },
-  { key: 'abandoned', label: 'Carrinhos abandonados' },
-  { key: 'refused', label: 'Compras recusadas' },
   { key: 'new', label: 'Carrinhos novos' },
+  { key: 'abandoned', label: 'Carrinhos abandonados' },
+  { key: 'approved', label: 'Vendas aprovadas' },
+  { key: 'refused', label: 'Compras recusadas' },
 ];
 
 type SalesTableProps = {
@@ -111,9 +110,9 @@ export default function SalesTable({ sales }: SalesTableProps) {
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold">Vendas aprovadas</h2>
+          <h2 className="text-xl font-semibold">Visão geral das vendas</h2>
           <p className="text-sm text-slate-400">
-            Filtre as conversões por canal de origem para entender a performance de cada campanha.
+            Filtre as vendas por status para entender o desempenho de cada etapa da jornada de compra.
           </p>
         </div>
       </div>
