@@ -4,7 +4,12 @@ import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } f
 import Badge, { type BadgeVariant } from './Badge';
 import Table from './Table';
 import Modal from './Modal';
-import type { AbandonedCart, AbandonedCartSnapshot, AbandonedCartUpdate } from '../lib/types';
+import type {
+  AbandonedCart,
+  AbandonedCartHistoryEntry,
+  AbandonedCartSnapshot,
+  AbandonedCartUpdate,
+} from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
 
@@ -49,6 +54,7 @@ export default function AbandonedCartsTable({
   const [data, setData] = useState<AbandonedCart[]>(carts);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedCart, setSelectedCart] = useState<AbandonedCart | null>(null);
+  const [selectedHistoryKey, setSelectedHistoryKey] = useState<string | null>(null);
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,15 +78,58 @@ export default function AbandonedCartsTable({
 
   const handleOpenDetails = useCallback((cart: AbandonedCart) => {
     setSelectedCart(cart);
-    const updates = cart.updates ?? [];
+    const historyEntries = cart.history ?? [];
+    const fallbackHistoryKey = cart.cart_key ?? historyEntries[0]?.cartKey ?? null;
+    setSelectedHistoryKey(fallbackHistoryKey);
+
+    const activeHistory = historyEntries.find((entry) => entry.cartKey === fallbackHistoryKey);
+    const updates = activeHistory?.updates ?? cart.updates ?? [];
     const latestUpdate = updates[updates.length - 1];
     setSelectedUpdateId(latestUpdate?.id ?? null);
   }, []);
 
   const handleCloseDetails = useCallback(() => {
     setSelectedCart(null);
+    setSelectedHistoryKey(null);
     setSelectedUpdateId(null);
   }, []);
+
+  useEffect(() => {
+    if (!selectedCart) {
+      return;
+    }
+
+    const historyEntries = selectedCart.history ?? [];
+    if (historyEntries.length === 0) {
+      setSelectedHistoryKey(null);
+      setSelectedUpdateId(null);
+      return;
+    }
+
+    const availableHistoryKeys = new Set(historyEntries.map((entry) => entry.cartKey));
+    const fallbackHistoryKey = selectedCart.cart_key ?? historyEntries[0]?.cartKey ?? null;
+
+    if (!fallbackHistoryKey) {
+      setSelectedHistoryKey(null);
+      setSelectedUpdateId(null);
+      return;
+    }
+
+    if (!selectedHistoryKey || !availableHistoryKeys.has(selectedHistoryKey)) {
+      setSelectedHistoryKey(fallbackHistoryKey);
+      setSelectedUpdateId(null);
+      return;
+    }
+
+    const activeHistory = historyEntries.find((entry) => entry.cartKey === selectedHistoryKey);
+    const updates = activeHistory?.updates ?? [];
+    const fallbackUpdateId = updates[updates.length - 1]?.id ?? null;
+    const availableUpdateIds = new Set(updates.map((update) => update.id));
+
+    if (!selectedUpdateId || !availableUpdateIds.has(selectedUpdateId)) {
+      setSelectedUpdateId(fallbackUpdateId);
+    }
+  }, [selectedCart, selectedHistoryKey, selectedUpdateId]);
 
   const columns = useMemo(
     () => [
@@ -206,31 +255,69 @@ export default function AbandonedCartsTable({
   let modalContent: ReactNode = null;
 
   if (selectedCart) {
-    const updates = selectedCart.updates ?? [];
+    const historyEntries = selectedCart.history ?? [];
+    const fallbackHistoryKey = selectedCart.cart_key ?? historyEntries[0]?.cartKey ?? null;
+    const availableHistoryKeys = new Set(historyEntries.map((entry) => entry.cartKey));
+    const effectiveHistoryKey =
+      (selectedHistoryKey && availableHistoryKeys.has(selectedHistoryKey)
+        ? selectedHistoryKey
+        : fallbackHistoryKey) ?? null;
+    const activeHistory = historyEntries.find((entry) => entry.cartKey === effectiveHistoryKey);
+
+    const updates = activeHistory?.updates ?? [];
     const latestUpdate = updates[updates.length - 1];
     const activeUpdateId = selectedUpdateId ?? latestUpdate?.id ?? null;
     const orderedUpdates = updates.length > 0 ? [...updates].reverse() : [];
     const selectedUpdate = updates.find((item) => item.id === activeUpdateId) ?? latestUpdate ?? null;
-    const selectedSnapshot = selectedUpdate ? selectedUpdate.snapshot : toSnapshot(selectedCart);
+    const selectedSnapshot =
+      selectedUpdate?.snapshot ?? activeHistory?.snapshot ?? toSnapshot(selectedCart);
 
     modalContent = (
-      <div className="flex flex-col gap-6 md:flex-row">
-        <aside className="md:w-72 lg:w-80">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Histórico</h3>
-          <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
-            {orderedUpdates.length === 0 ? (
-              <p className="text-sm text-slate-400">Nenhuma atualização registrada.</p>
-            ) : (
-              orderedUpdates.map((update) => (
-                <UpdateListItem
-                  key={update.id}
-                  update={update}
-                  active={update.id === activeUpdateId}
-                  onSelect={(id) => setSelectedUpdateId(id)}
-                />
-              ))
-            )}
-          </div>
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <aside className="space-y-6 lg:w-72 xl:w-80">
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+              Carrinhos do cliente
+            </h3>
+            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+              {historyEntries.length === 0 ? (
+                <p className="text-sm text-slate-400">Nenhum carrinho encontrado para o cliente.</p>
+              ) : (
+                historyEntries.map((entry) => (
+                  <HistoryCheckoutListItem
+                    key={entry.cartKey}
+                    entry={entry}
+                    active={entry.cartKey === effectiveHistoryKey}
+                    isCurrent={entry.cartKey === selectedCart.cart_key}
+                    onSelect={(key) => {
+                      setSelectedHistoryKey(key);
+                      setSelectedUpdateId(null);
+                    }}
+                  />
+                ))
+              )}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+              Histórico do checkout selecionado
+            </h3>
+            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+              {orderedUpdates.length === 0 ? (
+                <p className="text-sm text-slate-400">Nenhuma atualização registrada.</p>
+              ) : (
+                orderedUpdates.map((update) => (
+                  <UpdateListItem
+                    key={update.id}
+                    update={update}
+                    active={update.id === activeUpdateId}
+                    onSelect={(id) => setSelectedUpdateId(id)}
+                  />
+                ))
+              )}
+            </div>
+          </section>
         </aside>
 
         <div className="flex-1 space-y-6">
@@ -372,6 +459,63 @@ const formatDate = (value: string | null | undefined) => {
   return formatSaoPaulo(value);
 };
 
+type HistoryCheckoutListItemProps = {
+  entry: AbandonedCartHistoryEntry;
+  active: boolean;
+  isCurrent: boolean;
+  onSelect: (key: string) => void;
+};
+
+function HistoryCheckoutListItem({ entry, active, isCurrent, onSelect }: HistoryCheckoutListItemProps) {
+  const handleSelect = useCallback(() => {
+    onSelect(entry.cartKey);
+  }, [entry.cartKey, onSelect]);
+
+  const latestUpdate = entry.updates[entry.updates.length - 1];
+  const snapshot = latestUpdate?.snapshot ?? entry.snapshot;
+  const statusToken = latestUpdate?.status ?? snapshot.status;
+  const statusVariant = getBadgeVariant(statusToken);
+  const statusLabel = STATUS_LABEL[statusVariant] ?? statusToken;
+  const timestamp = latestUpdate?.timestamp ?? snapshot.updated_at ?? snapshot.created_at;
+  const paymentLabel = snapshot.paid ? 'Pagamento confirmado' : 'Sem pagamento registrado';
+  const checkoutLabel = snapshot.checkout_id || snapshot.id;
+
+  return (
+    <button
+      type="button"
+      onClick={handleSelect}
+      className={`w-full rounded-md border px-3 py-2 text-left transition focus:outline-none focus:ring-2 focus:ring-brand/60 ${
+        active
+          ? 'border-brand bg-brand/10 text-white shadow-sm'
+          : 'border-slate-700 text-slate-200 hover:border-brand/60 hover:text-white'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-slate-100">
+            {checkoutLabel ? `Checkout ${checkoutLabel}` : 'Carrinho sem ID'}
+          </span>
+          <span className="text-xs text-slate-400">{formatDate(timestamp)}</span>
+          <span className="text-xs text-slate-500">{paymentLabel}</span>
+          <span className="text-[10px] uppercase tracking-widest text-slate-500">
+            {entry.updates.length === 1
+              ? '1 atualização registrada'
+              : `${entry.updates.length} atualizações registradas`}
+          </span>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <Badge variant={statusVariant}>{statusLabel}</Badge>
+          {isCurrent ? (
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-brand">
+              Atual
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 type UpdateListItemProps = {
   update: AbandonedCartUpdate;
   active: boolean;
@@ -386,6 +530,7 @@ function UpdateListItem({ update, active, onSelect }: UpdateListItemProps) {
   const statusVariant = getBadgeVariant(update.status ?? update.snapshot.status);
   const statusLabel = STATUS_LABEL[statusVariant] ?? update.status ?? update.snapshot.status;
   const timestamp = update.timestamp ?? update.snapshot.updated_at ?? update.snapshot.created_at;
+  const paymentLabel = update.snapshot.paid ? 'Pagamento confirmado' : 'Pagamento pendente';
 
   return (
     <button
@@ -402,6 +547,7 @@ function UpdateListItem({ update, active, onSelect }: UpdateListItemProps) {
         <Badge variant={statusVariant}>{statusLabel}</Badge>
       </div>
       {update.event ? <p className="mt-1 text-xs text-slate-400">{update.event}</p> : null}
+      <p className="mt-1 text-xs text-slate-500">{paymentLabel}</p>
       {update.source ? <p className="mt-1 text-xs text-slate-500">Fonte: {update.source}</p> : null}
     </button>
   );
@@ -409,6 +555,6 @@ function UpdateListItem({ update, active, onSelect }: UpdateListItemProps) {
 
 const toSnapshot = (cart: AbandonedCart): AbandonedCartSnapshot => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { updates, ...snapshot } = cart;
+  const { updates, history, cart_key, ...snapshot } = cart;
   return snapshot;
 };

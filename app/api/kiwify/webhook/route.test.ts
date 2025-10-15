@@ -447,3 +447,117 @@ describe('fetchAbandonedCarts - status resolution', () => {
     expect(carts[0].status).toBe('pending');
   });
 });
+
+describe('fetchAbandonedCarts - histórico completo', () => {
+  it('mantém todas as versões do carrinho disponíveis no histórico por cliente', async () => {
+    fakeDatabase.rows.push(
+      {
+        id: 'cart-1-v1',
+        checkout_id: 'checkout-1',
+        customer_email: 'cliente@example.com',
+        customer_name: 'Cliente Teste',
+        status: 'new',
+        last_event: 'checkout.created',
+        created_at: '2024-08-01T09:00:00.000Z',
+        updated_at: '2024-08-01T09:00:00.000Z',
+        paid: false,
+        source: 'kiwify.webhook',
+        payload: {},
+      },
+      {
+        id: 'cart-1-v2',
+        checkout_id: 'checkout-1',
+        customer_email: 'cliente@example.com',
+        customer_name: 'Cliente Teste',
+        status: 'approved',
+        last_event: 'payment.approved',
+        created_at: '2024-08-01T09:00:00.000Z',
+        updated_at: '2024-08-01T11:00:00.000Z',
+        paid: true,
+        paid_at: '2024-08-01T10:30:00.000Z',
+        source: 'kiwify.webhook',
+        payload: {},
+      },
+      {
+        id: 'cart-2-v1',
+        checkout_id: 'checkout-2',
+        customer_email: 'cliente@example.com',
+        customer_name: 'Cliente Teste',
+        status: 'abandoned',
+        last_event: 'checkout.abandoned',
+        created_at: '2024-08-02T08:00:00.000Z',
+        updated_at: '2024-08-02T08:30:00.000Z',
+        paid: false,
+        source: 'kiwify.webhook',
+        payload: {},
+      },
+    );
+
+    const carts = await fetchAbandonedCarts();
+
+    expect(carts).toHaveLength(2);
+
+    const firstCart = carts.find((cart) => cart.cart_key === 'checkout:checkout-1');
+    expect(firstCart?.updates).toHaveLength(2);
+    expect(firstCart?.updates[0].snapshot.last_event).toBe('checkout.created');
+    expect(firstCart?.updates[1].snapshot.last_event).toBe('payment.approved');
+    expect(firstCart?.history).toHaveLength(2);
+    expect(firstCart?.history.map((entry) => entry.cartKey)).toEqual([
+      'checkout:checkout-2',
+      'checkout:checkout-1',
+    ]);
+
+    const secondCart = carts.find((cart) => cart.cart_key === 'checkout:checkout-2');
+    expect(secondCart?.history).toHaveLength(2);
+
+    const relatedFromSecond = secondCart?.history.find((entry) => entry.cartKey === 'checkout:checkout-1');
+    expect(relatedFromSecond?.updates).toHaveLength(2);
+  });
+
+  it('aplica limite configurado ao consultar o histórico', async () => {
+    fakeDatabase.rows.push(
+      {
+        id: 'cart-1',
+        checkout_id: 'checkout-1',
+        customer_email: 'cliente@example.com',
+        status: 'new',
+        created_at: '2024-08-01T09:00:00.000Z',
+        updated_at: '2024-08-01T09:00:00.000Z',
+        paid: false,
+        source: 'kiwify.webhook',
+        payload: {},
+      },
+      {
+        id: 'cart-2',
+        checkout_id: 'checkout-2',
+        customer_email: 'cliente@example.com',
+        status: 'abandoned',
+        created_at: '2024-08-02T09:00:00.000Z',
+        updated_at: '2024-08-02T09:00:00.000Z',
+        paid: false,
+        source: 'kiwify.webhook',
+        payload: {},
+      },
+      {
+        id: 'cart-3',
+        checkout_id: 'checkout-3',
+        customer_email: 'cliente@example.com',
+        status: 'approved',
+        created_at: '2024-08-03T09:00:00.000Z',
+        updated_at: '2024-08-03T09:00:00.000Z',
+        paid: true,
+        source: 'kiwify.webhook',
+        payload: {},
+      },
+    );
+
+    process.env.ABANDONED_CARTS_HISTORY_LIMIT = '2';
+
+    try {
+      const carts = await fetchAbandonedCarts();
+      expect(carts.length).toBeLessThanOrEqual(2);
+    } finally {
+      delete process.env.ABANDONED_CARTS_HISTORY_LIMIT;
+    }
+  });
+});
