@@ -787,6 +787,13 @@ const NEGATIVE_STATUS_KEYWORDS = [
   'analise',
 ];
 
+const TERMINAL_STATUSES = new Set(['converted', 'refunded', 'refused']);
+
+function isTerminalStatus(value: string | null | undefined): boolean {
+  const normalized = normalizeStatusForMatch(value);
+  return normalized ? TERMINAL_STATUSES.has(normalized) : false;
+}
+
 function normalizeKeywordString(value: string) {
   return value
     .trim()
@@ -1205,7 +1212,7 @@ export async function POST(req: Request) {
     typeof existing?.status === 'string' && existing.status.trim().length > 0
       ? existing.status
       : null;
-  const normalizedExistingStatus = existingStatus?.toLowerCase() ?? null;
+  const isTerminalExistingStatus = isTerminalStatus(existingStatus);
   const isSameCheckout = Boolean(
     typeof existing?.checkout_id === 'string' &&
       typeof checkoutId === 'string' &&
@@ -1213,7 +1220,7 @@ export async function POST(req: Request) {
   );
   const shouldKeepExistingStatus = checkoutChanged
     ? false
-    : Boolean(isSameCheckout && existingStatus && normalizedExistingStatus !== 'converted');
+    : Boolean(isSameCheckout && existingStatus && isTerminalExistingStatus);
   const baseStatus = shouldKeepExistingStatus ? existingStatus : 'new';
   const status = paid ? 'converted' : baseStatus;
 
