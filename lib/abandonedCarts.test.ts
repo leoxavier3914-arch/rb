@@ -18,9 +18,24 @@ describe('resolveStatus', () => {
       normalizedStatuses: ['new'],
       paid: false,
       createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
     });
 
     expect(status).toBe('abandoned');
+  });
+
+  it("keeps carts flagged as abandoned within the first hour as 'new'", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-01T00:30:00.000Z'));
+
+    const status = resolveStatus({
+      normalizedStatuses: ['abandoned'],
+      paid: false,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:10:00.000Z',
+    });
+
+    expect(status).toBe('new');
   });
 });
 
