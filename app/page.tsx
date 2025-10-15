@@ -11,18 +11,46 @@ import { parsePgTimestamp } from '../lib/dates';
 export const dynamic = 'force-dynamic';
 
 function computeMetrics(carts: AbandonedCart[]) {
-  const total = carts.length;
-  const fresh = carts.filter((i) => i.status === 'new').length;
-  const pending = carts.filter((i) => i.status === 'pending').length;
-  const sent = carts.filter((i) => i.status === 'sent').length;
-  const converted = carts.filter((i) => i.status === 'converted').length;
+  const metrics = {
+    total: carts.length,
+    fresh: 0,
+    pending: 0,
+    sent: 0,
+    converted: 0,
+    abandoned: 0,
+    expired: 0,
+  };
 
-  const expired = carts.filter((i) => {
-    const d = parsePgTimestamp(i.expires_at);
-    return !!d && d.getTime() < Date.now();
-  }).length;
+  const now = Date.now();
 
-  return { total, fresh, pending, sent, converted, expired };
+  for (const cart of carts) {
+    switch (cart.status) {
+      case 'new':
+        metrics.fresh += 1;
+        break;
+      case 'pending':
+        metrics.pending += 1;
+        break;
+      case 'sent':
+        metrics.sent += 1;
+        break;
+      case 'converted':
+        metrics.converted += 1;
+        break;
+      case 'abandoned':
+        metrics.abandoned += 1;
+        break;
+      default:
+        break;
+    }
+
+    const expiration = parsePgTimestamp(cart.expires_at);
+    if (expiration && expiration.getTime() < now) {
+      metrics.expired += 1;
+    }
+  }
+
+  return metrics;
 }
 
 export default async function Home() {
@@ -51,7 +79,7 @@ export default async function Home() {
       <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
         <Card title="Total de registros" value={metrics.total} description="Todos os carrinhos recebidos" />
         <Card title="Novos" value={metrics.fresh} description="Eventos recém recebidos" />
-        <Card title="Pendentes" value={metrics.pending} description="Aguardando envio de e-mail" />
+        <Card title="Abandonados" value={metrics.abandoned} description="Carrinhos sem pagamento após 1 hora" />
         <Card title="E-mails enviados" value={metrics.sent} description="Lembretes já disparados" />
         <Card title="Convertidos" value={metrics.converted} description="Clientes que finalizaram a compra" />
       </section>

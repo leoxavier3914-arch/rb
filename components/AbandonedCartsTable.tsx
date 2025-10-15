@@ -7,7 +7,7 @@ import type { AbandonedCart } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
 
-export type AbandonedCartSortMode = 'default' | 'converted' | 'new' | 'pending' | 'sent';
+export type AbandonedCartSortMode = 'default' | 'converted' | 'new' | 'pending' | 'abandoned' | 'sent';
 
 type AbandonedCartsTableProps = {
   carts: AbandonedCart[];
@@ -25,6 +25,7 @@ const STATUS_SEQUENCE: Array<Exclude<AbandonedCartSortMode, 'default'>> = [
   'converted',
   'new',
   'pending',
+  'abandoned',
   'sent',
 ];
 

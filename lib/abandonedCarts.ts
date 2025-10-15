@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from './supabaseAdmin';
 import type { AbandonedCart } from './types';
 import {
   APPROVED_STATUS_TOKENS,
+  ABANDONED_STATUS_TOKENS,
   NEW_STATUS_TOKENS,
   PENDING_STATUS_TOKENS,
   REFUNDED_STATUS_TOKENS,
@@ -12,7 +13,7 @@ import {
   normalizeStatusToken,
 } from './normalization';
 
-const parseTime = (value: string | null) => {
+const parseTime = (value: string | null | undefined) => {
   if (!value) {
     return Number.NEGATIVE_INFINITY;
   }
@@ -20,6 +21,8 @@ const parseTime = (value: string | null) => {
   const time = Date.parse(value);
   return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
 };
+
+const ONE_HOUR_IN_MS = 60 * 60 * 1000;
 
 const extractCheckoutUrl = (row: Record<string, any>, payload: Record<string, unknown>) => {
   const candidates = [row.checkout_url, row.checkoutUrl, payload.checkout_url, payload.checkoutUrl];
@@ -32,6 +35,31 @@ const extractCheckoutUrl = (row: Record<string, any>, payload: Record<string, un
   }
 
   return null;
+};
+
+const extractPaidAt = (row: Record<string, any>, payload: Record<string, unknown>) => {
+  const candidates = [
+    row.paid_at,
+    payload.paid_at,
+    payload.paidAt,
+    payload.payment_date,
+    payload.paymentDate,
+    payload.approved_at,
+    payload.approvedAt,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+
+    const text = cleanText(candidate);
+    if (text) {
+      return text;
+    }
+  }
+
+  return row.paid_at ?? null;
 };
 
 const extractPhone = (row: Record<string, any>, payload: Record<string, unknown>) => {
@@ -69,7 +97,32 @@ const buildCartKey = (cart: AbandonedCart) => {
   return `id:${cart.id}`;
 };
 
-const resolveStatus = (normalizedStatuses: string[], paid: boolean) => {
+const pickTimestamp = (...candidates: Array<unknown>) => {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+
+    const text = cleanText(candidate);
+    if (text) {
+      return text;
+    }
+  }
+
+  return null;
+};
+
+const resolveStatus = ({
+  normalizedStatuses,
+  paid,
+  createdAt,
+  lastReminderAt,
+}: {
+  normalizedStatuses: string[];
+  paid: boolean;
+  createdAt: string | null;
+  lastReminderAt: string | null;
+}) => {
   if (normalizedStatuses.some((status) => REFUNDED_STATUS_TOKENS.has(status))) {
     return 'refunded';
   }
@@ -78,19 +131,35 @@ const resolveStatus = (normalizedStatuses: string[], paid: boolean) => {
     return 'converted';
   }
 
+  const hasSentStatus =
+    normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || Boolean(lastReminderAt);
+
+  if (hasSentStatus) {
+    return 'sent';
+  }
+
   if (normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status))) {
     return 'new';
   }
 
-  if (normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status))) {
-    return 'sent';
+  const hasAbandonedStatus = normalizedStatuses.some((status) => ABANDONED_STATUS_TOKENS.has(status));
+  if (hasAbandonedStatus) {
+    return 'abandoned';
+  }
+
+  const createdTime = parseTime(createdAt);
+  if (createdTime !== Number.NEGATIVE_INFINITY) {
+    const now = Date.now();
+    if (now - createdTime >= ONE_HOUR_IN_MS) {
+      return 'abandoned';
+    }
   }
 
   if (normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status))) {
     return 'pending';
   }
 
-  return 'pending';
+  return createdTime === Number.NEGATIVE_INFINITY ? 'pending' : 'new';
 };
 
 export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
@@ -138,10 +207,32 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
         ];
         const paidFromPayload = paidFromPayloadTokens.some((token) => coerceBoolean(token));
         const basePaid = coerceBoolean(row.paid) || paidFromPayload;
-        const status = resolveStatus(normalizedStatuses, basePaid);
+        const createdAt =
+          pickTimestamp(row.created_at, payload.created_at, payload.createdAt) ?? row.created_at ?? null;
+        const updatedAt =
+          pickTimestamp(row.updated_at, payload.updated_at, payload.updatedAt) ?? row.updated_at ?? null;
+        const lastReminderAt =
+          pickTimestamp(
+            row.sent_at,
+            row.last_reminder_at,
+            payload.sent_at,
+            payload.sentAt,
+            payload.manual_sent_at,
+            payload.manualSentAt,
+            payload.last_reminder_at,
+            payload.lastReminderAt,
+          ) ?? null;
+
+        const status = resolveStatus({
+          normalizedStatuses,
+          paid: basePaid,
+          createdAt,
+          lastReminderAt,
+        });
         const paid = status === 'refunded' ? false : basePaid;
         const checkoutUrl = extractCheckoutUrl(row, payload);
         const customerPhone = extractPhone(row, payload);
+        const paidAt = extractPaidAt(row, payload);
 
         return {
           id: String(row.id),
@@ -153,13 +244,13 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
           product_id: row.product_id ?? null,
           status,
           paid,
-          paid_at: row.paid_at ?? null,
+          paid_at: paidAt ?? null,
           discount_code: cleanText(row.discount_code) || discountFromPayload || null,
           expires_at: row.expires_at ?? row.schedule_at ?? null,
           last_event: row.last_event ?? null,
-          last_reminder_at: row.sent_at ?? row.last_reminder_at ?? null,
-          created_at: row.created_at ?? null,
-          updated_at: row.updated_at ?? null,
+          last_reminder_at: lastReminderAt,
+          created_at: createdAt,
+          updated_at: updatedAt,
           checkout_url: checkoutUrl,
           traffic_source: cleanText(row.traffic_source) || cleanText(payload.traffic_source) || null,
         } satisfies AbandonedCart;
