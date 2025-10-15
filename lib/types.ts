@@ -53,6 +53,7 @@ export type Sale = {
   traffic_source: string | null;
   source: string | null;
   abandoned_before_payment: boolean;
+  checkout_url: string | null;
 };
 
 export type DashboardSaleStatus =

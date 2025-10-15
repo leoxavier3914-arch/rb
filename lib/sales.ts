@@ -344,6 +344,7 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
 
     const mappedRows = rows
       .map((row) => {
+        const { checkout_url } = mapRowToDashboardSale(row);
         const payload = (row?.payload ?? {}) as Record<string, unknown>;
         const productFromPayload = cleanText(payload.product_name) || cleanText(payload.offer_name);
         const trafficFromPayload = cleanText(payload.traffic_source);
@@ -406,6 +407,7 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
           traffic_source: cleanText(row.traffic_source) || trafficFromPayload || null,
           source: cleanText(row.source) || null,
           abandoned_before_payment: abandonedBeforePayment,
+          checkout_url,
         } satisfies Sale;
       })
       .filter((sale): sale is Sale => sale !== null);
