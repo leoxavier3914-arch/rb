@@ -84,6 +84,37 @@ const extractCheckoutUrl = (row: Record<string, any>, payload: Record<string, un
   return null;
 };
 
+const resolveSaleId = (row: Record<string, any>) => {
+  const checkoutIdCandidates = [row.checkout_id, row.checkoutId];
+
+  for (const candidate of checkoutIdCandidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    } else if (candidate !== null && candidate !== undefined) {
+      const value = String(candidate).trim();
+      if (value) {
+        return value;
+      }
+    }
+  }
+
+  const rawId = row.id;
+
+  if (typeof rawId === 'string') {
+    const trimmed = rawId.trim();
+    return trimmed || rawId;
+  }
+
+  if (rawId === null || rawId === undefined) {
+    return '';
+  }
+
+  return String(rawId);
+};
+
 const parseTime = (value: string | null | undefined) => {
   if (!value) {
     return Number.NEGATIVE_INFINITY;
@@ -192,6 +223,7 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
   const productFromPayload = cleanText(payload.product_name) || cleanText(payload.offer_name) || null;
   const trafficFromPayload = cleanText(payload.traffic_source);
   const checkoutUrl = extractCheckoutUrl(row, payload);
+  const id = resolveSaleId(row);
 
   const tableNormalizedStatuses = [
     normalizeStatusToken(row.status),
@@ -235,7 +267,7 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
   });
 
   return {
-    id: String(row.id),
+    id,
     customer_email: cleanText(row.customer_email) || cleanText(row.email) || '',
     customer_name: cleanText(row.customer_name) || null,
     customer_phone: customerPhone,
@@ -351,6 +383,7 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
     const mappedRows = rows
       .map((row) => {
         const { checkout_url } = mapRowToDashboardSale(row);
+        const saleId = resolveSaleId(row);
         const payload = (row?.payload ?? {}) as Record<string, unknown>;
         const productFromPayload = cleanText(payload.product_name) || cleanText(payload.offer_name);
         const trafficFromPayload = cleanText(payload.traffic_source);
@@ -399,7 +432,7 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
           hasAbandonedStatus || (typeof abandonmentDelay === 'number' && abandonmentDelay >= ONE_HOUR_IN_MS);
 
         return {
-          id: String(row.id),
+          id: saleId,
           customer_email: cleanText(row.customer_email) || cleanText(row.email) || '',
           customer_name: cleanText(row.customer_name) || null,
           customer_phone: customerPhone,
@@ -521,12 +554,13 @@ const ensureAggregateRecord = (
 };
 
 const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
+  const canonicalId = sale.id.trim() || sale.id;
   const createdAt = sale.created_at ?? sale.paid_at ?? sale.updated_at ?? null;
   const updatedAt = sale.updated_at ?? sale.paid_at ?? sale.created_at ?? null;
 
   const baseSnapshot: AbandonedCartSnapshot = {
-    id: sale.id,
-    checkout_id: sale.id,
+    id: canonicalId,
+    checkout_id: canonicalId,
     customer_email: sale.customer_email,
     customer_name: sale.customer_name,
     customer_phone: sale.customer_phone,
@@ -548,7 +582,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
 
   if (createdAt) {
     updates.push({
-      id: `sale:${sale.id}:new`,
+      id: `sale:${canonicalId}:new`,
       timestamp: createdAt,
       status: 'new',
       event: 'Checkout criado',
@@ -566,7 +600,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
 
   if (sale.paid_at) {
     updates.push({
-      id: `sale:${sale.id}:approved`,
+      id: `sale:${canonicalId}:approved`,
       timestamp: sale.paid_at,
       status: 'approved',
       event: 'Pagamento aprovado',
@@ -586,7 +620,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
     const refundedAt = sale.updated_at ?? sale.paid_at ?? createdAt;
     if (refundedAt) {
       updates.push({
-        id: `sale:${sale.id}:refunded`,
+        id: `sale:${canonicalId}:refunded`,
         timestamp: refundedAt,
         status: 'refunded',
         event: 'Pedido reembolsado',
@@ -605,7 +639,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
 
   if (updates.length === 0) {
     updates.push({
-      id: `sale:${sale.id}`,
+      id: `sale:${canonicalId}`,
       timestamp: updatedAt,
       status: sale.status,
       event: baseSnapshot.last_event,
@@ -617,7 +651,7 @@ const createHistoryEntryFromSale = (sale: Sale): AbandonedCartHistoryEntry => {
   updates.sort((a, b) => parseTime(a.timestamp) - parseTime(b.timestamp));
 
   return {
-    cartKey: `sale:${sale.id}`,
+    cartKey: `sale:${canonicalId}`,
     snapshot: baseSnapshot,
     updates,
   };
@@ -705,7 +739,15 @@ export function buildCustomersWithCheckouts({
       const hasMatchingHistory = existingEntries.some((entry) => {
         const snapshot = entry.snapshot;
         const snapshotId = snapshot.checkout_id ?? snapshot.id;
-        return snapshotId ? snapshotId === sale.id : false;
+        if (!snapshotId) {
+          return false;
+        }
+
+        const normalizedSnapshotId =
+          typeof snapshotId === 'string' ? snapshotId.trim() : String(snapshotId).trim();
+        const normalizedSaleId = sale.id.trim() || sale.id;
+
+        return normalizedSnapshotId ? normalizedSnapshotId === normalizedSaleId : false;
       });
 
       if (hasMatchingHistory) {
