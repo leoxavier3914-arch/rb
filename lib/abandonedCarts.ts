@@ -1,6 +1,6 @@
 import { unstable_noStore as noStore } from 'next/cache';
 import { getSupabaseAdmin } from './supabaseAdmin';
-import type { AbandonedCart } from './types';
+import type { AbandonedCart, AbandonedCartSnapshot, AbandonedCartUpdate } from './types';
 import {
   APPROVED_STATUS_TOKENS,
   ABANDONED_STATUS_TOKENS,
@@ -83,7 +83,7 @@ const extractPhone = (row: Record<string, any>, payload: Record<string, unknown>
   return null;
 };
 
-const buildCartKey = (cart: AbandonedCart) => {
+const buildCartKey = (cart: AbandonedCartSnapshot) => {
   const checkoutId = cart.checkout_id?.trim();
   if (checkoutId) {
     return `checkout:${checkoutId}`;
@@ -120,6 +120,85 @@ const pickTimestamp = (...candidates: Array<unknown>) => {
   }
 
   return null;
+};
+
+const buildSnapshotFromRow = (row: Record<string, any>): AbandonedCartSnapshot => {
+  const payload = (row?.payload ?? {}) as Record<string, any>;
+  const productFromPayload = cleanText(payload.product_name) || cleanText(payload.offer_name) || '';
+  const discountFromPayload = cleanText(payload.coupon);
+  const tableNormalizedStatuses = [
+    normalizeStatusToken(row.status),
+    normalizeStatusToken(row.last_event),
+  ].filter(Boolean);
+  const payloadNormalizedStatuses = [
+    normalizeStatusToken(payload.status),
+    normalizeStatusToken(payload.order_status),
+    normalizeStatusToken(payload.orderStatus),
+    normalizeStatusToken(payload.payment_status),
+    normalizeStatusToken(payload.paymentStatus),
+  ].filter(Boolean);
+  const normalizedStatuses = [...tableNormalizedStatuses, ...payloadNormalizedStatuses];
+
+  const paidFromPayloadTokens = [
+    payload.paid,
+    payload.is_paid,
+    payload.isPaid,
+    payload.payment_paid,
+    payload.paymentPaid,
+    payload.was_paid,
+    payload.wasPaid,
+  ];
+  const paidFromPayload = paidFromPayloadTokens.some((token) => coerceBoolean(token));
+  const basePaid = coerceBoolean(row.paid) || paidFromPayload;
+  const createdAt =
+    pickTimestamp(row.created_at, payload.created_at, payload.createdAt) ?? row.created_at ?? null;
+  const updatedAt =
+    pickTimestamp(row.updated_at, payload.updated_at, payload.updatedAt) ?? row.updated_at ?? null;
+  const status = resolveStatus({
+    normalizedStatuses,
+    paid: basePaid,
+    createdAt,
+  });
+  const paid = status === 'refunded' ? false : basePaid;
+  const checkoutUrl = extractCheckoutUrl(row, payload);
+  const checkoutId = typeof row.checkout_id === 'string' ? cleanText(row.checkout_id) : null;
+  const customerPhone = extractPhone(row, payload);
+  const paidAt = extractPaidAt(row, payload);
+
+  return {
+    id: String(row.id),
+    checkout_id: checkoutId,
+    customer_email: cleanText(row.customer_email) || cleanText(row.email) || '',
+    customer_name: cleanText(row.customer_name) || null,
+    customer_phone: customerPhone,
+    product_name: cleanText(row.product_name) || cleanText(row.product_title) || productFromPayload || null,
+    product_id: row.product_id ?? null,
+    status,
+    paid,
+    paid_at: paidAt ?? null,
+    discount_code: cleanText(row.discount_code) || discountFromPayload || null,
+    expires_at: row.expires_at ?? row.schedule_at ?? null,
+    last_event: row.last_event ?? null,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    checkout_url: checkoutUrl,
+    traffic_source: cleanText(row.traffic_source) || cleanText(payload.traffic_source) || null,
+  } satisfies AbandonedCartSnapshot;
+};
+
+const buildUpdateFromRow = (row: Record<string, any>): AbandonedCartUpdate => {
+  const snapshot = buildSnapshotFromRow(row);
+  const timestamp = snapshot.updated_at ?? snapshot.created_at ?? null;
+  const source = cleanText(row.source) || null;
+
+  return {
+    id: String(row.id),
+    timestamp,
+    status: snapshot.status,
+    event: snapshot.last_event ?? null,
+    source,
+    snapshot,
+  } satisfies AbandonedCartUpdate;
 };
 
 export const resolveStatus = ({
@@ -186,92 +265,43 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
 
     const rows = (data ?? []) as Record<string, any>[];
 
-    const mapped = rows
-      .map((row) => {
-        const payload = (row?.payload ?? {}) as Record<string, any>;
-        const productFromPayload = cleanText(payload.product_name) || cleanText(payload.offer_name) || '';
-        const discountFromPayload = cleanText(payload.coupon);
-        const tableNormalizedStatuses = [
-          normalizeStatusToken(row.status),
-          normalizeStatusToken(row.last_event),
-        ].filter(Boolean);
-        const payloadNormalizedStatuses = [
-          normalizeStatusToken(payload.status),
-          normalizeStatusToken(payload.order_status),
-          normalizeStatusToken(payload.orderStatus),
-          normalizeStatusToken(payload.payment_status),
-          normalizeStatusToken(payload.paymentStatus),
-        ].filter(Boolean);
-        const normalizedStatuses = [...tableNormalizedStatuses, ...payloadNormalizedStatuses];
+    const grouped = new Map<string, { snapshot: AbandonedCartSnapshot; updates: AbandonedCartUpdate[] }>();
 
-        const paidFromPayloadTokens = [
-          payload.paid,
-          payload.is_paid,
-          payload.isPaid,
-          payload.payment_paid,
-          payload.paymentPaid,
-          payload.was_paid,
-          payload.wasPaid,
-        ];
-        const paidFromPayload = paidFromPayloadTokens.some((token) => coerceBoolean(token));
-        const basePaid = coerceBoolean(row.paid) || paidFromPayload;
-        const createdAt =
-          pickTimestamp(row.created_at, payload.created_at, payload.createdAt) ?? row.created_at ?? null;
-        const updatedAt =
-          pickTimestamp(row.updated_at, payload.updated_at, payload.updatedAt) ?? row.updated_at ?? null;
-        const status = resolveStatus({
-          normalizedStatuses,
-          paid: basePaid,
-          createdAt,
-        });
-        const paid = status === 'refunded' ? false : basePaid;
-        const checkoutUrl = extractCheckoutUrl(row, payload);
-        const checkoutId = typeof row.checkout_id === 'string' ? cleanText(row.checkout_id) : null;
-        const customerPhone = extractPhone(row, payload);
-        const paidAt = extractPaidAt(row, payload);
-
-        return {
-          id: String(row.id),
-          checkout_id: checkoutId,
-          customer_email: cleanText(row.customer_email) || cleanText(row.email) || '',
-          customer_name: cleanText(row.customer_name) || null,
-          customer_phone: customerPhone,
-          product_name:
-            cleanText(row.product_name) || cleanText(row.product_title) || productFromPayload || null,
-          product_id: row.product_id ?? null,
-          status,
-          paid,
-          paid_at: paidAt ?? null,
-          discount_code: cleanText(row.discount_code) || discountFromPayload || null,
-          expires_at: row.expires_at ?? row.schedule_at ?? null,
-          last_event: row.last_event ?? null,
-          created_at: createdAt,
-          updated_at: updatedAt,
-          checkout_url: checkoutUrl,
-          traffic_source: cleanText(row.traffic_source) || cleanText(payload.traffic_source) || null,
-        } satisfies AbandonedCart;
-      });
-
-    const deduped = new Map<string, AbandonedCart>();
-
-    for (const cart of mapped) {
-      const key = buildCartKey(cart);
-      const existing = deduped.get(key);
+    rows.forEach((row) => {
+      const update = buildUpdateFromRow(row);
+      const key = buildCartKey(update.snapshot);
+      const existing = grouped.get(key);
 
       if (!existing) {
-        deduped.set(key, cart);
-        continue;
+        grouped.set(key, { snapshot: update.snapshot, updates: [update] });
+        return;
       }
 
-      const currentTime = parseTime(cart.updated_at ?? cart.created_at ?? null);
-      const existingTime = parseTime(existing.updated_at ?? existing.created_at ?? null);
+      existing.updates.push(update);
+
+      const currentTime = parseTime(update.timestamp ?? update.snapshot.updated_at ?? update.snapshot.created_at);
+      const existingTime = parseTime(existing.snapshot.updated_at ?? existing.snapshot.created_at ?? null);
 
       if (currentTime >= existingTime) {
-        deduped.set(key, cart);
+        existing.snapshot = update.snapshot;
       }
-    }
+    });
 
-    return Array.from(deduped.values());
+    return Array.from(grouped.values()).map(({ snapshot, updates }) => ({
+      ...snapshot,
+      updates: updates
+        .slice()
+        .sort((a, b) => {
+          const timeA = parseTime(a.timestamp ?? a.snapshot.updated_at ?? a.snapshot.created_at);
+          const timeB = parseTime(b.timestamp ?? b.snapshot.updated_at ?? b.snapshot.created_at);
+
+          if (timeA !== timeB) {
+            return timeA - timeB;
+          }
+
+          return a.id.localeCompare(b.id);
+        }),
+    }));
   } catch (error) {
     console.error('[kiwify-hub] supabase indisponível', error);
     return [];
