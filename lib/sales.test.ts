@@ -62,6 +62,23 @@ describe('mapRowToDashboardSale', () => {
 
     vi.useRealTimers();
   });
+
+  it('prefers checkout urls from the main row data when available', () => {
+    const row = {
+      id: 'checkout-row',
+      customer_email: 'user@example.com',
+      status: 'approved',
+      paid: true,
+      checkout_url: 'https://checkout.kiwify.com/from-row',
+      payload: {
+        checkout_url: 'https://checkout.kiwify.com/from-payload',
+      },
+    };
+
+    const sale = mapRowToDashboardSale(row);
+
+    expect(sale.checkout_url).toBe('https://checkout.kiwify.com/from-row');
+  });
 });
 
 describe('groupLatestDashboardEvents', () => {
