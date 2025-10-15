@@ -125,11 +125,13 @@ const pickTimestamp = (...candidates: Array<unknown>) => {
 
 const resolveStatus = ({
   normalizedStatuses,
+  tableNormalizedStatuses,
   paid,
   createdAt,
   lastReminderAt,
 }: {
   normalizedStatuses: string[];
+  tableNormalizedStatuses: string[];
   paid: boolean;
   createdAt: string | null;
   lastReminderAt: string | null;
@@ -146,8 +148,10 @@ const resolveStatus = ({
     return 'converted';
   }
 
+  const lastReminderTime = parseTime(lastReminderAt);
+  const hasValidReminderTime = lastReminderTime !== Number.NEGATIVE_INFINITY;
   const hasSentStatus =
-    normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || Boolean(lastReminderAt);
+    tableNormalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || hasValidReminderTime;
 
   if (hasSentStatus) {
     return 'sent';
@@ -201,15 +205,18 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
         const payload = (row?.payload ?? {}) as Record<string, any>;
         const productFromPayload = cleanText(payload.product_name) || cleanText(payload.offer_name) || '';
         const discountFromPayload = cleanText(payload.coupon);
-        const normalizedStatuses = [
+        const tableNormalizedStatuses = [
           normalizeStatusToken(row.status),
           normalizeStatusToken(row.last_event),
+        ].filter(Boolean);
+        const payloadNormalizedStatuses = [
           normalizeStatusToken(payload.status),
           normalizeStatusToken(payload.order_status),
           normalizeStatusToken(payload.orderStatus),
           normalizeStatusToken(payload.payment_status),
           normalizeStatusToken(payload.paymentStatus),
         ].filter(Boolean);
+        const normalizedStatuses = [...tableNormalizedStatuses, ...payloadNormalizedStatuses];
 
         const paidFromPayloadTokens = [
           payload.paid,
@@ -240,6 +247,7 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
 
         const status = resolveStatus({
           normalizedStatuses,
+          tableNormalizedStatuses,
           paid: basePaid,
           createdAt,
           lastReminderAt,
