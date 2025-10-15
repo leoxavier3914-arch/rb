@@ -8,6 +8,7 @@ import { parsePgTimestamp } from '../../lib/dates';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
+import { getConversionLabel } from '../../lib/conversion';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,21 +28,6 @@ const formatPaidAt = (sale: Sale): { label: string; timestamp: number } => {
   });
 
   return { label: formatter.format(paidDate), timestamp: paidDate.getTime() };
-};
-
-const DIRECT_PURCHASE_SOURCE = 'kiwify.webhook_purchase';
-
-export const getConversionLabel = (sale: Sale): string => {
-  if (sale.email_follow_up) {
-    return 'Aprovado retorno';
-  }
-
-  const source = sale.source?.toLowerCase() ?? '';
-  if (source && source !== DIRECT_PURCHASE_SOURCE) {
-    return 'Carrinho recuperado';
-  }
-
-  return 'Aprovado direto';
 };
 
 type TopProduct = {

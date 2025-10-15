@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getConversionLabel } from './page';
+import { getConversionLabel } from '../../lib/conversion';
 import type { Sale } from '../../lib/types';
 
 const buildSale = (overrides: Partial<Sale> = {}): Sale => ({
