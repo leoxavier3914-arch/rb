@@ -27,10 +27,13 @@ export type Sale = {
   product_name: string | null;
   product_id: string | null;
   status: 'approved' | 'refunded';
+  created_at: string | null;
+  updated_at: string | null;
   paid_at: string | null;
   traffic_source: string | null;
   source: string | null;
   email_follow_up: boolean;
+  abandoned_before_payment: boolean;
 };
 
 export type DashboardSaleStatus =

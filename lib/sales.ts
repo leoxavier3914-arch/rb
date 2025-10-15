@@ -364,6 +364,10 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
         const status: Sale['status'] = hasRefund ? 'refunded' : 'approved';
         const paidAt = extractPaidAt(row, payload);
         const customerPhone = extractPhone(row, payload);
+        const createdAt =
+          pickTimestamp(row.created_at, payload.created_at, payload.createdAt) ?? row.created_at ?? null;
+        const updatedAt =
+          pickTimestamp(row.updated_at, payload.updated_at, payload.updatedAt) ?? row.updated_at ?? null;
         const lastReminderAt =
           pickTimestamp(
             row.sent_at,
@@ -379,6 +383,15 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
         const hasFollowUpStatus = normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status));
         const emailFollowUp = reminderValidForDisplay || (!hasReminderTime && hasFollowUpStatus);
 
+        const hasAbandonedStatus = normalizedStatuses.some((status) => ABANDONED_STATUS_TOKENS.has(status));
+        const createdTime = parseTime(createdAt);
+        const paidTime = parseTime(paidAt);
+        const hasValidTimeline =
+          Number.isFinite(createdTime) && Number.isFinite(paidTime) && paidTime > createdTime;
+        const abandonmentDelay = hasValidTimeline ? paidTime - createdTime : null;
+        const abandonedBeforePayment =
+          hasAbandonedStatus || (typeof abandonmentDelay === 'number' && abandonmentDelay >= ONE_HOUR_IN_MS);
+
         return {
           id: String(row.id),
           customer_email: cleanText(row.customer_email) || cleanText(row.email) || '',
@@ -388,10 +401,13 @@ export async function fetchApprovedSales(): Promise<Sale[]> {
             cleanText(row.product_name) || cleanText(row.product_title) || productFromPayload || null,
           product_id: cleanText(row.product_id) || null,
           status,
+          created_at: createdAt,
+          updated_at: updatedAt,
           paid_at: paidAt ?? null,
           traffic_source: cleanText(row.traffic_source) || trafficFromPayload || null,
           source: cleanText(row.source) || null,
           email_follow_up: emailFollowUp,
+          abandoned_before_payment: abandonedBeforePayment,
         } satisfies Sale;
       })
       .filter((sale): sale is Sale => sale !== null);
