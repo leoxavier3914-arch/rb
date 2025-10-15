@@ -39,8 +39,7 @@ export type DashboardSaleStatus =
   | 'approved'
   | 'abandoned'
   | 'refunded'
-  | 'refused'
-  | 'pending';
+  | 'refused';
 
 export type DashboardSale = {
   id: string;
