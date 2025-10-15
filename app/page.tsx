@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic';
 
 function computeMetrics(carts: AbandonedCart[]) {
   const total = carts.length;
+  const fresh = carts.filter((i) => i.status === 'new').length;
   const pending = carts.filter((i) => i.status === 'pending').length;
   const sent = carts.filter((i) => i.status === 'sent').length;
   const converted = carts.filter((i) => i.status === 'converted').length;
@@ -21,7 +22,7 @@ function computeMetrics(carts: AbandonedCart[]) {
     return !!d && d.getTime() < Date.now();
   }).length;
 
-  return { total, pending, sent, converted, expired };
+  return { total, fresh, pending, sent, converted, expired };
 }
 
 export default async function Home() {
@@ -47,8 +48,9 @@ export default async function Home() {
         </p>
       </header>
 
-      <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
         <Card title="Total de registros" value={metrics.total} description="Todos os carrinhos recebidos" />
+        <Card title="Novos" value={metrics.fresh} description="Eventos recém recebidos" />
         <Card title="Pendentes" value={metrics.pending} description="Aguardando envio de e-mail" />
         <Card title="E-mails enviados" value={metrics.sent} description="Lembretes já disparados" />
         <Card title="Convertidos" value={metrics.converted} description="Clientes que finalizaram a compra" />

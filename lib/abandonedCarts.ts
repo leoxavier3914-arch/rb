@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from './supabaseAdmin';
 import type { AbandonedCart } from './types';
 import {
   APPROVED_STATUS_TOKENS,
+  NEW_STATUS_TOKENS,
   PENDING_STATUS_TOKENS,
   REFUNDED_STATUS_TOKENS,
   SENT_STATUS_TOKENS,
@@ -75,6 +76,10 @@ const resolveStatus = (normalizedStatuses: string[], paid: boolean) => {
 
   if (paid || normalizedStatuses.some((status) => APPROVED_STATUS_TOKENS.has(status))) {
     return 'converted';
+  }
+
+  if (normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status))) {
+    return 'new';
   }
 
   if (normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status))) {

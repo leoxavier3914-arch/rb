@@ -145,3 +145,5 @@ export const PENDING_STATUS_TOKENS = new Set([
   'open',
   'em_aberto',
 ]);
+
+export const NEW_STATUS_TOKENS = new Set(['new', 'novo', 'nova']);

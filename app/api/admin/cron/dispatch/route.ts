@@ -78,6 +78,27 @@ export async function POST(req: Request) {
     auth: { persistSession: false },
   });
 
+  let automaticEmailEnabled = true;
+  try {
+    const { data: settingsRow, error: settingsError } = await supabase
+      .from('email_integration_settings')
+      .select('automatic_email_enabled')
+      .eq('id', 'default')
+      .maybeSingle();
+
+    if (settingsError) {
+      console.warn('[cron/dispatch] falha ao consultar configuração de envio automático', settingsError);
+    } else if (settingsRow && settingsRow.automatic_email_enabled === false) {
+      automaticEmailEnabled = false;
+    }
+  } catch (error) {
+    console.warn('[cron/dispatch] erro inesperado ao verificar configuração automática', error);
+  }
+
+  if (!automaticEmailEnabled) {
+    return NextResponse.json({ ok: true, sent: 0, skipped: 'automatic_email_disabled' });
+  }
+
   // busca pendentes “vencidos” em lotes até não restarem registros elegíveis
   const now = new Date();
   const nowIso = now.toISOString();
@@ -96,7 +117,7 @@ export async function POST(req: Request) {
     const { data: rows, error } = await supabase
       .from('abandoned_emails')
       .select(selectColumns)
-      .eq('status', 'pending')
+      .in('status', ['pending', 'new'])
       .or(
         `schedule_at.lte.${nowIso},and(schedule_at.is.null,created_at.lte.${legacyThreshold})`
       )
