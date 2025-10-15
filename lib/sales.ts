@@ -134,11 +134,11 @@ const resolveDashboardStatus = ({
     }
   }
 
-  if (normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status))) {
-    return 'pending';
-  }
+  const hasFreshToken = normalizedStatuses.some(
+    (status) => NEW_STATUS_TOKENS.has(status) || PENDING_STATUS_TOKENS.has(status),
+  );
 
-  if (normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status))) {
+  if (hasFreshToken) {
     return 'new';
   }
 

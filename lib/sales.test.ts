@@ -21,7 +21,7 @@ describe('mapRowToDashboardSale', () => {
     expect(sale.status).toBe('approved');
   });
 
-  it('propagates pending tokens when the cart is still within the grace period', () => {
+  it('normalizes pending tokens to new while within the grace period', () => {
     const row = {
       id: '2',
       customer_email: 'user@example.com',
@@ -34,7 +34,7 @@ describe('mapRowToDashboardSale', () => {
 
     const sale = mapRowToDashboardSale(row);
 
-    expect(sale.status).toBe('pending');
+    expect(sale.status).toBe('new');
   });
 
   it('marks unpaid carts older than one hour as abandoned', () => {
