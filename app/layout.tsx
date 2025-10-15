@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import Link from 'next/link';
+import MainNav from '../components/MainNav';
 import '../styles/globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -19,45 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="text-lg font-semibold text-white transition hover:text-brand">
               Kiwify Hub
             </Link>
-            <nav>
-              <ul className="flex flex-wrap items-center gap-4 text-sm font-medium text-slate-300">
-                <li>
-                  <Link href="/" className="transition hover:text-white">
-                    Dashboard
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/sales" className="transition hover:text-white">
-                    Vendas aprovadas
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/integracoes" className="transition hover:text-white">
-                    Integrações
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/clientes" className="transition hover:text-white">
-                    Clientes
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/ads" className="transition hover:text-white">
-                    Gestão de Ads
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/test" className="transition hover:text-white">
-                    Envio de teste
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/login" className="transition hover:text-white">
-                    Login
-                  </Link>
-                </li>
-              </ul>
-            </nav>
+            <MainNav />
           </header>
           {children}
         </div>
