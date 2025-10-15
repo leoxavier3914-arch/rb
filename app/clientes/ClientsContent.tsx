@@ -11,6 +11,7 @@ import {
 } from '../../components/AbandonedCartsTable';
 import { formatSaoPaulo } from '../../lib/dates';
 import { STATUS_LABEL, getBadgeVariant } from '../../lib/status';
+import { PURCHASE_TYPE_LABEL, resolvePurchaseType } from '../../lib/purchaseType';
 import type {
   AbandonedCartHistoryEntry,
   AbandonedCartSnapshot,
@@ -432,6 +433,13 @@ export default function ClientsContent({ clients }: ClientsContentProps) {
     () => (updates.length > 0 ? [...updates].reverse() : []),
     [updates],
   );
+  const purchaseType = useMemo(() => {
+    if (!activeHistory) {
+      return null;
+    }
+    return resolvePurchaseType(activeHistory.updates, activeHistory.snapshot);
+  }, [activeHistory]);
+  const purchaseTypeLabel = purchaseType ? PURCHASE_TYPE_LABEL[purchaseType] : null;
 
   const selectedUpdate = useMemo(() => {
     if (updates.length === 0) {
@@ -547,18 +555,26 @@ export default function ClientsContent({ clients }: ClientsContentProps) {
               {historyEntries.length === 0 ? (
                 <p className="text-sm text-slate-400">Nenhum checkout registrado.</p>
               ) : (
-                historyEntries.map((entry) => (
-                  <HistoryCheckoutListItem
-                    key={entry.cartKey}
-                    entry={entry}
-                    active={entry.cartKey === selectedHistoryKey}
-                    isCurrent={false}
-                    onSelect={(key) => {
-                      setSelectedHistoryKey(key);
-                      setSelectedUpdateId(null);
-                    }}
-                  />
-                ))
+                historyEntries.map((entry) => {
+                  const entryPurchaseType = resolvePurchaseType(entry.updates, entry.snapshot);
+                  const entryPurchaseTypeLabel = entryPurchaseType
+                    ? PURCHASE_TYPE_LABEL[entryPurchaseType]
+                    : null;
+
+                  return (
+                    <HistoryCheckoutListItem
+                      key={entry.cartKey}
+                      entry={entry}
+                      active={entry.cartKey === selectedHistoryKey}
+                      isCurrent={false}
+                      purchaseTypeLabel={entryPurchaseTypeLabel}
+                      onSelect={(key) => {
+                        setSelectedHistoryKey(key);
+                        setSelectedUpdateId(null);
+                      }}
+                    />
+                  );
+                })
               )}
             </div>
           </section>
@@ -576,6 +592,7 @@ export default function ClientsContent({ clients }: ClientsContentProps) {
                     key={update.id}
                     update={update}
                     active={update.id === selectedUpdateId}
+                    purchaseTypeLabel={purchaseTypeLabel}
                     onSelect={(id) => setSelectedUpdateId(id)}
                   />
                 ))
