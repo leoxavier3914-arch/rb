@@ -21,22 +21,30 @@ const buildSale = (overrides: Partial<Sale> = {}): Sale => ({
 });
 
 describe('getConversionLabel', () => {
-  it('returns "Aprovado retorno" when the sale was abandoned before payment', () => {
-    const sale = buildSale({ abandoned_before_payment: true });
-    expect(getConversionLabel(sale)).toBe('Aprovado retorno');
-  });
-
-  it('returns "Aprovado retorno" for follow-up approvals', () => {
+  it('returns "Carrinho recuperado" when the sale has follow-up emails', () => {
     const sale = buildSale({ email_follow_up: true });
-    expect(getConversionLabel(sale)).toBe('Aprovado retorno');
+    expect(getConversionLabel(sale)).toBe('Carrinho recuperado');
   });
 
-  it('returns "Carrinho recuperado" for non-direct conversions without follow-up flag', () => {
+  it('returns "Carrinho recuperado" for non-direct conversions', () => {
     const sale = buildSale({ source: 'custom.integration' });
     expect(getConversionLabel(sale)).toBe('Carrinho recuperado');
   });
 
-  it('returns "Aprovado direto" as fallback', () => {
+  it('returns "Carrinho recuperado" when abandoned sales show remarketing signals', () => {
+    const sale = buildSale({
+      abandoned_before_payment: true,
+      email_follow_up: true,
+    });
+    expect(getConversionLabel(sale)).toBe('Carrinho recuperado');
+  });
+
+  it('returns "Aprovado retorno" for abandoned sales without remarketing signals', () => {
+    const sale = buildSale({ abandoned_before_payment: true });
+    expect(getConversionLabel(sale)).toBe('Aprovado retorno');
+  });
+
+  it('returns "Aprovado direto" as fallback for direct approvals', () => {
     const sale = buildSale();
     expect(getConversionLabel(sale)).toBe('Aprovado direto');
   });
