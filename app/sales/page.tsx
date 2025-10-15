@@ -19,11 +19,6 @@ const STATUS_CARD_CONFIG: Array<{
     description: 'Pagamentos confirmados automaticamente em até 1 hora.',
   },
   {
-    key: 'refunded',
-    title: 'Vendas reembolsadas',
-    description: 'Pedidos marcados como reembolsados ou estornados.',
-  },
-  {
     key: 'abandoned',
     title: 'Carrinhos abandonados',
     description: 'Pix e intenções sem pagamento após 1 hora.',
@@ -34,14 +29,19 @@ const STATUS_CARD_CONFIG: Array<{
     description: 'Pagamentos concluídos após e-mail ou WhatsApp.',
   },
   {
-    key: 'sent',
-    title: 'E-mails enviados',
-    description: 'Lembretes disparados aguardando retorno da cliente.',
-  },
-  {
     key: 'refused',
     title: 'Compras recusadas',
     description: 'Tentativas com pagamento negado ou cancelado.',
+  },
+  {
+    key: 'refunded',
+    title: 'Vendas reembolsadas',
+    description: 'Pedidos marcados como reembolsados ou estornados.',
+  },
+  {
+    key: 'sent',
+    title: 'E-mails enviados',
+    description: 'Lembretes disparados aguardando retorno da cliente.',
   },
   {
     key: 'new',
@@ -79,6 +79,7 @@ export default async function SalesPage() {
 
   const sales = await fetchDashboardSales();
   const statusCounters = buildStatusCounters(sales);
+  const totalWithoutSent = sales.filter((sale) => sale.status !== 'sent').length;
 
   return (
     <main className="flex flex-1 flex-col gap-10 pb-10">
@@ -92,7 +93,11 @@ export default async function SalesPage() {
       </header>
 
       <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <Card title="Registros totais" value={sales.length} description="Todos os carrinhos monitorados." />
+        <Card
+          title="Registros totais"
+          value={totalWithoutSent}
+          description="Todos os status exceto e-mails enviados."
+        />
         {STATUS_CARD_CONFIG.map(({ key, title, description }) => (
           <Card key={key} title={title} value={statusCounters[key]} description={description} />
         ))}

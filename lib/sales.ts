@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from './supabaseAdmin';
 import type { DashboardSale, DashboardSaleStatus, Sale } from './types';
 import {
   APPROVED_STATUS_TOKENS,
+  ABANDONED_STATUS_TOKENS,
   PENDING_STATUS_TOKENS,
   REFUNDED_STATUS_TOKENS,
   REFUSED_STATUS_TOKENS,
@@ -123,6 +124,7 @@ const resolveDashboardStatus = ({
   const hasSentStatus =
     normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || Boolean(lastReminderAt);
 
+  const hasAbandonedStatus = normalizedStatuses.some((status) => ABANDONED_STATUS_TOKENS.has(status));
   const hasPendingStatus = normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status));
 
   if (paid) {
@@ -144,6 +146,10 @@ const resolveDashboardStatus = ({
 
   if (hasSentStatus) {
     return 'sent';
+  }
+
+  if (hasAbandonedStatus) {
+    return 'abandoned';
   }
 
   const createdTime = parseTime(createdAt);
@@ -198,6 +204,12 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
     pickTimestamp(
       row.sent_at,
       row.last_reminder_at,
+      payload.sent_at,
+      payload.sentAt,
+      payload.manual_sent_at,
+      payload.manualSentAt,
+      payload.last_reminder_at,
+      payload.lastReminderAt,
     ) ?? null;
 
   const status = resolveDashboardStatus({

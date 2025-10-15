@@ -84,6 +84,16 @@ export const APPROVED_STATUS_TOKENS = new Set([
   'concluído',
 ]);
 
+export const ABANDONED_STATUS_TOKENS = new Set([
+  'abandoned',
+  'abandonado',
+  'abandonada',
+  'abandoned_cart',
+  'abandoned_checkout',
+  'carrinho_abandonado',
+  'carrinho-abandonado',
+]);
+
 export const REFUNDED_STATUS_TOKENS = new Set([
   'refunded',
   'refund',

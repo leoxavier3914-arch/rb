@@ -93,9 +93,9 @@ export default function SalesTable({ sales }: SalesTableProps) {
         render: (sale: DashboardSale) => formatSaoPaulo(sale.created_at),
       },
       {
-        key: 'updated_at' as const,
-        header: 'Atualização',
-        render: (sale: DashboardSale) => formatSaoPaulo(sale.paid_at ?? sale.updated_at ?? sale.last_reminder_at),
+        key: 'paid_at' as const,
+        header: 'Pago em',
+        render: (sale: DashboardSale) => formatSaoPaulo(sale.paid_at),
       },
       {
         key: 'status' as const,

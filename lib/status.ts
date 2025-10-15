@@ -3,7 +3,7 @@ import type { BadgeVariant } from '../components/Badge';
 export const STATUS_LABEL: Record<BadgeVariant, string> = {
   new: 'Novo',
   approved: 'Aprovado',
-  pending: 'Abandonado',
+  pending: 'Pendente',
   abandoned: 'Abandonado',
   sent: 'E-mail enviado',
   converted: 'Convertido',

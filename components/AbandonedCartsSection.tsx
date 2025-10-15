@@ -30,6 +30,11 @@ export default function AbandonedCartsSection({ carts, expiredCount }: Abandoned
           buttonLabel: 'Pendentes primeiro',
           buttonTitle: 'Ordenar com pendentes no topo, seguidos de e-mails enviados e convertidos.',
         };
+      case 'abandoned':
+        return {
+          buttonLabel: 'Abandonados primeiro',
+          buttonTitle: 'Ordenar com carrinhos abandonados no topo, seguidos dos demais status.',
+        };
       case 'sent':
         return {
           buttonLabel: 'E-mails enviados primeiro',
@@ -45,7 +50,7 @@ export default function AbandonedCartsSection({ carts, expiredCount }: Abandoned
 
   const handleToggleSort = () => {
     setSortMode((current) => {
-      const sequence: AbandonedCartSortMode[] = ['default', 'converted', 'new', 'pending', 'sent'];
+      const sequence: AbandonedCartSortMode[] = ['default', 'converted', 'new', 'pending', 'abandoned', 'sent'];
       const currentIndex = sequence.indexOf(current);
       const nextIndex = currentIndex === -1 ? 1 : (currentIndex + 1) % sequence.length;
       return sequence[nextIndex];
