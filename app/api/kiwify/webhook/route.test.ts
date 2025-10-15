@@ -17,6 +17,11 @@ const { fakeDatabase, createClientMock, createClientFactory } = vi.hoisted(() =>
       return this;
     }
 
+    neq(column: string, value: any) {
+      this.filters.push((row) => row?.[column] !== value);
+      return this;
+    }
+
     in(column: string, values: any[]) {
       const normalizedValues = values
         .map((value) => {
@@ -159,8 +164,13 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: createClientMock,
 }));
 
+vi.mock('next/cache', () => ({
+  unstable_noStore: () => {},
+}));
+
 import { POST } from './route';
 import { extractTrafficSource } from './traffic';
+import { fetchAbandonedCarts } from '../../../../lib/abandonedCarts';
 
 beforeEach(() => {
   fakeDatabase.rows.length = 0;
@@ -346,5 +356,32 @@ describe('POST handler - checkout renewal', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('fetchAbandonedCarts - manual reminder status handling', () => {
+  it('mantém carrinho como pendente quando apenas o payload indica envio manual', async () => {
+    const nowIso = new Date().toISOString();
+
+    fakeDatabase.rows.push({
+      id: 'cart-manual-email',
+      email: 'cliente@example.com',
+      customer_email: 'cliente@example.com',
+      status: 'pending',
+      last_event: null,
+      last_reminder_at: null,
+      created_at: nowIso,
+      updated_at: nowIso,
+      paid: false,
+      source: 'kiwify.webhook',
+      payload: {
+        status: 'manual.email.sent',
+      },
+    });
+
+    const carts = await fetchAbandonedCarts();
+
+    expect(carts).toHaveLength(1);
+    expect(carts[0].status).toBe('pending');
   });
 });

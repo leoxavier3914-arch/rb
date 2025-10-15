@@ -100,6 +100,7 @@ const pickTimestamp = (...candidates: Array<unknown>) => {
 
 type ResolveStatusParams = {
   normalizedStatuses: string[];
+  tableNormalizedStatuses: string[];
   paid: boolean;
   paidAt: string | null;
   createdAt: string | null;
@@ -108,6 +109,7 @@ type ResolveStatusParams = {
 
 const resolveDashboardStatus = ({
   normalizedStatuses,
+  tableNormalizedStatuses,
   paid,
   paidAt,
   createdAt,
@@ -121,18 +123,18 @@ const resolveDashboardStatus = ({
     return 'refused';
   }
 
+  const reminderTime = parseTime(lastReminderAt);
+  const hasReminderTime = reminderTime !== Number.NEGATIVE_INFINITY;
   const hasSentStatus =
-    normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || Boolean(lastReminderAt);
-
+    tableNormalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || hasReminderTime;
   const hasAbandonedStatus = normalizedStatuses.some((status) => ABANDONED_STATUS_TOKENS.has(status));
   const hasPendingStatus = normalizedStatuses.some((status) => PENDING_STATUS_TOKENS.has(status));
 
   if (paid) {
     if (hasSentStatus) {
-      const reminderTime = parseTime(lastReminderAt);
       const paidTime = parseTime(paidAt);
 
-      if (reminderTime !== Number.NEGATIVE_INFINITY && paidTime !== Number.NEGATIVE_INFINITY) {
+      if (hasReminderTime && paidTime !== Number.NEGATIVE_INFINITY) {
         if (paidTime >= reminderTime) {
           return 'converted';
         }
@@ -168,15 +170,18 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
   const trafficFromPayload = cleanText(payload.traffic_source);
   const checkoutUrl = extractCheckoutUrl(row, payload);
 
-  const normalizedStatuses = [
+  const tableNormalizedStatuses = [
     normalizeStatusToken(row.status),
+    normalizeStatusToken(row.last_event),
+  ].filter(Boolean);
+  const payloadNormalizedStatuses = [
     normalizeStatusToken(payload.status),
     normalizeStatusToken(payload.order_status),
     normalizeStatusToken(payload.orderStatus),
     normalizeStatusToken(payload.payment_status),
     normalizeStatusToken(payload.paymentStatus),
-    normalizeStatusToken(row.last_event),
   ].filter(Boolean);
+  const normalizedStatuses = [...tableNormalizedStatuses, ...payloadNormalizedStatuses];
 
   const paidFromPayloadTokens = [
     payload.paid,
@@ -214,6 +219,7 @@ const mapRowToDashboardSale = (row: Record<string, any>): DashboardSale => {
 
   const status = resolveDashboardStatus({
     normalizedStatuses,
+    tableNormalizedStatuses,
     paid,
     paidAt,
     createdAt,
