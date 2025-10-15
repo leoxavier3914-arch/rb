@@ -7,6 +7,7 @@ import Table from './Table';
 import type { AbandonedCart } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
+import { normalizeStatusToken, SENT_STATUS_TOKENS } from '../lib/normalization';
 
 export type AbandonedCartSortMode = 'default' | 'converted' | 'new' | 'pending' | 'abandoned';
 
@@ -40,8 +41,8 @@ const hasEmailFollowUp = (cart: AbandonedCart) => {
     return true;
   }
 
-  const event = cart.last_event?.toLowerCase() ?? '';
-  return event.includes('email');
+  const event = normalizeStatusToken(cart.last_event);
+  return event ? SENT_STATUS_TOKENS.has(event) : false;
 };
 
 export default function AbandonedCartsTable({ carts, sortMode = 'default' }: AbandonedCartsTableProps) {

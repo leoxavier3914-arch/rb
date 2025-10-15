@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
 import type { AbandonedCart } from '../lib/types';
 import { parsePgTimestamp } from '../lib/dates';
+import { normalizeStatusToken, SENT_STATUS_TOKENS } from '../lib/normalization';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +42,9 @@ function computeMetrics(carts: AbandonedCart[]) {
         break;
     }
 
-    if (cart.last_reminder_at || (cart.last_event?.toLowerCase() ?? '').includes('email')) {
+    const lastEventToken = normalizeStatusToken(cart.last_event);
+
+    if (cart.last_reminder_at || (lastEventToken && SENT_STATUS_TOKENS.has(lastEventToken))) {
       metrics.contacted += 1;
     }
 
