@@ -123,7 +123,7 @@ const pickTimestamp = (...candidates: Array<unknown>) => {
   return null;
 };
 
-const resolveStatus = ({
+export const resolveStatus = ({
   normalizedStatuses,
   tableNormalizedStatuses,
   paid,
@@ -153,10 +153,6 @@ const resolveStatus = ({
   const hasFollowUpEvent =
     normalizedStatuses.some((status) => SENT_STATUS_TOKENS.has(status)) || hasValidReminderTime;
 
-  if (normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status))) {
-    return 'new';
-  }
-
   const hasAbandonedStatus = normalizedStatuses.some((status) => ABANDONED_STATUS_TOKENS.has(status));
   if (hasAbandonedStatus) {
     return 'abandoned';
@@ -168,6 +164,13 @@ const resolveStatus = ({
     if (now - createdTime >= ONE_HOUR_IN_MS) {
       return 'abandoned';
     }
+  }
+
+  if (normalizedStatuses.some((status) => NEW_STATUS_TOKENS.has(status))) {
+    return 'new';
+  }
+
+  if (createdTime !== Number.NEGATIVE_INFINITY) {
     if (hasFollowUpEvent) {
       return 'pending';
     }
