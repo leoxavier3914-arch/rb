@@ -103,11 +103,10 @@ export default function AbandonedCartsTable({ carts, sortMode = 'default' }: Aba
                   {statusIndicatorId === item.id ? (
                     <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900/95 px-2 py-1 text-xs font-semibold text-white shadow-xl ring-1 ring-slate-700">
                       <span className={isConverted ? 'text-emerald-200' : 'text-sky-200'}>{indicatorLabel}</span>
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-            );
+                    </div>
+                  ) : null}
+                </div>
+              );
             })()}
 
             <div className="flex flex-col">
