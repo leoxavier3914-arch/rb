@@ -280,3 +280,71 @@ describe('POST handler - product separation', () => {
     expect(checkoutIds.size).toBe(2);
   });
 });
+
+describe('POST handler - checkout renewal', () => {
+  it('reabre o carrinho quando o checkout muda', async () => {
+    vi.useFakeTimers();
+    try {
+      const baseNow = new Date('2024-07-01T12:00:00.000Z');
+      vi.setSystemTime(baseNow);
+
+      const existingRow = {
+        id: 'cart-1',
+        email: 'cliente@example.com',
+        customer_email: 'cliente@example.com',
+        customer_name: 'Cliente',
+        checkout_id: 'old-checkout',
+        checkout_url: 'https://pay.example.com/old-checkout',
+        product_id: 'prod-1',
+        product_title: 'Curso Antigo',
+        status: 'paused',
+        schedule_at: '2024-06-20T10:00:00.000Z',
+        last_event: 'previous_event',
+        last_reminder_at: '2024-06-21T10:00:00.000Z',
+        created_at: '2024-06-01T10:00:00.000Z',
+        updated_at: '2024-06-10T10:00:00.000Z',
+        paid: false,
+        paid_at: null,
+        payload: { old: true },
+        discount_code: null,
+        source: 'kiwify.webhook',
+        traffic_source: 'unknown',
+      };
+
+      fakeDatabase.rows.push(existingRow);
+
+      const payload = {
+        email: 'cliente@example.com',
+        checkout_id: 'new-checkout-123',
+        checkout_url: 'https://pay.example.com/?checkout=new-checkout-123',
+        status: 'pending',
+      };
+
+      const request = new Request('https://example.com/api/kiwify/webhook', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+
+      expect(fakeDatabase.rows).toHaveLength(1);
+      const updatedRow = fakeDatabase.rows[0];
+
+      expect(updatedRow.id).toBe('cart-1');
+      expect(updatedRow.checkout_id).toBe('new-checkout-123');
+      expect(updatedRow.status).toBe('new');
+      expect(updatedRow.checkout_url).toBe('https://pay.example.com/?checkout=new-checkout-123');
+      expect(updatedRow.last_event).toBeNull();
+      expect(updatedRow.last_reminder_at).toBeNull();
+      expect(updatedRow.updated_at).toBe(baseNow.toISOString());
+
+      const expectedScheduleAt = new Date(baseNow.getTime() + 24 * 3600 * 1000).toISOString();
+      expect(updatedRow.schedule_at).toBe(expectedScheduleAt);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
