@@ -101,6 +101,12 @@ describe("/api/kiwify/webhook", () => {
         created_at: "2024-12-23T15:55:00Z",
         updated_at: "2024-12-23T15:58:00Z",
         amount: { value_cents: 19990, currency: "BRL" },
+        commissions: {
+          charge_amount: 19990,
+          producer_commission: 14990,
+          kiwify_commission: 5000,
+          affiliate_commission: 0,
+        },
         payment: { method: "credit_card", paid_at: "2024-12-23T15:58:00Z" },
         customer: { name: "Alice", email: "alice@example.com" },
         items: [{ product: { name: "Curso de Testes" } }],
@@ -117,7 +123,11 @@ describe("/api/kiwify/webhook", () => {
     expect(stored.sale_id).toBe("sale-approved");
     expect(stored.payment_method).toBe("credit_card");
     expect(stored.currency).toBe("BRL");
-    expect(stored.amount).toBeCloseTo(199.9, 3);
+    expect(stored.amount).toBeCloseTo(149.9, 3);
+    expect(stored.net_amount).toBeCloseTo(149.9, 3);
+    expect(stored.gross_amount).toBeCloseTo(199.9, 3);
+    expect(stored.kiwify_commission_amount).toBeCloseTo(50, 3);
+    expect(stored.affiliate_commission_amount).toBeCloseTo(0, 3);
   });
 
   it("mantém registros distintos para webhooks com mesmo e-mail e IDs diferentes", async () => {
