@@ -11,6 +11,7 @@ import type {
   AbandonedCartUpdate,
 } from '../lib/types';
 import { formatSaoPaulo } from '../lib/dates';
+import { normalizeStatusToken, resolvePriorityStatusToken } from '../lib/normalization';
 import { getBadgeVariant, STATUS_LABEL } from '../lib/status';
 import { PURCHASE_TYPE_LABEL, resolvePurchaseType } from '../lib/purchaseType';
 
@@ -40,6 +41,34 @@ const DEFAULT_VISIBLE_STATUSES: BadgeVariant[] = [
   'refunded',
   'error',
 ];
+
+const resolveDisplayStatus = (
+  primaryStatus: string | null | undefined,
+  fallbackStatus: string | null | undefined,
+): string | null => {
+  const updatePriority = resolvePriorityStatusToken(primaryStatus);
+  const snapshotPriority = resolvePriorityStatusToken(fallbackStatus);
+
+  if (snapshotPriority && snapshotPriority !== updatePriority) {
+    return snapshotPriority;
+  }
+
+  if (updatePriority) {
+    return updatePriority;
+  }
+
+  const normalizedPrimary = normalizeStatusToken(primaryStatus);
+  if (normalizedPrimary) {
+    return normalizedPrimary;
+  }
+
+  if (snapshotPriority) {
+    return snapshotPriority;
+  }
+
+  const normalizedFallback = normalizeStatusToken(fallbackStatus);
+  return normalizedFallback || null;
+};
 
 const getTimestamp = (value?: string | null) => {
   if (!value) return 0;
@@ -492,9 +521,15 @@ export function HistoryCheckoutListItem({
 
   const latestUpdate = entry.updates[entry.updates.length - 1];
   const snapshot = latestUpdate?.snapshot ?? entry.snapshot;
-  const statusToken = latestUpdate?.status ?? snapshot.status;
-  const statusVariant = getBadgeVariant(statusToken);
-  const statusLabel = STATUS_LABEL[statusVariant] ?? statusToken;
+  const resolvedStatusToken = resolveDisplayStatus(
+    latestUpdate?.status ?? latestUpdate?.snapshot.status ?? null,
+    snapshot.status,
+  );
+  const statusVariant = getBadgeVariant(resolvedStatusToken ?? '');
+  const statusLabel =
+    statusVariant === 'error' && !resolvedStatusToken
+      ? '—'
+      : STATUS_LABEL[statusVariant] ?? resolvedStatusToken ?? '—';
   const timestamp = latestUpdate?.timestamp ?? snapshot.updated_at ?? snapshot.created_at;
   const paymentLabel = snapshot.paid ? 'Pagamento confirmado' : 'Sem pagamento registrado';
   const checkoutLabel = snapshot.checkout_id || snapshot.id;
@@ -550,8 +585,15 @@ export function UpdateListItem({ update, active, purchaseTypeLabel, onSelect }: 
     onSelect(update.id);
   }, [onSelect, update.id]);
 
-  const statusVariant = getBadgeVariant(update.status ?? update.snapshot.status);
-  const statusLabel = STATUS_LABEL[statusVariant] ?? update.status ?? update.snapshot.status;
+  const resolvedStatusToken = resolveDisplayStatus(
+    update.status ?? update.snapshot.status ?? null,
+    update.snapshot.status,
+  );
+  const statusVariant = getBadgeVariant(resolvedStatusToken ?? '');
+  const statusLabel =
+    statusVariant === 'error' && !resolvedStatusToken
+      ? '—'
+      : STATUS_LABEL[statusVariant] ?? resolvedStatusToken ?? '—';
   const timestamp = update.timestamp ?? update.snapshot.updated_at ?? update.snapshot.created_at;
   const paymentLabel = update.snapshot.paid ? 'Pagamento confirmado' : 'Pagamento pendente';
 

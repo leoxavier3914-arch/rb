@@ -149,6 +149,35 @@ describe('buildLeadsFromCarts', () => {
     expect(leads[0]?.updatedAt).toBe('2024-05-04T09:30:00.000Z');
     expect(leads[0]?.createdAt).toBe('2024-05-03T09:00:00.000Z');
   });
+
+  it('keeps abandoned snapshot status even when latest update differs', () => {
+    const abandonedSnapshot = makeSnapshot({
+      id: 'cart-stale',
+      status: 'abandoned',
+      created_at: '2023-01-01T00:00:00.000Z',
+      updated_at: '2023-01-02T00:00:00.000Z',
+    });
+
+    const pendingUpdate = makeUpdate(abandonedSnapshot, {
+      id: 'cart-stale-update',
+      timestamp: '2023-01-03T00:00:00.000Z',
+      status: 'pending',
+    });
+
+    const historyEntry = makeHistoryEntry(abandonedSnapshot, [pendingUpdate]);
+
+    const cart: AbandonedCart = {
+      ...abandonedSnapshot,
+      cart_key: historyEntry.cartKey,
+      updates: historyEntry.updates,
+      history: [historyEntry],
+    };
+
+    const leads = buildLeadsFromCarts([cart]);
+
+    expect(leads).toHaveLength(1);
+    expect(leads[0]?.latestStatus).toBe('abandoned');
+  });
 });
 
 describe('computeLeadMetrics', () => {
