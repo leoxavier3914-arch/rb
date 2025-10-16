@@ -20,7 +20,7 @@ type EnvHelper<T> = {
   reset: () => void;
 };
 
-const normalizeToken = (value: string | undefined) => {
+const normalizeEnvValue = (value: string | undefined) => {
   const trimmed = value?.trim() ?? "";
 
   if (!trimmed) {
@@ -69,21 +69,37 @@ const createEnvHelper = <T>(schema: ZodType<T>, buildRawEnv: () => unknown): Env
   };
 };
 
+const coalesceEnvValue = (...values: (string | undefined)[]) => {
+  for (const value of values) {
+    const normalized = normalizeEnvValue(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return "";
+};
+
 const buildRawSupabaseEnv = () => ({
-  SUPABASE_URL:
-    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-  SUPABASE_SERVICE_ROLE_KEY:
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.SUPABASE_SERVICE_ROLE ??
-    "",
-  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  SUPABASE_URL: coalesceEnvValue(
+    process.env.SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+  ),
+  SUPABASE_SERVICE_ROLE_KEY: coalesceEnvValue(
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_ROLE,
+  ),
+  NEXT_PUBLIC_SUPABASE_URL: (() => {
+    const normalized = normalizeEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL);
+    return normalized || undefined;
+  })(),
 });
 
 const supabaseEnvHelper = createEnvHelper(supabaseEnvSchema, buildRawSupabaseEnv);
 
 const buildRawWebhookEnv = () => ({
   ...(supabaseEnvHelper.maybe() ?? buildRawSupabaseEnv()),
-  KIWIFY_WEBHOOK_SECRET: normalizeToken(process.env.KIWIFY_WEBHOOK_SECRET),
+  KIWIFY_WEBHOOK_SECRET: normalizeEnvValue(process.env.KIWIFY_WEBHOOK_SECRET),
 });
 
 const kiwifyWebhookEnvHelper = createEnvHelper(webhookEnvSchema, buildRawWebhookEnv);
