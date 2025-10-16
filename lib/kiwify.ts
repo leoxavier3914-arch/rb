@@ -49,7 +49,14 @@ const numberCoalesce = (payload: UnknownPayload, paths: string[]) => {
   for (const path of paths) {
     const raw = get(payload, path);
     if (raw === null || raw === undefined) continue;
-    const parsed = typeof raw === "number" ? raw : Number(String(raw).replace(/[^0-9.,-]/g, "").replace(",", "."));
+    if (typeof raw !== "number" && typeof raw !== "string") {
+      continue;
+    }
+
+    const parsed =
+      typeof raw === "number"
+        ? raw
+        : Number(String(raw).replace(/[^0-9.,-]/g, "").replace(",", "."));
     if (!Number.isNaN(parsed)) {
       return parsed;
     }
@@ -102,15 +109,22 @@ const normalizeAmount = (value: number | null): number | null => {
 };
 
 const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
+  const topLevelId = stringCoalesce(payload, ["id", "event_id", "payload_id", "data.event_id"]);
+
   const saleId = stringCoalesce(payload, [
     "order_id",
     "order.id",
     "Order.id",
     "order.order_id",
     "Order.order_id",
-    "id",
+    "data.order_id",
+    "data.order.order_id",
+    "data.order.orderId",
     "data.id",
     "data.sale_id",
+    "data.order.id",
+    "data.orderId",
+    "id",
     "sale.id",
     "transaction.id",
     "charges.completed.0.order_id",
@@ -123,6 +137,9 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     "order.reference",
     "Order.reference",
     "Order.order_ref",
+    "data.reference",
+    "data.order.reference",
+    "data.order.ref",
   ]);
 
   const customerName = stringCoalesce(payload, [
@@ -132,6 +149,9 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     "Customer.first_name",
     "customer.first_name",
     "data.customer.name",
+    "data.customer.full_name",
+    "data.order.customer.name",
+    "data.order.customer.full_name",
     "buyer.name",
     "data.buyer.name",
   ]);
@@ -140,6 +160,7 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     "Customer.email",
     "customer.email",
     "data.customer.email",
+    "data.order.customer.email",
     "buyer.email",
     "data.buyer.email",
   ]);
@@ -149,8 +170,10 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     "Product.name",
     "product.name",
     "data.product.name",
+    "data.order.product.name",
     "items.0.product.name",
     "data.items.0.product.name",
+    "data.order.items.0.product.name",
   ]);
 
   const amount = normalizeAmount(
@@ -160,6 +183,17 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
       "charge_amount",
       "amount",
       "data.amount",
+      "data.amount.value",
+      "data.amount.value_cents",
+      "data.amount.total",
+      "data.amount.total_value",
+      "data.order.amount",
+      "data.order.amount.value",
+      "data.order.amount.value_cents",
+      "data.order.amount.total",
+      "data.order.amount.total_value",
+      "data.order.total",
+      "data.order.total_value",
       "transaction.amount",
       "data.transaction.amount",
       "order.amount",
@@ -178,6 +212,9 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     "commissions.currency",
     "currency",
     "data.currency",
+    "data.amount.currency",
+    "data.order.amount.currency",
+    "data.order.currency",
     "transaction.currency",
     "data.transaction.currency",
     "order.currency",
@@ -189,6 +226,7 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     "payment_method",
     "payment.method",
     "data.payment.method",
+    "data.order.payment.method",
     "transaction.payment_method",
     "data.transaction.payment_method",
     "charges.completed.0.payment_method",
@@ -202,16 +240,29 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     "updated_at",
     "data.paid_at",
     "data.created_at",
+    "data.updated_at",
+    "data.amount.paid_at",
+    "data.payment.paid_at",
+    "data.payment.paidAt",
+    "data.payment.confirmed_at",
+    "data.order.paid_at",
+    "data.order.payment.paid_at",
+    "data.order.payment.paidAt",
+    "data.order.updated_at",
+    "data.order.created_at",
     "transaction.paid_at",
     "data.transaction.paid_at",
-    "data.payment.confirmed_at",
     "event_time",
     "charges.completed.0.created_at",
     "Subscription.charges.completed.0.created_at",
   ]);
 
   const eventReference =
-    saleId ?? orderRef ?? customerEmail ?? fingerprint(payload, productName ?? occurredAt ?? null);
+    saleId ??
+    orderRef ??
+    customerEmail ??
+    topLevelId ??
+    fingerprint(payload, productName ?? occurredAt ?? null);
 
   return {
     eventReference,
@@ -260,9 +311,11 @@ export const normalizeAbandonedCart = (
     "cart.id",
     "checkout.id",
     "checkout_id",
-    "id",
     "data.id",
     "data.cart_id",
+    "data.checkout.id",
+    "data.checkout_id",
+    "id",
   ]);
 
   const customerName = stringCoalesce(payload, [
@@ -270,8 +323,10 @@ export const normalizeAbandonedCart = (
     "customer.name",
     "Customer.name",
     "data.customer.name",
+    "data.customer.full_name",
     "buyer.name",
     "data.buyer.name",
+    "data.checkout.customer.name",
   ]);
 
   const customerEmail = stringCoalesce(payload, [
@@ -280,6 +335,7 @@ export const normalizeAbandonedCart = (
     "data.customer.email",
     "buyer.email",
     "data.buyer.email",
+    "data.checkout.customer.email",
   ]);
 
   const productName = stringCoalesce(payload, [
@@ -289,15 +345,25 @@ export const normalizeAbandonedCart = (
     "data.product.name",
     "items.0.product.name",
     "data.items.0.product.name",
+    "data.checkout.items.0.product.name",
   ]);
 
   const amount = normalizeAmount(
     numberCoalesce(payload, [
       "amount",
       "data.amount",
+      "data.amount.value",
+      "data.amount.value_cents",
+      "data.amount.total",
+      "data.amount.total_value",
       "order.amount",
       "Order.amount",
       "data.order.amount",
+      "data.checkout.amount",
+      "data.checkout.amount.value",
+      "data.checkout.amount.value_cents",
+      "data.checkout.amount.total",
+      "data.checkout.amount.total_value",
       "value",
       "price",
       "Commissions.charge_amount",
@@ -307,10 +373,13 @@ export const normalizeAbandonedCart = (
   const currency = stringCoalesce(payload, [
     "currency",
     "data.currency",
+    "data.amount.currency",
     "order.currency",
     "Order.currency",
     "data.order.currency",
     "Commissions.currency",
+    "data.checkout.currency",
+    "data.checkout.amount.currency",
   ]);
 
   const checkoutUrl = stringCoalesce(payload, [
@@ -321,6 +390,9 @@ export const normalizeAbandonedCart = (
     "data.checkout_url",
     "checkout.url",
     "data.checkout.url",
+    "data.url",
+    "data.checkout_url",
+    "data.checkout.checkout_url",
   ]);
 
   const status = stringCoalesce(payload, [
@@ -330,6 +402,7 @@ export const normalizeAbandonedCart = (
     "data.checkout.status",
     "order_status",
     "order.status",
+    "data.checkout.status",
   ]);
 
   const occurredAt = normalizeDate(payload, [
@@ -339,10 +412,17 @@ export const normalizeAbandonedCart = (
     "data.created_at",
     "updated_at",
     "event_time",
+    "data.updated_at",
+    "data.timestamps.abandoned_at",
+    "data.checkout.abandoned_at",
   ]);
 
   const eventReference =
-    cartId ?? checkoutUrl ?? customerEmail ?? fingerprint(payload, productName ?? occurredAt ?? null);
+    cartId ??
+    checkoutUrl ??
+    customerEmail ??
+    stringCoalesce(payload, ["id", "event_id", "payload_id"]) ??
+    fingerprint(payload, productName ?? occurredAt ?? null);
 
   return {
     eventReference,
@@ -368,12 +448,17 @@ export const normalizeSubscriptionEvent = (
     "Subscription.id",
     "subscription.id",
     "Subscription.subscription_id",
+    "data.id",
+    "data.subscription_id",
+    "data.subscription.id",
   ]);
 
   const subscriptionStatus = stringCoalesce(payload, [
     "Subscription.status",
     "subscription.status",
     "subscription_status",
+    "data.subscription.status",
+    "data.status",
   ]);
 
   const eventType = stringCoalesce(payload, [
@@ -381,6 +466,8 @@ export const normalizeSubscriptionEvent = (
     "event_type",
     "event",
     "type",
+    "data.event_type",
+    "data.event",
   ]);
 
   const occurredAt =
@@ -390,12 +477,16 @@ export const normalizeSubscriptionEvent = (
       "Subscription.updated_at",
       "Subscription.start_date",
       "Subscription.next_payment",
+      "data.subscription.updated_at",
+      "data.subscription.next_payment",
+      "data.updated_at",
     ]);
 
   const eventReference =
     subscriptionId ??
     base.saleId ??
     base.eventReference ??
+    stringCoalesce(payload, ["id", "event_id", "payload_id"]) ??
     fingerprint(payload, eventType ?? subscriptionStatus ?? base.customerEmail ?? null);
 
   return {
@@ -422,7 +513,12 @@ const gatherCandidates = (payload: UnknownPayload, paths: string[]) => {
   for (const path of paths) {
     const value = stringCoalesce(payload, [path]);
     if (value) {
-      values.push(value.toLowerCase());
+      const normalized = value.toLowerCase();
+      const sanitized = normalized.replace(/[^a-z0-9]+/g, "_");
+      values.push(normalized);
+      if (!values.includes(sanitized)) {
+        values.push(sanitized);
+      }
     }
   }
 
