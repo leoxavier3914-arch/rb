@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetEnvForTesting } from "@/lib/env";
 
 type OperationRecord = { payload: unknown; options: unknown };
@@ -44,6 +44,15 @@ beforeEach(() => {
   });
   __resetEnvForTesting();
   setEnvVariables();
+});
+
+afterEach(() => {
+  __resetEnvForTesting();
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE;
+  delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  delete process.env.KIWIFY_WEBHOOK_SECRET;
 });
 
 const signRaw = (raw: string, secret: string) =>
