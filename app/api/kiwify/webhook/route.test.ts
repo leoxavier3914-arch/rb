@@ -321,10 +321,106 @@ describe('POST handler - product separation', () => {
     expect(historyCheckoutIds.has(fakeDatabase.rows[0].checkout_id)).toBe(true);
     expect(historyCheckoutIds.has(fakeDatabase.rows[1].checkout_id)).toBe(true);
   });
+
+  it('agrega produtos adicionais quando o checkout é o mesmo', async () => {
+    const payloadA = {
+      email: 'cliente@example.com',
+      checkout_id: 'checkout-xyz',
+      checkout_url: 'https://pay.kiwify.com.br/checkout-xyz',
+      status: 'pending',
+      order_items: [
+        { id: 'prod-1', title: 'Curso Avançado' },
+      ],
+    } as const;
+
+    const requestA = new Request('https://example.com/api/kiwify/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payloadA),
+    });
+
+    const responseA = await POST(requestA);
+    expect(responseA.status).toBe(200);
+    expect(await responseA.json()).toEqual({ ok: true });
+
+    expect(fakeDatabase.rows).toHaveLength(1);
+    expect(fakeDatabase.rows[0].product_id).toBe('prod-1');
+    expect(fakeDatabase.rows[0].product_title).toBe('Curso Avançado');
+
+    const payloadB = {
+      email: 'cliente@example.com',
+      checkout_id: 'checkout-xyz',
+      checkout_url: 'https://pay.kiwify.com.br/checkout-xyz',
+      status: 'pending',
+      order_items: [
+        { id: 'prod-1', title: 'Curso Avançado' },
+        { id: 'prod-2', title: 'Curso Essencial' },
+      ],
+    } as const;
+
+    const requestB = new Request('https://example.com/api/kiwify/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payloadB),
+    });
+
+    const responseB = await POST(requestB);
+    expect(responseB.status).toBe(200);
+    expect(await responseB.json()).toEqual({ ok: true });
+
+    expect(fakeDatabase.rows).toHaveLength(1);
+    expect(fakeDatabase.rows[0].checkout_id).toBe('checkout-xyz');
+    expect(fakeDatabase.rows[0].product_id).toBe('prod-1 + prod-2');
+    expect(fakeDatabase.rows[0].product_title).toBe('Curso Avançado + Curso Essencial');
+  });
+
+  it('cria um novo registro quando o checkout muda sem dados de produto', async () => {
+    const payloadA = {
+      email: 'cliente@example.com',
+      checkout_id: 'checkout-1',
+      checkout_url: 'https://pay.kiwify.com.br/checkout-1',
+      status: 'pending',
+    } as const;
+
+    const requestA = new Request('https://example.com/api/kiwify/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payloadA),
+    });
+
+    const responseA = await POST(requestA);
+    expect(responseA.status).toBe(200);
+    expect(await responseA.json()).toEqual({ ok: true });
+
+    expect(fakeDatabase.rows).toHaveLength(1);
+    expect(fakeDatabase.rows[0].checkout_id).toBe('checkout-1');
+
+    const payloadB = {
+      email: 'cliente@example.com',
+      checkout_id: 'checkout-2',
+      checkout_url: 'https://pay.kiwify.com.br/checkout-2',
+      status: 'pending',
+    } as const;
+
+    const requestB = new Request('https://example.com/api/kiwify/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payloadB),
+    });
+
+    const responseB = await POST(requestB);
+    expect(responseB.status).toBe(200);
+    expect(await responseB.json()).toEqual({ ok: true });
+
+    expect(fakeDatabase.rows).toHaveLength(2);
+    const checkoutIds = new Set(fakeDatabase.rows.map((row) => row.checkout_id));
+    expect(checkoutIds.has('checkout-1')).toBe(true);
+    expect(checkoutIds.has('checkout-2')).toBe(true);
+  });
 });
 
 describe('POST handler - checkout renewal', () => {
-  it('reabre o carrinho quando o checkout muda', async () => {
+  it('cria um novo carrinho quando o checkout muda', async () => {
     vi.useFakeTimers();
     try {
       const baseNow = new Date('2024-07-01T12:00:00.000Z');
@@ -371,18 +467,23 @@ describe('POST handler - checkout renewal', () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({ ok: true });
 
-      expect(fakeDatabase.rows).toHaveLength(1);
-      const updatedRow = fakeDatabase.rows[0];
+      expect(fakeDatabase.rows).toHaveLength(2);
 
-      expect(updatedRow.id).toBe('cart-1');
-      expect(updatedRow.checkout_id).toBe('new-checkout-123');
-      expect(updatedRow.status).toBe('new');
-      expect(updatedRow.checkout_url).toBe('https://pay.example.com/?checkout=new-checkout-123');
-      expect(updatedRow.last_event).toBeNull();
-      expect(updatedRow.updated_at).toBe(baseNow.toISOString());
+      const previousRow = fakeDatabase.rows.find((row) => row.checkout_id === 'old-checkout');
+      expect(previousRow).toBeDefined();
+      expect(previousRow?.id).toBe('cart-1');
+      expect(previousRow?.status).toBe('paused');
+
+      const newRow = fakeDatabase.rows.find((row) => row.checkout_id === 'new-checkout-123');
+      expect(newRow).toBeDefined();
+      expect(newRow?.id).not.toBe('cart-1');
+      expect(newRow?.status).toBe('new');
+      expect(newRow?.checkout_url).toBe('https://pay.example.com/?checkout=new-checkout-123');
+      expect(newRow?.last_event).toBe('pending');
+      expect(newRow?.updated_at).toBe(baseNow.toISOString());
 
       const expectedScheduleAt = new Date(baseNow.getTime() + 24 * 3600 * 1000).toISOString();
-      expect(updatedRow.schedule_at).toBe(expectedScheduleAt);
+      expect(newRow?.schedule_at).toBe(expectedScheduleAt);
 
       expect(fakeDatabase.updates).toHaveLength(1);
       expect(fakeDatabase.updates[0].checkout_id).toBe('new-checkout-123');
