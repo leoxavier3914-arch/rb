@@ -11,6 +11,16 @@ type Env = z.infer<typeof envSchema>;
 
 let cachedEnv: Env | null = null;
 
+const normalizeToken = (value: string | undefined) => {
+  const trimmed = value?.trim() ?? "";
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.replace(/^(["'])(.*)\1$/, "$2");
+};
+
 const buildRawEnv = () => ({
   SUPABASE_URL:
     process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -19,7 +29,7 @@ const buildRawEnv = () => ({
     process.env.SUPABASE_SERVICE_ROLE ??
     "",
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  KIWIFY_WEBHOOK_TOKEN: process.env.KIWIFY_WEBHOOK_TOKEN ?? "",
+  KIWIFY_WEBHOOK_TOKEN: normalizeToken(process.env.KIWIFY_WEBHOOK_TOKEN),
 });
 
 export function maybeEnv(): Env | null {
@@ -48,4 +58,8 @@ export function getEnv(): Env {
   }
 
   return env;
+}
+
+export function __resetEnvForTesting() {
+  cachedEnv = null;
 }

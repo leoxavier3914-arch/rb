@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { __resetEnvForTesting } from "@/lib/env";
 
 type OperationRecord = { payload: unknown; options: unknown };
 const operations: Record<string, OperationRecord[]> = {};
@@ -145,6 +146,34 @@ describe("POST /api/kiwify/webhook", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.type).toBe("approved_sale");
+  });
+
+  it("aceita token quando a variável de ambiente tem aspas e espaços", async () => {
+    process.env.KIWIFY_WEBHOOK_TOKEN = `  "${TOKEN}"  `;
+    __resetEnvForTesting();
+
+    const response = await callWebhook(
+      {
+        event: "approved_sale",
+        data: {
+          id: "sale-approved-env-quoted",
+          customer: { name: "Alice", email: "alice@example.com" },
+          product: { name: "Curso" },
+          amount: 199.9,
+          currency: "BRL",
+          payment: { method: "pix", status: "paid" },
+          paid_at: "2024-05-31T12:00:00Z",
+        },
+      },
+      { authorization: `Bearer ${TOKEN}` },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("approved_sale");
+
+    process.env.KIWIFY_WEBHOOK_TOKEN = TOKEN;
+    __resetEnvForTesting();
   });
 
   it("aceita tokens entre aspas no formato Token token=", async () => {

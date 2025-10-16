@@ -20,6 +20,8 @@ KIWIFY_WEBHOOK_TOKEN=
 
 `SUPABASE_URL` aceita fallback de `NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` aceita fallback de `SUPABASE_SERVICE_ROLE`.
 
+O valor de `KIWIFY_WEBHOOK_TOKEN` pode incluir espaços extras e aspas simples ou duplas no arquivo `.env`; a aplicação remove esses caracteres automaticamente.
+
 ## Desenvolvimento
 
 ```bash
@@ -31,6 +33,8 @@ O painel principal está em `/approved-sales` e `/abandoned-carts`. A rota de we
 
 - `Authorization: Bearer ${KIWIFY_WEBHOOK_TOKEN}`
 - `Authorization: Token token=${KIWIFY_WEBHOOK_TOKEN}` (ou variações de espaçamento/maiúsculas, com ou sem aspas)
+
+Ambos os formatos aceitam o token envolto em aspas simples/dobras para alinhar com a configuração da variável de ambiente.
 
 ## Migrações
 
