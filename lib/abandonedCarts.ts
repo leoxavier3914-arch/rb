@@ -507,15 +507,69 @@ const buildSnapshotFromRow = (row: Record<string, any>): AbandonedCartSnapshot =
 };
 
 const buildUpdateFromRow = (row: Record<string, any>): AbandonedCartUpdate => {
-  const snapshot = buildSnapshotFromRow(row);
-  const timestamp = snapshot.updated_at ?? snapshot.created_at ?? null;
-  const source = cleanText(row.source) || null;
+  const baseSnapshot =
+    row.snapshot && typeof row.snapshot === 'object'
+      ? { ...(row.snapshot as Record<string, any>) }
+      : { ...row };
+
+  if (!baseSnapshot.payload || typeof baseSnapshot.payload !== 'object') {
+    baseSnapshot.payload =
+      row.payload && typeof row.payload === 'object' ? row.payload : {};
+  }
+
+  if (!baseSnapshot.status && typeof row.status === 'string') {
+    baseSnapshot.status = row.status;
+  }
+
+  if (!baseSnapshot.last_event && typeof row.event === 'string') {
+    baseSnapshot.last_event = row.event;
+  }
+
+  if (!baseSnapshot.source && typeof row.source === 'string') {
+    baseSnapshot.source = row.source;
+  }
+
+  if (!baseSnapshot.checkout_id && typeof row.checkout_id === 'string') {
+    baseSnapshot.checkout_id = row.checkout_id;
+  }
+
+  if (!baseSnapshot.updated_at && typeof row.occurred_at === 'string') {
+    baseSnapshot.updated_at = row.occurred_at;
+  }
+
+  if (!baseSnapshot.created_at && typeof row.occurred_at === 'string') {
+    baseSnapshot.created_at = row.occurred_at;
+  }
+
+  if (!baseSnapshot.id && typeof row.id === 'string') {
+    baseSnapshot.id = row.id;
+  }
+
+  const snapshot = buildSnapshotFromRow(baseSnapshot);
+
+  const timestamp =
+    (typeof row.timestamp === 'string' ? row.timestamp : null) ??
+    (typeof row.occurred_at === 'string' ? row.occurred_at : null) ??
+    snapshot.updated_at ??
+    snapshot.created_at ??
+    null;
+
+  const source =
+    cleanText(row.source) || cleanText(baseSnapshot.source) || null;
+  const event = cleanText(row.event) || snapshot.last_event || null;
+  const status = cleanText(row.status) || snapshot.status;
+
+  const idCandidate =
+    row.id ??
+    baseSnapshot.id ??
+    baseSnapshot.checkout_id ??
+    `${snapshot.customer_email ?? 'checkout'}:${timestamp ?? snapshot.updated_at ?? snapshot.created_at ?? ''}`;
 
   return {
-    id: String(row.id),
+    id: String(idCandidate),
     timestamp,
-    status: snapshot.status,
-    event: snapshot.last_event ?? null,
+    status,
+    event,
     source,
     snapshot,
   } satisfies AbandonedCartUpdate;
@@ -594,6 +648,90 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
 
     const rows = (data ?? []) as Record<string, any>[];
 
+    const rowIds = rows
+      .map((row) => (typeof row.id === 'string' ? row.id : null))
+      .filter((value): value is string => Boolean(value));
+
+    let historyRows: Record<string, any>[] = [];
+
+    if (rowIds.length > 0) {
+      const { data: historyData, error: historyError } = await supabase
+        .from('abandoned_email_updates')
+        .select(
+          'id, abandoned_email_id, checkout_id, status, source, event, snapshot, occurred_at'
+        )
+        .in('abandoned_email_id', rowIds)
+        .order('occurred_at', { ascending: true });
+
+      if (historyError) {
+        console.warn('[kiwify-hub] erro ao consultar histórico de carrinhos', historyError);
+      } else if (Array.isArray(historyData)) {
+        historyRows = historyData as Record<string, any>[];
+      }
+    }
+
+    const historyByAbandonedId = new Set(
+      historyRows
+        .map((row) => (typeof row.abandoned_email_id === 'string' ? row.abandoned_email_id : null))
+        .filter((value): value is string => Boolean(value))
+    );
+
+    const updateSources: Record<string, any>[] = [];
+
+    for (const historyRow of historyRows) {
+      if (!historyRow) {
+        continue;
+      }
+
+      const baseSnapshot =
+        historyRow.snapshot && typeof historyRow.snapshot === 'object'
+          ? { ...(historyRow.snapshot as Record<string, any>) }
+          : {};
+
+      if (!baseSnapshot.id && typeof historyRow.abandoned_email_id === 'string') {
+        baseSnapshot.id = historyRow.abandoned_email_id;
+      }
+
+      if (!baseSnapshot.checkout_id && typeof historyRow.checkout_id === 'string') {
+        baseSnapshot.checkout_id = historyRow.checkout_id;
+      }
+
+      if (!baseSnapshot.status && typeof historyRow.status === 'string') {
+        baseSnapshot.status = historyRow.status;
+      }
+
+      if (!baseSnapshot.last_event && typeof historyRow.event === 'string') {
+        baseSnapshot.last_event = historyRow.event;
+      }
+
+      if (!baseSnapshot.source && typeof historyRow.source === 'string') {
+        baseSnapshot.source = historyRow.source;
+      }
+
+      if (!baseSnapshot.updated_at && typeof historyRow.occurred_at === 'string') {
+        baseSnapshot.updated_at = historyRow.occurred_at;
+      }
+
+      if (!baseSnapshot.payload || typeof baseSnapshot.payload !== 'object') {
+        baseSnapshot.payload = {};
+      }
+
+      updateSources.push({
+        id: historyRow.id,
+        status: historyRow.status ?? baseSnapshot.status ?? null,
+        source: historyRow.source ?? baseSnapshot.source ?? null,
+        event: historyRow.event ?? baseSnapshot.last_event ?? null,
+        occurred_at: historyRow.occurred_at ?? baseSnapshot.updated_at ?? null,
+        snapshot: baseSnapshot,
+      });
+    }
+
+    for (const row of rows) {
+      if (!historyByAbandonedId.has(row.id)) {
+        updateSources.push(row);
+      }
+    }
+
     const grouped = new Map<
       string,
       { snapshot: AbandonedCartSnapshot; updates: AbandonedCartUpdate[]; customerKey: string }
@@ -603,7 +741,7 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
       Map<string, { snapshot: AbandonedCartSnapshot; updates: AbandonedCartUpdate[] }>
     >();
 
-    rows.forEach((row) => {
+    updateSources.forEach((row) => {
       const update = buildUpdateFromRow(row);
       const key = buildCartKey(update.snapshot);
       const customerKey = buildCustomerKey(update.snapshot);
