@@ -1,15 +1,20 @@
 import { z } from "zod";
 
-const envSchema = z.object({
+const supabaseEnvSchema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
+});
+
+const webhookEnvSchema = supabaseEnvSchema.extend({
   KIWIFY_WEBHOOK_SECRET: z.string().min(1),
 });
 
-type Env = z.infer<typeof envSchema>;
+type SupabaseEnv = z.infer<typeof supabaseEnvSchema>;
+type WebhookEnv = z.infer<typeof webhookEnvSchema>;
 
-let cachedEnv: Env | null = null;
+let cachedSupabaseEnv: SupabaseEnv | null = null;
+let cachedWebhookEnv: WebhookEnv | null = null;
 
 const normalizeToken = (value: string | undefined) => {
   const trimmed = value?.trim() ?? "";
@@ -21,7 +26,7 @@ const normalizeToken = (value: string | undefined) => {
   return trimmed.replace(/^(["'])(.*)\1$/, "$2");
 };
 
-const buildRawEnv = () => ({
+const buildRawSupabaseEnv = () => ({
   SUPABASE_URL:
     process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   SUPABASE_SERVICE_ROLE_KEY:
@@ -29,15 +34,14 @@ const buildRawEnv = () => ({
     process.env.SUPABASE_SERVICE_ROLE ??
     "",
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  KIWIFY_WEBHOOK_SECRET: normalizeToken(process.env.KIWIFY_WEBHOOK_SECRET),
 });
 
-export function maybeEnv(): Env | null {
-  if (cachedEnv) {
-    return cachedEnv;
+const maybeSupabaseEnv = (): SupabaseEnv | null => {
+  if (cachedSupabaseEnv) {
+    return cachedSupabaseEnv;
   }
 
-  const parsed = envSchema.safeParse(buildRawEnv());
+  const parsed = supabaseEnvSchema.safeParse(buildRawSupabaseEnv());
 
   if (!parsed.success) {
     if (process.env.NODE_ENV !== "production") {
@@ -46,12 +50,52 @@ export function maybeEnv(): Env | null {
     return null;
   }
 
-  cachedEnv = parsed.data;
-  return cachedEnv;
+  cachedSupabaseEnv = parsed.data;
+  return cachedSupabaseEnv;
+};
+
+const maybeWebhookEnv = (): WebhookEnv | null => {
+  if (cachedWebhookEnv) {
+    return cachedWebhookEnv;
+  }
+
+  const baseEnv = maybeSupabaseEnv();
+  if (!baseEnv) {
+    return null;
+  }
+
+  const parsed = webhookEnvSchema.safeParse({
+    ...baseEnv,
+    KIWIFY_WEBHOOK_SECRET: normalizeToken(process.env.KIWIFY_WEBHOOK_SECRET),
+  });
+
+  if (!parsed.success) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Variáveis de ambiente incompletas", parsed.error.flatten().fieldErrors);
+    }
+    return null;
+  }
+
+  cachedWebhookEnv = parsed.data;
+  return cachedWebhookEnv;
+};
+
+export function hasSupabaseEnv() {
+  return maybeSupabaseEnv() !== null;
 }
 
-export function getEnv(): Env {
-  const env = maybeEnv();
+export function getSupabaseEnv(): SupabaseEnv {
+  const env = maybeSupabaseEnv();
+
+  if (!env) {
+    throw new Error("Configure todas as variáveis de ambiente obrigatórias.");
+  }
+
+  return env;
+}
+
+export function getWebhookEnv(): WebhookEnv {
+  const env = maybeWebhookEnv();
 
   if (!env) {
     throw new Error("Configure todas as variáveis de ambiente obrigatórias.");
@@ -61,5 +105,6 @@ export function getEnv(): Env {
 }
 
 export function __resetEnvForTesting() {
-  cachedEnv = null;
+  cachedSupabaseEnv = null;
+  cachedWebhookEnv = null;
 }
