@@ -43,6 +43,28 @@ const STATUS_EVENT_MESSAGES: Record<string, string> = {
   refused: 'Pagamento recusado',
 };
 
+const TERMINAL_STATUSES = new Set(['refunded', 'refused']);
+
+const shouldReplaceSnapshot = (
+  existing: AbandonedCartSnapshot,
+  next: AbandonedCartSnapshot,
+  nextTimestamp: number,
+  existingTimestamp: number,
+) => {
+  if (nextTimestamp < existingTimestamp) {
+    return false;
+  }
+
+  const existingStatus = normalizeStatusToken(existing.status);
+  const nextStatus = normalizeStatusToken(next.status);
+
+  if (existingStatus && TERMINAL_STATUSES.has(existingStatus)) {
+    return Boolean(nextStatus && TERMINAL_STATUSES.has(nextStatus));
+  }
+
+  return true;
+};
+
 const cloneSnapshot = (
   snapshot: AbandonedCartSnapshot,
   overrides: Partial<AbandonedCartSnapshot> = {},
@@ -599,7 +621,7 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
           existing.snapshot.updated_at ?? existing.snapshot.created_at ?? null,
         );
 
-        if (timestamp >= existingTime) {
+        if (shouldReplaceSnapshot(existing.snapshot, update.snapshot, timestamp, existingTime)) {
           existing.snapshot = update.snapshot;
         }
       }
@@ -621,7 +643,14 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
           existingHistory.snapshot.updated_at ?? existingHistory.snapshot.created_at ?? null,
         );
 
-        if (timestamp >= existingHistoryTime) {
+        if (
+          shouldReplaceSnapshot(
+            existingHistory.snapshot,
+            update.snapshot,
+            timestamp,
+            existingHistoryTime,
+          )
+        ) {
           existingHistory.snapshot = update.snapshot;
         }
       }
@@ -712,4 +741,5 @@ export async function fetchAbandonedCarts(): Promise<AbandonedCart[]> {
 
 export const __testables = {
   enrichUpdatesWithMilestones,
+  shouldReplaceSnapshot,
 };

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveStatus, __testables } from './abandonedCarts';
 import type { AbandonedCartSnapshot, AbandonedCartUpdate } from './types';
 
-const { enrichUpdatesWithMilestones } = __testables;
+const { enrichUpdatesWithMilestones, shouldReplaceSnapshot } = __testables;
 
 describe('resolveStatus', () => {
   afterEach(() => {
@@ -236,5 +236,105 @@ describe('enrichUpdatesWithMilestones', () => {
     const abandoned = enriched.find((update) => update.status === 'abandoned');
     expect(abandoned?.snapshot.customer_name).toBe('Cliente Especial');
     expect(abandoned?.snapshot.product_name).toBe('Produto Único');
+  });
+});
+
+describe('shouldReplaceSnapshot', () => {
+  const baseSnapshot: AbandonedCartSnapshot = {
+    id: 'cart-1',
+    checkout_id: 'checkout-1',
+    customer_email: 'user@example.com',
+    customer_name: 'User',
+    customer_phone: null,
+    product_name: 'Produto',
+    product_id: 'produto-1',
+    status: 'approved',
+    paid: true,
+    paid_at: '2024-01-01T10:00:00.000Z',
+    discount_code: null,
+    expires_at: null,
+    last_event: null,
+    created_at: '2024-01-01T09:00:00.000Z',
+    updated_at: '2024-01-01T10:00:00.000Z',
+    checkout_url: null,
+    traffic_source: null,
+  };
+
+  const parse = (value: string | null) => (value ? Date.parse(value) : Number.NEGATIVE_INFINITY);
+
+  it('keeps refunded snapshots when later updates are non-terminal', () => {
+    const refundedSnapshot: AbandonedCartSnapshot = {
+      ...baseSnapshot,
+      status: 'refunded',
+      paid: false,
+      paid_at: baseSnapshot.paid_at,
+      updated_at: '2024-01-02T10:00:00.000Z',
+    };
+
+    const newSnapshot: AbandonedCartSnapshot = {
+      ...baseSnapshot,
+      status: 'new',
+      paid: false,
+      paid_at: null,
+      created_at: '2024-01-03T09:00:00.000Z',
+      updated_at: '2024-01-03T09:00:00.000Z',
+    };
+
+    const shouldReplace = shouldReplaceSnapshot(
+      refundedSnapshot,
+      newSnapshot,
+      parse(newSnapshot.updated_at),
+      parse(refundedSnapshot.updated_at),
+    );
+
+    expect(shouldReplace).toBe(false);
+  });
+
+  it('allows replacing terminal snapshots with newer terminal statuses', () => {
+    const refundedSnapshot: AbandonedCartSnapshot = {
+      ...baseSnapshot,
+      status: 'refunded',
+      paid: false,
+      paid_at: baseSnapshot.paid_at,
+      updated_at: '2024-01-02T10:00:00.000Z',
+    };
+
+    const refusedSnapshot: AbandonedCartSnapshot = {
+      ...baseSnapshot,
+      status: 'refused',
+      paid: false,
+      paid_at: null,
+      updated_at: '2024-01-03T12:00:00.000Z',
+    };
+
+    const shouldReplace = shouldReplaceSnapshot(
+      refundedSnapshot,
+      refusedSnapshot,
+      parse(refusedSnapshot.updated_at),
+      parse(refundedSnapshot.updated_at),
+    );
+
+    expect(shouldReplace).toBe(true);
+  });
+
+  it('replaces non-terminal snapshots when newer updates are terminal', () => {
+    const approvedSnapshot = { ...baseSnapshot };
+
+    const refundedSnapshot: AbandonedCartSnapshot = {
+      ...baseSnapshot,
+      status: 'refunded',
+      paid: false,
+      paid_at: baseSnapshot.paid_at,
+      updated_at: '2024-01-02T10:00:00.000Z',
+    };
+
+    const shouldReplace = shouldReplaceSnapshot(
+      approvedSnapshot,
+      refundedSnapshot,
+      parse(refundedSnapshot.updated_at),
+      parse(approvedSnapshot.updated_at),
+    );
+
+    expect(shouldReplace).toBe(true);
   });
 });
