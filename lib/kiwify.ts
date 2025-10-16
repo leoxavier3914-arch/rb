@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { SAO_PAULO_TIME_ZONE } from "./timezone";
 
 interface NormalizedBase {
   eventReference: string;
@@ -79,7 +80,6 @@ function get(payload: UnknownPayload, path: string) {
   }, payload);
 }
 
-const SAO_PAULO_TIME_ZONE = "America/Sao_Paulo";
 const SAO_PAULO_OFFSET_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: SAO_PAULO_TIME_ZONE,
   hour12: false,
