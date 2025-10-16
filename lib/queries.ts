@@ -16,6 +16,60 @@ interface SaleEventBase {
   created_at: string;
 }
 
+type AmountCarrier = Pick<SaleEventBase, "amount" | "occurred_at" | "created_at">;
+
+interface EventQueryResult<T> {
+  records: T[];
+  totalCount: number;
+  sum: number;
+  lastEvent: string | null;
+}
+
+const buildEmptyResult = <T>(): EventQueryResult<T> => ({
+  records: [],
+  totalCount: 0,
+  sum: 0,
+  lastEvent: null,
+});
+
+const fetchEvents = async <T extends AmountCarrier>({
+  table,
+  limit = 40,
+  logContext,
+}: {
+  table: string;
+  limit?: number;
+  logContext: string;
+}): Promise<EventQueryResult<T>> => {
+  if (!hasSupabaseConfig()) {
+    return buildEmptyResult<T>();
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error, count } = await supabase
+    .from(table)
+    .select("*", { count: "exact" })
+    .order("occurred_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error(`Erro ao buscar ${logContext}`, error);
+    throw error;
+  }
+
+  const records = (data ?? []) as T[];
+  const sum = records.reduce((acc, item) => acc + toNumber(item.amount), 0);
+  const lastEvent = records[0]?.occurred_at ?? records[0]?.created_at ?? null;
+
+  return {
+    records,
+    totalCount: count ?? 0,
+    sum,
+    lastEvent,
+  };
+};
+
 export interface ApprovedSale extends SaleEventBase {}
 
 export interface RefundedSale extends SaleEventBase {}
@@ -40,172 +94,67 @@ export interface AbandonedCart {
 }
 
 export async function getApprovedSales(limit = 40) {
-  if (!hasSupabaseConfig()) {
-    return {
-      records: [],
-      totalCount: 0,
-      totalAmount: 0,
-      lastEvent: null,
-    };
-  }
-
-  const supabase = getSupabaseAdmin();
-  const { data, error, count } = await supabase
-    .from("approved_sales")
-    .select("*", { count: "exact" })
-    .order("occurred_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error("Erro ao buscar vendas aprovadas", error);
-    throw error;
-  }
-
-  const totalAmount = data?.reduce((sum, item) => sum + toNumber(item.amount), 0) ?? 0;
-  const lastEvent = data?.[0]?.occurred_at ?? data?.[0]?.created_at ?? null;
+  const { sum, ...result } = await fetchEvents<ApprovedSale>({
+    table: "approved_sales",
+    limit,
+    logContext: "vendas aprovadas",
+  });
 
   return {
-    records: (data ?? []) as ApprovedSale[],
-    totalCount: count ?? 0,
-    totalAmount,
-    lastEvent,
+    ...result,
+    totalAmount: sum,
   };
 }
 
 export async function getAbandonedCarts(limit = 40) {
-  if (!hasSupabaseConfig()) {
-    return {
-      records: [],
-      totalCount: 0,
-      potentialAmount: 0,
-      lastEvent: null,
-    };
-  }
-
-  const supabase = getSupabaseAdmin();
-  const { data, error, count } = await supabase
-    .from("abandoned_carts")
-    .select("*", { count: "exact" })
-    .order("occurred_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error("Erro ao buscar carrinhos abandonados", error);
-    throw error;
-  }
-
-  const potentialAmount = data?.reduce((sum, item) => sum + toNumber(item.amount), 0) ?? 0;
-  const lastEvent = data?.[0]?.occurred_at ?? data?.[0]?.created_at ?? null;
+  const { sum, ...result } = await fetchEvents<AbandonedCart>({
+    table: "abandoned_carts",
+    limit,
+    logContext: "carrinhos abandonados",
+  });
 
   return {
-    records: (data ?? []) as AbandonedCart[],
-    totalCount: count ?? 0,
-    potentialAmount,
-    lastEvent,
+    ...result,
+    potentialAmount: sum,
   };
 }
 
 export async function getRefundedSales(limit = 40) {
-  if (!hasSupabaseConfig()) {
-    return {
-      records: [],
-      totalCount: 0,
-      totalAmount: 0,
-      lastEvent: null,
-    };
-  }
-
-  const supabase = getSupabaseAdmin();
-  const { data, error, count } = await supabase
-    .from("refunded_sales")
-    .select("*", { count: "exact" })
-    .order("occurred_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error("Erro ao buscar vendas reembolsadas", error);
-    throw error;
-  }
-
-  const totalAmount = data?.reduce((sum, item) => sum + toNumber(item.amount), 0) ?? 0;
-  const lastEvent = data?.[0]?.occurred_at ?? data?.[0]?.created_at ?? null;
+  const { sum, ...result } = await fetchEvents<RefundedSale>({
+    table: "refunded_sales",
+    limit,
+    logContext: "vendas reembolsadas",
+  });
 
   return {
-    records: (data ?? []) as RefundedSale[],
-    totalCount: count ?? 0,
-    totalAmount,
-    lastEvent,
+    ...result,
+    totalAmount: sum,
   };
 }
 
 export async function getRejectedPayments(limit = 40) {
-  if (!hasSupabaseConfig()) {
-    return {
-      records: [],
-      totalCount: 0,
-      totalAmount: 0,
-      lastEvent: null,
-    };
-  }
-
-  const supabase = getSupabaseAdmin();
-  const { data, error, count } = await supabase
-    .from("rejected_payments")
-    .select("*", { count: "exact" })
-    .order("occurred_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error("Erro ao buscar pagamentos recusados", error);
-    throw error;
-  }
-
-  const totalAmount = data?.reduce((sum, item) => sum + toNumber(item.amount), 0) ?? 0;
-  const lastEvent = data?.[0]?.occurred_at ?? data?.[0]?.created_at ?? null;
+  const { sum, ...result } = await fetchEvents<RejectedPayment>({
+    table: "rejected_payments",
+    limit,
+    logContext: "pagamentos recusados",
+  });
 
   return {
-    records: (data ?? []) as RejectedPayment[],
-    totalCount: count ?? 0,
-    totalAmount,
-    lastEvent,
+    ...result,
+    totalAmount: sum,
   };
 }
 
 export async function getPendingPayments(limit = 40) {
-  if (!hasSupabaseConfig()) {
-    return {
-      records: [],
-      totalCount: 0,
-      totalAmount: 0,
-      lastEvent: null,
-    };
-  }
-
-  const supabase = getSupabaseAdmin();
-  const { data, error, count } = await supabase
-    .from("pending_payments")
-    .select("*", { count: "exact" })
-    .order("occurred_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error("Erro ao buscar pagamentos pendentes", error);
-    throw error;
-  }
-
-  const totalAmount = data?.reduce((sum, item) => sum + toNumber(item.amount), 0) ?? 0;
-  const lastEvent = data?.[0]?.occurred_at ?? data?.[0]?.created_at ?? null;
+  const { sum, ...result } = await fetchEvents<PendingPayment>({
+    table: "pending_payments",
+    limit,
+    logContext: "pagamentos pendentes",
+  });
 
   return {
-    records: (data ?? []) as PendingPayment[],
-    totalCount: count ?? 0,
-    totalAmount,
-    lastEvent,
+    ...result,
+    totalAmount: sum,
   };
 }
 
