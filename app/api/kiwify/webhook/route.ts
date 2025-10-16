@@ -342,11 +342,11 @@ function findCheckoutIdDeep(
   const checkoutCode = findCheckoutCodeDeep(obj);
 
   const seeds: string[] = [];
-  if (email && checkoutCode) {
-    seeds.push(`${email}::checkout::${checkoutCode}`);
-  }
   if (email && productComponent) {
     seeds.push(`${email}::product::${productComponent}`);
+  }
+  if (email && checkoutCode) {
+    seeds.push(`${email}::checkout::${checkoutCode}`);
   }
   if (productComponent && checkoutCode) {
     seeds.push(`product::${productComponent}::checkout::${checkoutCode}`);
@@ -665,6 +665,112 @@ async function propagateConvertedStatus(args: {
   if (error) {
     console.warn('[kiwify-webhook] failed to propagate approved status', error, {
       ids: payload.map((row) => row.id),
+    });
+  }
+}
+
+type CheckoutHistorySnapshot = {
+  id: string;
+  checkout_id: string | null;
+  email: string | null;
+  customer_email: string | null;
+  customer_name: string | null;
+  product_id: string | null;
+  product_name: string | null;
+  product_title: string | null;
+  status: string | null;
+  paid: boolean | null;
+  paid_at: string | null;
+  discount_code: string | null;
+  expires_at: string | null;
+  schedule_at: string | null;
+  last_event: string | null;
+  checkout_url: string | null;
+  traffic_source: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  payload: Record<string, any>;
+  source: string | null;
+};
+
+const buildCheckoutHistorySnapshot = (row: Record<string, any>): CheckoutHistorySnapshot => {
+  let payload: Record<string, any> = {};
+  if (row.payload && typeof row.payload === 'object') {
+    try {
+      payload = JSON.parse(JSON.stringify(row.payload));
+    } catch {
+      payload = {};
+    }
+  }
+
+  return {
+    id: String(row.id),
+    checkout_id: typeof row.checkout_id === 'string' ? row.checkout_id : null,
+    email: typeof row.email === 'string' ? row.email : null,
+    customer_email:
+      typeof row.customer_email === 'string'
+        ? row.customer_email
+        : typeof row.email === 'string'
+          ? row.email
+          : null,
+    customer_name: typeof row.customer_name === 'string' ? row.customer_name : null,
+    product_id: typeof row.product_id === 'string' ? row.product_id : null,
+    product_name:
+      typeof row.product_name === 'string'
+        ? row.product_name
+        : typeof row.product_title === 'string'
+          ? row.product_title
+          : null,
+    product_title: typeof row.product_title === 'string' ? row.product_title : null,
+    status: typeof row.status === 'string' ? row.status : null,
+    paid: typeof row.paid === 'boolean' ? row.paid : null,
+    paid_at: typeof row.paid_at === 'string' ? row.paid_at : null,
+    discount_code: typeof row.discount_code === 'string' ? row.discount_code : null,
+    expires_at:
+      typeof row.expires_at === 'string'
+        ? row.expires_at
+        : typeof row.schedule_at === 'string'
+          ? row.schedule_at
+          : null,
+    schedule_at: typeof row.schedule_at === 'string' ? row.schedule_at : null,
+    last_event: typeof row.last_event === 'string' ? row.last_event : null,
+    checkout_url: typeof row.checkout_url === 'string' ? row.checkout_url : null,
+    traffic_source:
+      typeof row.traffic_source === 'string' ? row.traffic_source : null,
+    created_at: typeof row.created_at === 'string' ? row.created_at : null,
+    updated_at: typeof row.updated_at === 'string' ? row.updated_at : null,
+    payload,
+    source: typeof row.source === 'string' ? row.source : null,
+  } satisfies CheckoutHistorySnapshot;
+};
+
+async function recordCheckoutHistory(args: {
+  supabase: SupabaseClient;
+  row: Record<string, any>;
+}) {
+  const { supabase, row } = args;
+  const id = typeof row.id === 'string' ? row.id : null;
+  if (!id) {
+    return;
+  }
+
+  const snapshot = buildCheckoutHistorySnapshot(row);
+  const payload = {
+    id: crypto.randomUUID(),
+    abandoned_email_id: id,
+    checkout_id: snapshot.checkout_id,
+    status: snapshot.status,
+    source: snapshot.source,
+    event: snapshot.last_event,
+    snapshot,
+    occurred_at: snapshot.updated_at ?? snapshot.created_at ?? new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from('abandoned_email_updates').insert(payload);
+  if (error) {
+    console.warn('[kiwify-webhook] failed to record checkout history', error, {
+      abandoned_email_id: id,
+      checkout_id: snapshot.checkout_id,
     });
   }
 }
@@ -1287,6 +1393,8 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ ok: false, error }, { status: 500 });
   }
+
+  await recordCheckoutHistory({ supabase, row });
 
   if (paid) {
     await propagateConvertedStatus({
