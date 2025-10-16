@@ -26,14 +26,22 @@ const normalizeToken = (value: string | undefined) => {
   return trimmed.replace(/^(["'])(.*)\1$/, "$2");
 };
 
-const buildRawSupabaseEnv = () => ({
-  SUPABASE_URL:
-    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-  SUPABASE_SERVICE_ROLE_KEY:
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.SUPABASE_SERVICE_ROLE ??
-    "",
-  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+const buildRawSupabaseEnv = () => {
+  const nextPublicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+
+  return {
+    SUPABASE_URL:
+      process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    SUPABASE_SERVICE_ROLE_KEY: normalizeToken(
+      process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE,
+    ),
+    NEXT_PUBLIC_SUPABASE_URL: nextPublicUrl ? nextPublicUrl : undefined,
+  };
+};
+
+const buildRawWebhookEnv = (baseEnv: SupabaseEnv) => ({
+  ...baseEnv,
+  KIWIFY_WEBHOOK_SECRET: normalizeToken(process.env.KIWIFY_WEBHOOK_SECRET),
 });
 
 const maybeSupabaseEnv = (): SupabaseEnv | null => {
@@ -64,10 +72,7 @@ const maybeWebhookEnv = (): WebhookEnv | null => {
     return null;
   }
 
-  const parsed = webhookEnvSchema.safeParse({
-    ...baseEnv,
-    KIWIFY_WEBHOOK_SECRET: normalizeToken(process.env.KIWIFY_WEBHOOK_SECRET),
-  });
+  const parsed = webhookEnvSchema.safeParse(buildRawWebhookEnv(baseEnv));
 
   if (!parsed.success) {
     if (process.env.NODE_ENV !== "production") {

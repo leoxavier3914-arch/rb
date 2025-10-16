@@ -230,6 +230,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Configuração do servidor ausente" }, { status: 500 });
   }
 
+  const { KIWIFY_WEBHOOK_SECRET } = env;
+
   const url = new URL(request.url);
   const providedSignature = normalizeSignature(url.searchParams.get("signature"));
   const rawBody = await request.text();
@@ -238,7 +240,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Assinatura ausente" }, { status: 400 });
   }
 
-  if (!isSignatureValid(rawBody, providedSignature, env.KIWIFY_WEBHOOK_SECRET)) {
+  if (!isSignatureValid(rawBody, providedSignature, KIWIFY_WEBHOOK_SECRET)) {
     return NextResponse.json({ error: "Assinatura inválida" }, { status: 400 });
   }
 
