@@ -157,3 +157,29 @@ export const PENDING_STATUS_TOKENS = new Set([
 ]);
 
 export const NEW_STATUS_TOKENS = new Set(['new', 'novo', 'nova']);
+
+type PriorityStatusGroup = {
+  tokens: Set<string>;
+  canonical: string;
+};
+
+const PRIORITY_STATUS_GROUPS: PriorityStatusGroup[] = [
+  { tokens: ABANDONED_STATUS_TOKENS, canonical: 'abandoned' },
+  { tokens: REFUSED_STATUS_TOKENS, canonical: 'refused' },
+  { tokens: REFUNDED_STATUS_TOKENS, canonical: 'refunded' },
+];
+
+export const resolvePriorityStatusToken = (value: unknown): string | null => {
+  const normalized = normalizeStatusToken(value);
+  if (!normalized) {
+    return null;
+  }
+
+  for (const group of PRIORITY_STATUS_GROUPS) {
+    if (group.tokens.has(normalized)) {
+      return group.canonical;
+    }
+  }
+
+  return null;
+};

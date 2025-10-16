@@ -1,5 +1,6 @@
 import { unstable_noStore as noStore } from 'next/cache';
 import { fetchAbandonedCarts } from './abandonedCarts';
+import { normalizeStatusToken, resolvePriorityStatusToken } from './normalization';
 import type {
   AbandonedCart,
   AbandonedCartHistoryEntry,
@@ -312,13 +313,31 @@ export function buildLeadsFromCarts(carts: AbandonedCart[]): LeadRecord[] {
       activeCartKey = historyEntries[0]?.cartKey ?? null;
     }
 
+    const referenceSnapshotStatus = referenceSnapshot?.status ?? null;
+    const latestUpdateStatusSource =
+      latestUpdate?.status ?? latestUpdate?.snapshot.status ?? referenceSnapshotStatus;
+    const normalizedLatestUpdateStatus = normalizeStatusToken(latestUpdateStatusSource);
+    const normalizedSnapshotStatus = normalizeStatusToken(referenceSnapshotStatus);
+    const latestPriorityStatus = resolvePriorityStatusToken(latestUpdateStatusSource);
+    const snapshotPriorityStatus = resolvePriorityStatusToken(referenceSnapshotStatus);
+
+    let latestStatusToken = latestPriorityStatus ?? normalizedLatestUpdateStatus;
+
+    if (!latestStatusToken) {
+      latestStatusToken = snapshotPriorityStatus ?? normalizedSnapshotStatus;
+    }
+
+    if (snapshotPriorityStatus && snapshotPriorityStatus !== latestPriorityStatus) {
+      latestStatusToken = snapshotPriorityStatus;
+    }
+
     leads.push({
       key: accumulator.key,
       email: accumulator.email,
       name: accumulator.name,
       phone: accumulator.phone,
       productName: referenceSnapshot?.product_name ?? null,
-      latestStatus: latestUpdate?.status ?? referenceSnapshot?.status ?? null,
+      latestStatus: latestStatusToken || null,
       createdAt: earliestRecord.time === Number.POSITIVE_INFINITY ? null : earliestRecord.value,
       updatedAt: latestRecord.time === Number.NEGATIVE_INFINITY ? null : latestRecord.value,
       checkoutUrl: referenceSnapshot?.checkout_url ?? null,
