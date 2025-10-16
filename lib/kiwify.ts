@@ -11,10 +11,15 @@ interface NormalizedBase {
   payload: Record<string, unknown>;
 }
 
-export interface NormalizedApprovedSale extends NormalizedBase {
+export interface NormalizedSaleLike extends NormalizedBase {
   saleId: string | null;
   paymentMethod: string | null;
 }
+
+export type NormalizedApprovedSale = NormalizedSaleLike;
+export type NormalizedPendingPayment = NormalizedSaleLike;
+export type NormalizedRejectedPayment = NormalizedSaleLike;
+export type NormalizedRefundedSale = NormalizedSaleLike;
 
 export interface NormalizedAbandonedCart extends NormalizedBase {
   cartId: string | null;
@@ -78,9 +83,7 @@ const fingerprint = (payload: UnknownPayload, hint?: string | null) => {
   return createHash("sha1").update(base).digest("hex");
 };
 
-export const normalizeApprovedSale = (
-  payload: UnknownPayload,
-): NormalizedApprovedSale => {
+const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
   const saleId = stringCoalesce(payload, [
     "id",
     "data.id",
@@ -161,6 +164,30 @@ export const normalizeApprovedSale = (
     occurredAt,
     payload,
   };
+};
+
+export const normalizeApprovedSale = (
+  payload: UnknownPayload,
+): NormalizedApprovedSale => {
+  return normalizeSaleLike(payload);
+};
+
+export const normalizePendingPayment = (
+  payload: UnknownPayload,
+): NormalizedPendingPayment => {
+  return normalizeSaleLike(payload);
+};
+
+export const normalizeRejectedPayment = (
+  payload: UnknownPayload,
+): NormalizedRejectedPayment => {
+  return normalizeSaleLike(payload);
+};
+
+export const normalizeRefundedSale = (
+  payload: UnknownPayload,
+): NormalizedRefundedSale => {
+  return normalizeSaleLike(payload);
 };
 
 export const normalizeAbandonedCart = (
@@ -251,38 +278,65 @@ export const normalizeAbandonedCart = (
   };
 };
 
-export type EventKind = "approved_sale" | "abandoned_cart";
+export type EventKind =
+  | "approved_sale"
+  | "pending_payment"
+  | "rejected_payment"
+  | "refunded_sale"
+  | "abandoned_cart";
+
+const collectCandidates = (payload: UnknownPayload) => {
+  const candidates = [
+    stringCoalesce(payload, ["event", "type", "data.event", "data.type", "trigger"]),
+    stringCoalesce(payload, [
+      "status",
+      "data.status",
+      "payment.status",
+      "data.payment.status",
+      "sale.status",
+      "data.sale.status",
+      "transaction.status",
+      "data.transaction.status",
+    ]),
+    stringCoalesce(payload, [
+      "payment_status",
+      "data.payment_status",
+      "data.order.status",
+      "order.status",
+    ]),
+    stringCoalesce(payload, ["reason", "data.reason", "data.cause"]),
+  ];
+
+  return candidates
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.toLowerCase());
+};
+
+const includesAny = (candidates: string[], keywords: string[]) => {
+  return candidates.some((candidate) => keywords.some((keyword) => candidate.includes(keyword)));
+};
 
 export const detectEventKind = (payload: UnknownPayload): EventKind | null => {
-  const explicitType = stringCoalesce(payload, [
-    "event",
-    "type",
-    "data.event",
-    "data.type",
-    "trigger",
-  ])?.toLowerCase();
+  const candidates = collectCandidates(payload);
 
-  if (explicitType?.includes("abandon")) {
+  if (includesAny(candidates, ["abandon"])) {
     return "abandoned_cart";
   }
 
-  if (explicitType?.includes("approved") || explicitType?.includes("paid")) {
-    return "approved_sale";
+  if (includesAny(candidates, ["chargeback", "refund", "refunded", "reversal", "charge_back"])) {
+    return "refunded_sale";
   }
 
-  const status = stringCoalesce(payload, [
-    "status",
-    "data.status",
-    "payment.status",
-    "data.payment.status",
-  ])?.toLowerCase();
-
-  if (status === "approved" || status === "paid" || status === "completed") {
-    return "approved_sale";
+  if (includesAny(candidates, ["refuse", "reject", "denied", "failed", "cancelled", "canceled", "void"])) {
+    return "rejected_payment";
   }
 
-  if (status === "abandoned" || status === "pending") {
-    return "abandoned_cart";
+  if (includesAny(candidates, ["pending", "awaiting", "waiting", "processing"])) {
+    return "pending_payment";
+  }
+
+  if (includesAny(candidates, ["approved", "paid", "completed", "confirmed"])) {
+    return "approved_sale";
   }
 
   return null;

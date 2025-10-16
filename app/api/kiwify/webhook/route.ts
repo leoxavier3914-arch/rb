@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { detectEventKind, normalizeAbandonedCart, normalizeApprovedSale } from "@/lib/kiwify";
+import {
+  detectEventKind,
+  normalizeAbandonedCart,
+  normalizeApprovedSale,
+  normalizePendingPayment,
+  normalizeRejectedPayment,
+  normalizeRefundedSale,
+} from "@/lib/kiwify";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getEnv } from "@/lib/env";
 
@@ -65,6 +72,90 @@ export async function POST(request: Request) {
 
       if (error) {
         console.error("Erro ao gravar venda", error);
+        throw error;
+      }
+
+      return NextResponse.json({ ok: true, type: kind });
+    }
+
+    if (kind === "pending_payment") {
+      const sale = normalizePendingPayment(recordPayload);
+      const { error } = await supabase
+        .from("pending_payments")
+        .upsert(
+          {
+            event_reference: sale.eventReference,
+            sale_id: sale.saleId,
+            customer_name: sale.customerName,
+            customer_email: sale.customerEmail,
+            product_name: sale.productName,
+            amount: sale.amount,
+            currency: sale.currency,
+            payment_method: sale.paymentMethod,
+            occurred_at: sale.occurredAt,
+            payload: sale.payload,
+          },
+          { onConflict: "event_reference" },
+        );
+
+      if (error) {
+        console.error("Erro ao gravar pagamento pendente", error);
+        throw error;
+      }
+
+      return NextResponse.json({ ok: true, type: kind });
+    }
+
+    if (kind === "rejected_payment") {
+      const sale = normalizeRejectedPayment(recordPayload);
+      const { error } = await supabase
+        .from("rejected_payments")
+        .upsert(
+          {
+            event_reference: sale.eventReference,
+            sale_id: sale.saleId,
+            customer_name: sale.customerName,
+            customer_email: sale.customerEmail,
+            product_name: sale.productName,
+            amount: sale.amount,
+            currency: sale.currency,
+            payment_method: sale.paymentMethod,
+            occurred_at: sale.occurredAt,
+            payload: sale.payload,
+          },
+          { onConflict: "event_reference" },
+        );
+
+      if (error) {
+        console.error("Erro ao gravar pagamento recusado", error);
+        throw error;
+      }
+
+      return NextResponse.json({ ok: true, type: kind });
+    }
+
+    if (kind === "refunded_sale") {
+      const sale = normalizeRefundedSale(recordPayload);
+      const { error } = await supabase
+        .from("refunded_sales")
+        .upsert(
+          {
+            event_reference: sale.eventReference,
+            sale_id: sale.saleId,
+            customer_name: sale.customerName,
+            customer_email: sale.customerEmail,
+            product_name: sale.productName,
+            amount: sale.amount,
+            currency: sale.currency,
+            payment_method: sale.paymentMethod,
+            occurred_at: sale.occurredAt,
+            payload: sale.payload,
+          },
+          { onConflict: "event_reference" },
+        );
+
+      if (error) {
+        console.error("Erro ao gravar venda reembolsada", error);
         throw error;
       }
 
