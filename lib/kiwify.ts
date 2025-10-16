@@ -260,9 +260,8 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
   const eventReference =
     saleId ??
     orderRef ??
-    customerEmail ??
     topLevelId ??
-    fingerprint(payload, productName ?? occurredAt ?? null);
+    fingerprint(payload);
 
   return {
     eventReference,
@@ -417,12 +416,18 @@ export const normalizeAbandonedCart = (
     "data.checkout.abandoned_at",
   ]);
 
+  const eventLevelId = stringCoalesce(payload, [
+    "event_id",
+    "payload_id",
+    "data.event_id",
+    "id",
+  ]);
+
   const eventReference =
     cartId ??
     checkoutUrl ??
-    customerEmail ??
-    stringCoalesce(payload, ["id", "event_id", "payload_id"]) ??
-    fingerprint(payload, productName ?? occurredAt ?? null);
+    eventLevelId ??
+    fingerprint(payload);
 
   return {
     eventReference,
