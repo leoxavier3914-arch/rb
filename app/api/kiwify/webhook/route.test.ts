@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { fakeDatabase, createClientMock, createClientFactory } = vi.hoisted(() => {
-  type FakeDatabase = { rows: any[] };
+  type FakeDatabase = { rows: any[]; updates: any[] };
 
   class FakeSelectBuilder {
     private filters: Array<(row: any) => boolean> = [];
@@ -10,7 +10,7 @@ const { fakeDatabase, createClientMock, createClientFactory } = vi.hoisted(() =>
     private orderAscending = true;
     private limitValue: number | null = null;
 
-    constructor(private readonly db: FakeDatabase) {}
+    constructor(private readonly getRows: () => any[]) {}
 
     eq(column: string, value: any) {
       this.filters.push((row) => row?.[column] === value);
@@ -66,7 +66,7 @@ const { fakeDatabase, createClientMock, createClientFactory } = vi.hoisted(() =>
     }
 
     private execute() {
-      let rows = this.db.rows.map((row) => ({ ...row }));
+      let rows = this.getRows().map((row) => ({ ...row }));
       for (const filter of this.filters) {
         rows = rows.filter((row) => filter(row));
       }
@@ -102,15 +102,25 @@ const { fakeDatabase, createClientMock, createClientFactory } = vi.hoisted(() =>
   }
 
   class FakeSupabaseTable {
-    constructor(private readonly db: FakeDatabase) {}
+    constructor(
+      private readonly db: FakeDatabase,
+      private readonly table: 'abandoned_emails' | 'abandoned_email_updates',
+    ) {}
+
+    private getStore() {
+      return this.table === 'abandoned_emails' ? this.db.rows : this.db.updates;
+    }
 
     select(_columns: string) {
-      return new FakeSelectBuilder(this.db);
+      return new FakeSelectBuilder(() => this.getStore());
     }
 
     upsert(row: any, options?: { onConflict?: string }) {
       const normalized = { ...row };
       const onConflict = options?.onConflict;
+      if (this.table === 'abandoned_email_updates') {
+        return this.insert(normalized);
+      }
       if (onConflict === 'checkout_id' && normalized.checkout_id) {
         const index = this.db.rows.findIndex(
           (existing) => existing.checkout_id === normalized.checkout_id
@@ -128,7 +138,8 @@ const { fakeDatabase, createClientMock, createClientFactory } = vi.hoisted(() =>
       return {
         eq: async (column: string, value: any) => {
           const updated: any[] = [];
-          this.db.rows = this.db.rows.map((row) => {
+          const store = this.getStore();
+          const nextStore = store.map((row) => {
             if (row?.[column] === value) {
               const next = { ...row, ...values };
               updated.push(next);
@@ -136,9 +147,22 @@ const { fakeDatabase, createClientMock, createClientFactory } = vi.hoisted(() =>
             }
             return row;
           });
+          if (this.table === 'abandoned_emails') {
+            this.db.rows = nextStore;
+          } else {
+            this.db.updates = nextStore;
+          }
           return { data: updated, error: null };
         },
       };
+    }
+
+    insert(value: any) {
+      const rows = Array.isArray(value) ? value : [value];
+      const store = this.getStore();
+      const inserted = rows.map((row) => ({ ...row }));
+      store.push(...inserted);
+      return Promise.resolve({ data: inserted, error: null });
     }
   }
 
@@ -146,14 +170,14 @@ const { fakeDatabase, createClientMock, createClientFactory } = vi.hoisted(() =>
     constructor(private readonly db: FakeDatabase) {}
 
     from(table: string) {
-      if (table !== 'abandoned_emails') {
-        throw new Error(`Unsupported table: ${table}`);
+      if (table === 'abandoned_emails' || table === 'abandoned_email_updates') {
+        return new FakeSupabaseTable(this.db, table);
       }
-      return new FakeSupabaseTable(this.db);
+      throw new Error(`Unsupported table: ${table}`);
     }
   }
 
-  const fakeDatabase: FakeDatabase = { rows: [] };
+  const fakeDatabase: FakeDatabase = { rows: [], updates: [] };
   const createClientFactory = () => new FakeSupabaseClient(fakeDatabase);
   const createClientMock = vi.fn(createClientFactory);
 
@@ -174,11 +198,14 @@ import { fetchAbandonedCarts } from '../../../../lib/abandonedCarts';
 
 beforeEach(() => {
   fakeDatabase.rows.length = 0;
+  fakeDatabase.updates.length = 0;
   createClientMock.mockClear();
   createClientMock.mockImplementation(createClientFactory);
   process.env.SUPABASE_URL = 'https://example.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
-  vi.spyOn(crypto, 'randomUUID').mockImplementation(() => `uuid-${fakeDatabase.rows.length + 1}`);
+  vi.spyOn(crypto, 'randomUUID').mockImplementation(
+    () => `uuid-${fakeDatabase.rows.length + fakeDatabase.updates.length + 1}`
+  );
 });
 
 afterEach(() => {
@@ -288,6 +315,11 @@ describe('POST handler - product separation', () => {
 
     const checkoutIds = new Set(fakeDatabase.rows.map((row) => row.checkout_id));
     expect(checkoutIds.size).toBe(2);
+
+    expect(fakeDatabase.updates).toHaveLength(2);
+    const historyCheckoutIds = new Set(fakeDatabase.updates.map((row) => row.checkout_id));
+    expect(historyCheckoutIds.has(fakeDatabase.rows[0].checkout_id)).toBe(true);
+    expect(historyCheckoutIds.has(fakeDatabase.rows[1].checkout_id)).toBe(true);
   });
 });
 
@@ -351,6 +383,10 @@ describe('POST handler - checkout renewal', () => {
 
       const expectedScheduleAt = new Date(baseNow.getTime() + 24 * 3600 * 1000).toISOString();
       expect(updatedRow.schedule_at).toBe(expectedScheduleAt);
+
+      expect(fakeDatabase.updates).toHaveLength(1);
+      expect(fakeDatabase.updates[0].checkout_id).toBe('new-checkout-123');
+      expect(fakeDatabase.updates[0].status).toBe('new');
     } finally {
       vi.useRealTimers();
     }
@@ -416,6 +452,10 @@ describe('POST handler - checkout renewal', () => {
       expect(updatedRow.last_event).toBe('pix.pending');
       expect(updatedRow.updated_at).toBe(baseNow.toISOString());
       expect(updatedRow.schedule_at).toBe('2024-08-01T10:00:00.000Z');
+
+      expect(fakeDatabase.updates).toHaveLength(1);
+      expect(fakeDatabase.updates[0].checkout_id).toBe('pix-checkout-1');
+      expect(fakeDatabase.updates[0].event).toBe('pix.pending');
     } finally {
       vi.useRealTimers();
     }
@@ -452,20 +492,7 @@ describe('fetchAbandonedCarts - histórico completo', () => {
   it('mantém todas as versões do carrinho disponíveis no histórico por cliente', async () => {
     fakeDatabase.rows.push(
       {
-        id: 'cart-1-v1',
-        checkout_id: 'checkout-1',
-        customer_email: 'cliente@example.com',
-        customer_name: 'Cliente Teste',
-        status: 'new',
-        last_event: 'checkout.created',
-        created_at: '2024-08-01T09:00:00.000Z',
-        updated_at: '2024-08-01T09:00:00.000Z',
-        paid: false,
-        source: 'kiwify.webhook',
-        payload: {},
-      },
-      {
-        id: 'cart-1-v2',
+        id: 'cart-1',
         checkout_id: 'checkout-1',
         customer_email: 'cliente@example.com',
         customer_name: 'Cliente Teste',
@@ -479,7 +506,7 @@ describe('fetchAbandonedCarts - histórico completo', () => {
         payload: {},
       },
       {
-        id: 'cart-2-v1',
+        id: 'cart-2',
         checkout_id: 'checkout-2',
         customer_email: 'cliente@example.com',
         customer_name: 'Cliente Teste',
@@ -490,6 +517,120 @@ describe('fetchAbandonedCarts - histórico completo', () => {
         paid: false,
         source: 'kiwify.webhook',
         payload: {},
+      },
+    );
+
+    fakeDatabase.updates.push(
+      {
+        id: 'history-cart-1-new',
+        abandoned_email_id: 'cart-1',
+        checkout_id: 'checkout-1',
+        status: 'new',
+        source: 'kiwify.webhook',
+        event: 'Checkout criado',
+        occurred_at: '2024-08-01T09:00:00.000Z',
+        snapshot: {
+          id: 'cart-1',
+          checkout_id: 'checkout-1',
+          customer_email: 'cliente@example.com',
+          customer_name: 'Cliente Teste',
+          status: 'new',
+          last_event: 'Checkout criado',
+          created_at: '2024-08-01T09:00:00.000Z',
+          updated_at: '2024-08-01T09:00:00.000Z',
+          paid: false,
+          payload: {},
+          source: 'kiwify.webhook',
+        },
+      },
+      {
+        id: 'history-cart-1-approved',
+        abandoned_email_id: 'cart-1',
+        checkout_id: 'checkout-1',
+        status: 'approved',
+        source: 'kiwify.webhook',
+        event: 'Pagamento aprovado',
+        occurred_at: '2024-08-01T11:00:00.000Z',
+        snapshot: {
+          id: 'cart-1',
+          checkout_id: 'checkout-1',
+          customer_email: 'cliente@example.com',
+          customer_name: 'Cliente Teste',
+          status: 'approved',
+          last_event: 'Pagamento aprovado',
+          created_at: '2024-08-01T09:00:00.000Z',
+          updated_at: '2024-08-01T11:00:00.000Z',
+          paid: true,
+          paid_at: '2024-08-01T10:30:00.000Z',
+          payload: {},
+          source: 'kiwify.webhook',
+        },
+      },
+      {
+        id: 'history-cart-1-abandoned',
+        abandoned_email_id: 'cart-1',
+        checkout_id: 'checkout-1',
+        status: 'abandoned',
+        source: 'kiwify.webhook',
+        event: 'Checkout abandonado',
+        occurred_at: '2024-08-01T10:00:00.000Z',
+        snapshot: {
+          id: 'cart-1',
+          checkout_id: 'checkout-1',
+          customer_email: 'cliente@example.com',
+          customer_name: 'Cliente Teste',
+          status: 'abandoned',
+          last_event: 'Checkout abandonado',
+          created_at: '2024-08-01T09:00:00.000Z',
+          updated_at: '2024-08-01T10:00:00.000Z',
+          paid: false,
+          payload: {},
+          source: 'kiwify.webhook',
+        },
+      },
+      {
+        id: 'history-cart-2-new',
+        abandoned_email_id: 'cart-2',
+        checkout_id: 'checkout-2',
+        status: 'new',
+        source: 'kiwify.webhook',
+        event: 'Checkout criado',
+        occurred_at: '2024-08-02T08:00:00.000Z',
+        snapshot: {
+          id: 'cart-2',
+          checkout_id: 'checkout-2',
+          customer_email: 'cliente@example.com',
+          customer_name: 'Cliente Teste',
+          status: 'new',
+          last_event: 'Checkout criado',
+          created_at: '2024-08-02T08:00:00.000Z',
+          updated_at: '2024-08-02T08:00:00.000Z',
+          paid: false,
+          payload: {},
+          source: 'kiwify.webhook',
+        },
+      },
+      {
+        id: 'history-cart-2-abandoned',
+        abandoned_email_id: 'cart-2',
+        checkout_id: 'checkout-2',
+        status: 'abandoned',
+        source: 'kiwify.webhook',
+        event: 'Checkout abandonado',
+        occurred_at: '2024-08-02T08:30:00.000Z',
+        snapshot: {
+          id: 'cart-2',
+          checkout_id: 'checkout-2',
+          customer_email: 'cliente@example.com',
+          customer_name: 'Cliente Teste',
+          status: 'abandoned',
+          last_event: 'Checkout abandonado',
+          created_at: '2024-08-02T08:00:00.000Z',
+          updated_at: '2024-08-02T08:30:00.000Z',
+          paid: false,
+          payload: {},
+          source: 'kiwify.webhook',
+        },
       },
     );
 

@@ -327,11 +327,11 @@ function resolveCheckoutId(row) {
   const direct = findDirectCheckoutId(row, payload);
 
   const seeds = [];
-  if (email && checkoutCode) {
-    seeds.push(`${email}::checkout::${checkoutCode}`);
-  }
   if (email && productComponent) {
     seeds.push(`${email}::product::${productComponent}`);
+  }
+  if (email && checkoutCode) {
+    seeds.push(`${email}::checkout::${checkoutCode}`);
   }
   if (productComponent && checkoutCode) {
     seeds.push(`product::${productComponent}::checkout::${checkoutCode}`);
