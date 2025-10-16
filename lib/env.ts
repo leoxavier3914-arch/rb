@@ -4,7 +4,7 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
-  KIWIFY_WEBHOOK_TOKEN: z.string().min(1),
+  KIWIFY_WEBHOOK_SECRET: z.string().min(1),
 });
 
 type Env = z.infer<typeof envSchema>;
@@ -29,7 +29,7 @@ const buildRawEnv = () => ({
     process.env.SUPABASE_SERVICE_ROLE ??
     "",
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  KIWIFY_WEBHOOK_TOKEN: normalizeToken(process.env.KIWIFY_WEBHOOK_TOKEN),
+  KIWIFY_WEBHOOK_SECRET: normalizeToken(process.env.KIWIFY_WEBHOOK_SECRET),
 });
 
 export function maybeEnv(): Env | null {
