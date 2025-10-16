@@ -202,15 +202,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Configuração do servidor ausente" }, { status: 500 });
   }
 
-console.log("Webhook headers:", Array.from(request.headers.keys()));
-
-const providedToken =
-  extractToken(request.headers.get("authorization")) ??
-  extractToken(request.headers.get("x-kiwify-token")) ??
-  extractToken(request.headers.get("token"));
-
-
-  
   const providedToken = extractToken(request.headers);
   if (!providedToken || providedToken !== env.KIWIFY_WEBHOOK_TOKEN) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
