@@ -1,3 +1,5 @@
+import { SAO_PAULO_TIME_ZONE } from "./timezone";
+
 export function formatCurrency(
   amount: number | string | null | undefined,
   currency?: string | null,
@@ -31,6 +33,7 @@ export function formatDate(date: string | null | undefined) {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: SAO_PAULO_TIME_ZONE,
     }).format(new Date(date));
   } catch (error) {
     console.warn("Data inválida recebida", date, error);
