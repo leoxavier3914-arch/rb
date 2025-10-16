@@ -3,6 +3,9 @@ import { Suspense } from "react";
 
 const navigation = [
   { name: "Vendas aprovadas", href: "/approved-sales" },
+  { name: "Pagamentos pendentes", href: "/pending-payments" },
+  { name: "Pagamentos recusados", href: "/rejected-payments" },
+  { name: "Reembolsos", href: "/refunded-sales" },
   { name: "Carrinhos abandonados", href: "/abandoned-carts" },
 ];
 

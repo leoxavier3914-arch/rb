@@ -2,7 +2,7 @@ import { getSupabaseAdmin, hasSupabaseConfig } from "./supabase";
 
 type Numeric = number | string | null;
 
-export interface ApprovedSale {
+interface SaleEventBase {
   id: string;
   sale_id: string | null;
   customer_name: string | null;
@@ -15,6 +15,14 @@ export interface ApprovedSale {
   payload: Record<string, unknown>;
   created_at: string;
 }
+
+export interface ApprovedSale extends SaleEventBase {}
+
+export interface RefundedSale extends SaleEventBase {}
+
+export interface RejectedPayment extends SaleEventBase {}
+
+export interface PendingPayment extends SaleEventBase {}
 
 export interface AbandonedCart {
   id: string;
@@ -95,6 +103,108 @@ export async function getAbandonedCarts(limit = 40) {
     records: (data ?? []) as AbandonedCart[],
     totalCount: count ?? 0,
     potentialAmount,
+    lastEvent,
+  };
+}
+
+export async function getRefundedSales(limit = 40) {
+  if (!hasSupabaseConfig()) {
+    return {
+      records: [],
+      totalCount: 0,
+      totalAmount: 0,
+      lastEvent: null,
+    };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error, count } = await supabase
+    .from("refunded_sales")
+    .select("*", { count: "exact" })
+    .order("occurred_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("Erro ao buscar vendas reembolsadas", error);
+    throw error;
+  }
+
+  const totalAmount = data?.reduce((sum, item) => sum + toNumber(item.amount), 0) ?? 0;
+  const lastEvent = data?.[0]?.occurred_at ?? data?.[0]?.created_at ?? null;
+
+  return {
+    records: (data ?? []) as RefundedSale[],
+    totalCount: count ?? 0,
+    totalAmount,
+    lastEvent,
+  };
+}
+
+export async function getRejectedPayments(limit = 40) {
+  if (!hasSupabaseConfig()) {
+    return {
+      records: [],
+      totalCount: 0,
+      totalAmount: 0,
+      lastEvent: null,
+    };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error, count } = await supabase
+    .from("rejected_payments")
+    .select("*", { count: "exact" })
+    .order("occurred_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("Erro ao buscar pagamentos recusados", error);
+    throw error;
+  }
+
+  const totalAmount = data?.reduce((sum, item) => sum + toNumber(item.amount), 0) ?? 0;
+  const lastEvent = data?.[0]?.occurred_at ?? data?.[0]?.created_at ?? null;
+
+  return {
+    records: (data ?? []) as RejectedPayment[],
+    totalCount: count ?? 0,
+    totalAmount,
+    lastEvent,
+  };
+}
+
+export async function getPendingPayments(limit = 40) {
+  if (!hasSupabaseConfig()) {
+    return {
+      records: [],
+      totalCount: 0,
+      totalAmount: 0,
+      lastEvent: null,
+    };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error, count } = await supabase
+    .from("pending_payments")
+    .select("*", { count: "exact" })
+    .order("occurred_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("Erro ao buscar pagamentos pendentes", error);
+    throw error;
+  }
+
+  const totalAmount = data?.reduce((sum, item) => sum + toNumber(item.amount), 0) ?? 0;
+  const lastEvent = data?.[0]?.occurred_at ?? data?.[0]?.created_at ?? null;
+
+  return {
+    records: (data ?? []) as PendingPayment[],
+    totalCount: count ?? 0,
+    totalAmount,
     lastEvent,
   };
 }
