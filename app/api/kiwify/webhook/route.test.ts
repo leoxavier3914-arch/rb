@@ -193,6 +193,50 @@ describe("POST /api/kiwify/webhook", () => {
     expect(body.type).toBe("approved_sale");
   });
 
+  it("aceita tokens Bearer no formato token=", async () => {
+    const response = await callWebhook(
+      {
+        event: "approved_sale",
+        data: {
+          id: "sale-approved-bearer-token-prefix",
+          customer: { name: "Alice", email: "alice@example.com" },
+          product: { name: "Curso" },
+          amount: 199.9,
+          currency: "BRL",
+          payment: { method: "pix", status: "paid" },
+          paid_at: "2024-05-31T12:00:00Z",
+        },
+      },
+      { authorization: `Bearer token=${TOKEN}` },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("approved_sale");
+  });
+
+  it("aceita tokens Bearer no formato token=\"\"", async () => {
+    const response = await callWebhook(
+      {
+        event: "approved_sale",
+        data: {
+          id: "sale-approved-bearer-token-prefix-quoted",
+          customer: { name: "Alice", email: "alice@example.com" },
+          product: { name: "Curso" },
+          amount: 199.9,
+          currency: "BRL",
+          payment: { method: "pix", status: "paid" },
+          paid_at: "2024-05-31T12:00:00Z",
+        },
+      },
+      { authorization: `Bearer token="${TOKEN}"` },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("approved_sale");
+  });
+
   it("aceita tokens com aspas no formato Bearer", async () => {
     const response = await callWebhook(
       {

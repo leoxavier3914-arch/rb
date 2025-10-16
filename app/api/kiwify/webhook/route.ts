@@ -20,13 +20,24 @@ export async function POST(request: Request) {
   }
 
   const sanitizeToken = (token: string) => token.replace(/^(["'])(.*)\1$/, "$2");
-  const extractFromMatch = (match: RegExpExecArray | null) => {
+  const extractFromMatch = (
+    match: RegExpExecArray | null,
+    { stripTokenPrefix = false }: { stripTokenPrefix?: boolean } = {},
+  ) => {
     const rawToken = match?.[1]?.trim();
     if (!rawToken) {
       return null;
     }
 
-    return sanitizeToken(rawToken);
+    const sanitized = sanitizeToken(rawToken);
+
+    if (!stripTokenPrefix) {
+      return sanitized;
+    }
+
+    const withoutPrefix = sanitized.replace(/^token\s*=\s*/i, "").trim();
+
+    return sanitizeToken(withoutPrefix);
   };
 
   const extractToken = (value: string | null) => {
@@ -39,7 +50,9 @@ export async function POST(request: Request) {
       return null;
     }
 
-    const bearerToken = extractFromMatch(/^Bearer\s+(.+)$/i.exec(trimmed));
+    const bearerToken = extractFromMatch(/^Bearer\s+(.+)$/i.exec(trimmed), {
+      stripTokenPrefix: true,
+    });
     if (bearerToken) {
       return bearerToken;
     }
