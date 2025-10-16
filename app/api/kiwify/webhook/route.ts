@@ -20,6 +20,14 @@ export async function POST(request: Request) {
   }
 
   const sanitizeToken = (token: string) => token.replace(/^(["'])(.*)\1$/, "$2");
+  const extractFromMatch = (match: RegExpExecArray | null) => {
+    const rawToken = match?.[1]?.trim();
+    if (!rawToken) {
+      return null;
+    }
+
+    return sanitizeToken(rawToken);
+  };
 
   const extractToken = (value: string | null) => {
     if (!value) {
@@ -31,24 +39,14 @@ export async function POST(request: Request) {
       return null;
     }
 
-    const bearerMatch = /^Bearer\s+(.+)$/i.exec(trimmed);
-    if (bearerMatch) {
-      const rawToken = bearerMatch[1]?.trim();
-      if (!rawToken) {
-        return null;
-      }
-
-      return sanitizeToken(rawToken);
+    const bearerToken = extractFromMatch(/^Bearer\s+(.+)$/i.exec(trimmed));
+    if (bearerToken) {
+      return bearerToken;
     }
 
-    const tokenTokenMatch = /^Token\s+token\s*=\s*(.+)$/i.exec(trimmed);
-    if (tokenTokenMatch) {
-      const rawToken = tokenTokenMatch[1]?.trim();
-      if (!rawToken) {
-        return null;
-      }
-
-      return sanitizeToken(rawToken);
+    const tokenToken = extractFromMatch(/^Token\s+token\s*=\s*(.+)$/i.exec(trimmed));
+    if (tokenToken) {
+      return tokenToken;
     }
 
     return sanitizeToken(trimmed);

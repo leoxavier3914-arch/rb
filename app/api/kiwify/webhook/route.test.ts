@@ -126,6 +126,28 @@ describe("POST /api/kiwify/webhook", () => {
     expect(body.type).toBe("approved_sale");
   });
 
+  it("retorna 200 e ok true para Authorization Bearer com aspas", async () => {
+    const response = await callWebhook(
+      {
+        event: "approved_sale",
+        data: {
+          id: "sale-approved-bearer-quoted-ok-duplicate",
+          customer: { name: "Alice", email: "alice@example.com" },
+          product: { name: "Curso" },
+          amount: 199.9,
+          currency: "BRL",
+          payment: { method: "pix", status: "paid" },
+          paid_at: "2024-05-31T12:00:00Z",
+        },
+      },
+      { authorization: `Bearer "${TOKEN}"` },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+  });
+
   it("aceita tokens enviados no formato Token token=", async () => {
     const response = await callWebhook(
       {
