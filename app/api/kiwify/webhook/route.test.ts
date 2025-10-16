@@ -120,33 +120,60 @@ describe("/api/kiwify/webhook", () => {
     expect(stored.amount).toBeCloseTo(199.9, 3);
   });
 
-  it("classifica payloads com descrição de status em português como vendas aprovadas", async () => {
-    const payload = {
-      id: "evt-sale-portuguese-approved",
-      event: "Compra aprovada",
+  it("mantém registros distintos para webhooks com mesmo e-mail e IDs diferentes", async () => {
+    const firstPayload = {
+      id: "evt-sale-duplicate-1",
+      event: "order.approved",
       resource: "order",
+      sent_at: "2024-12-27T10:00:00Z",
       data: {
-        id: "sale-portuguese-approved",
-        status: "pagamento aprovado",
-        amount: { value_cents: 12990, currency: "BRL" },
-        payment: { method: "cartao" },
-        customer: { name: "Eva", email: "eva@example.com" },
+        id: "sale-duplicate-1",
+        reference: "Dup-1",
+        status: "paid",
+        created_at: "2024-12-27T09:55:00Z",
+        updated_at: "2024-12-27T09:58:00Z",
+        amount: { value_cents: 10990, currency: "BRL" },
+        payment: { method: "credit_card", paid_at: "2024-12-27T09:58:00Z" },
+        customer: { name: "Guilherme", email: "duplicado@example.com" },
         items: [{ product: { name: "Curso Avançado" } }],
       },
     } satisfies Record<string, unknown>;
 
-    const response = await callWebhook(payload);
+    const secondPayload = {
+      id: "evt-sale-duplicate-2",
+      event: "order.approved",
+      resource: "order",
+      sent_at: "2024-12-27T11:00:00Z",
+      data: {
+        id: "sale-duplicate-2",
+        reference: "Dup-2",
+        status: "paid",
+        created_at: "2024-12-27T10:55:00Z",
+        updated_at: "2024-12-27T10:58:00Z",
+        amount: { value_cents: 15990, currency: "BRL" },
+        payment: { method: "pix", paid_at: "2024-12-27T10:58:00Z" },
+        customer: { name: "Guilherme", email: "duplicado@example.com" },
+        items: [{ product: { name: "Curso Avançado" } }],
+      },
+    } satisfies Record<string, unknown>;
 
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-    expect(operations.approved_sales).toHaveLength(1);
-    const stored = operations.approved_sales?.[0].payload as Record<string, unknown>;
-    expect(stored.sale_id).toBe("sale-portuguese-approved");
-    expect(stored.amount).toBeCloseTo(129.9, 3);
+    const firstResponse = await callWebhook(firstPayload);
+    const secondResponse = await callWebhook(secondPayload);
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(200);
+    expect(operations.approved_sales).toHaveLength(2);
+
+    const storedEvents = operations.approved_sales!.map((operation) =>
+      operation.payload as Record<string, unknown>,
+    );
+
+    expect(storedEvents[0].event_reference).toBeDefined();
+    expect(storedEvents[1].event_reference).toBeDefined();
+    expect(storedEvents[0].event_reference).not.toBe(storedEvents[1].event_reference);
   });
 
-  it("classifica eventos Pix gerado como pagamentos pendentes", async () => {
+  it("classifica eventos order.pending como pagamentos pendentes", async () => {
     const payload = {
       id: "evt-pending-sale",
       event: "Pix gerado",
