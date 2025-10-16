@@ -99,6 +99,35 @@ describe("POST /api/kiwify/webhook", () => {
     );
   });
 
+  it("classifica payloads com order.order_status = waiting_payment como pending_payment", async () => {
+    const response = await callWebhook({
+      event: "pix_created",
+      order: {
+        id: "order-waiting",
+        order_status: "waiting_payment",
+        webhook_event_type: "pix_created",
+        amount: 59.9,
+        currency: "BRL",
+      },
+      data: {
+        order: {
+          id: "order-waiting",
+          order_status: "waiting_payment",
+          webhook_event_type: "pix_created",
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("pending_payment");
+    expect(operations.pending_payments).toBeDefined();
+    expect(operations.pending_payments).toHaveLength(1);
+    const pendingPayload = operations.pending_payments?.[0]
+      .payload as Record<string, unknown>;
+    expect(pendingPayload?.sale_id ?? null).toBeNull();
+  });
+
   it("armazena pagamentos recusados em rejected_payments", async () => {
     const response = await callWebhook({
       event: "refused",

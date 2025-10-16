@@ -297,12 +297,17 @@ const collectCandidates = (payload: UnknownPayload) => {
       "data.sale.status",
       "transaction.status",
       "data.transaction.status",
+      "order.order_status",
+      "data.order.order_status",
     ]),
     stringCoalesce(payload, [
       "payment_status",
       "data.payment_status",
       "data.order.status",
       "order.status",
+      "order.order_status",
+      "data.order.order_status",
+      "order.webhook_event_type",
     ]),
     stringCoalesce(payload, ["reason", "data.reason", "data.cause"]),
   ];
