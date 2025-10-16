@@ -19,6 +19,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Configuração do servidor ausente" }, { status: 500 });
   }
 
+  const normalizeTokenValue = (raw: string | null | undefined) => {
+    if (!raw) {
+      return null;
+    }
+
+    const trimmedToken = raw.trim();
+    if (!trimmedToken) {
+      return null;
+    }
+
+    const withoutQuotes = trimmedToken.replace(/^(["'])(.*)\1$/, "$2");
+    return withoutQuotes || null;
+  };
+
   const extractToken = (value: string | null) => {
     if (!value) {
       return null;
@@ -31,20 +45,15 @@ export async function POST(request: Request) {
 
     const bearerMatch = /^Bearer\s+(.+)$/i.exec(trimmed);
     if (bearerMatch) {
-      return bearerMatch[1]?.trim() || null;
+      return normalizeTokenValue(bearerMatch[1]);
     }
 
     const tokenTokenMatch = /^Token\s+token\s*=\s*(.+)$/i.exec(trimmed);
     if (tokenTokenMatch) {
-      const rawToken = tokenTokenMatch[1]?.trim();
-      if (!rawToken) {
-        return null;
-      }
-
-      return rawToken.replace(/^(["'])(.*)\1$/, "$2");
+      return normalizeTokenValue(tokenTokenMatch[1]);
     }
 
-    return trimmed;
+    return normalizeTokenValue(trimmed);
   };
 
   const providedToken =
