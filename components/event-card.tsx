@@ -11,6 +11,27 @@ export interface EventCardProps {
   payload?: Record<string, unknown> | null;
 }
 
+const buildMetaLink = (value: string) => {
+  try {
+    return new URL(value);
+  } catch (error) {
+    try {
+      return new URL(`https://${value}`);
+    } catch (innerError) {
+      return null;
+    }
+  }
+};
+
+const formatMetaDisplay = (value: string, link: URL | null) => {
+  if (!link) {
+    return value;
+  }
+
+  const path = link.pathname.replace(/\/$/, "");
+  return `${link.host}${path}` || link.host;
+};
+
 export function EventCard({
   title,
   subtitle,
@@ -23,13 +44,37 @@ export function EventCard({
     ? formatDistanceToNow(new Date(occurredAt), { locale: ptBR, addSuffix: true })
     : null;
 
+  const normalizedMeta = typeof meta === "string" ? meta.trim() : meta ?? null;
+  const metaLink = normalizedMeta ? buildMetaLink(normalizedMeta) : null;
+  const metaHref = metaLink?.href;
+  const metaDisplay = normalizedMeta ? formatMetaDisplay(normalizedMeta, metaLink) : null;
+
   return (
     <article className="group relative overflow-hidden rounded-3xl border border-surface-accent/40 bg-surface-accent/70 p-6 transition-all hover:-translate-y-1 hover:border-primary hover:shadow-soft">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <h3 className="text-lg font-semibold text-primary-foreground">{title}</h3>
           {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
-          {meta ? <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground/80">{meta}</p> : null}
+          {metaDisplay ? (
+            metaHref ? (
+              <a
+                href={metaHref}
+                target="_blank"
+                rel="noreferrer"
+                title={normalizedMeta ?? undefined}
+                className="inline-flex max-w-full items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs uppercase tracking-[0.3em] text-primary transition-colors hover:text-primary-foreground"
+              >
+                {metaDisplay}
+              </a>
+            ) : (
+              <p
+                title={normalizedMeta ?? undefined}
+                className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs uppercase tracking-[0.3em] text-muted-foreground/80"
+              >
+                {metaDisplay}
+              </p>
+            )
+          ) : null}
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
           {amount ? <span className="text-xl font-semibold text-primary">{amount}</span> : null}
