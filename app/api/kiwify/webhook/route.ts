@@ -36,7 +36,12 @@ export async function POST(request: Request) {
 
     const tokenTokenMatch = /^Token\s+token\s*=\s*(.+)$/i.exec(trimmed);
     if (tokenTokenMatch) {
-      return tokenTokenMatch[1]?.trim() || null;
+      const rawToken = tokenTokenMatch[1]?.trim();
+      if (!rawToken) {
+        return null;
+      }
+
+      return rawToken.replace(/^(["'])(.*)\1$/, "$2");
     }
 
     return trimmed;
