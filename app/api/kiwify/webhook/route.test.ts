@@ -37,11 +37,15 @@ beforeEach(() => {
   });
 });
 
-const callWebhook = async (payload: Record<string, unknown>) => {
+const callWebhook = async (
+  payload: Record<string, unknown>,
+  headers: Record<string, string> = {},
+) => {
   const request = new Request("http://localhost/api/kiwify/webhook", {
     method: "POST",
     headers: {
       authorization: `Bearer ${TOKEN}`,
+      ...headers,
     },
     body: JSON.stringify(payload),
   });
@@ -97,6 +101,50 @@ describe("POST /api/kiwify/webhook", () => {
     expect((operations.pending_payments?.[0].payload as Record<string, unknown>).sale_id).toBe(
       "sale-pending",
     );
+  });
+
+  it("aceita tokens enviados sem o prefixo Bearer", async () => {
+    const response = await callWebhook(
+      {
+        event: "approved_sale",
+        data: {
+          id: "sale-approved-no-bearer",
+          customer: { name: "Alice", email: "alice@example.com" },
+          product: { name: "Curso" },
+          amount: 199.9,
+          currency: "BRL",
+          payment: { method: "pix", status: "paid" },
+          paid_at: "2024-05-31T12:00:00Z",
+        },
+      },
+      { authorization: TOKEN },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("approved_sale");
+  });
+
+  it("aceita tokens enviados no cabeçalho x-kiwify-token", async () => {
+    const response = await callWebhook(
+      {
+        event: "approved_sale",
+        data: {
+          id: "sale-approved-x-kiwify-token",
+          customer: { name: "Alice", email: "alice@example.com" },
+          product: { name: "Curso" },
+          amount: 199.9,
+          currency: "BRL",
+          payment: { method: "pix", status: "paid" },
+          paid_at: "2024-05-31T12:00:00Z",
+        },
+      },
+      { "x-kiwify-token": TOKEN },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("approved_sale");
   });
 
   it("classifica payloads com order.order_status = waiting_payment como pending_payment", async () => {

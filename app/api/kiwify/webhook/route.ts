@@ -19,10 +19,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Configuração do servidor ausente" }, { status: 500 });
   }
 
-  const authHeader = request.headers.get("authorization");
-  const expected = `Bearer ${env.KIWIFY_WEBHOOK_TOKEN}`;
+  const extractToken = (value: string | null) => {
+    if (!value) {
+      return null;
+    }
 
-  if (!authHeader || authHeader !== expected) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const bearerMatch = /^Bearer\s+(.+)$/i.exec(trimmed);
+    if (bearerMatch) {
+      return bearerMatch[1]?.trim() || null;
+    }
+
+    return trimmed;
+  };
+
+  const providedToken =
+    extractToken(request.headers.get("authorization")) ??
+    extractToken(request.headers.get("x-kiwify-token")) ??
+    extractToken(request.headers.get("token"));
+
+  if (!providedToken || providedToken !== env.KIWIFY_WEBHOOK_TOKEN) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
