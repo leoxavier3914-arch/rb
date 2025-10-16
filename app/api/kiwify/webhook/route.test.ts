@@ -23,9 +23,13 @@ vi.mock("@/lib/supabase", () => {
 
 const SECRET = "test-secret";
 
-process.env.SUPABASE_URL = "https://example.supabase.co";
-process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
-process.env.KIWIFY_WEBHOOK_SECRET = SECRET;
+const setEnvVariables = () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.KIWIFY_WEBHOOK_SECRET = SECRET;
+};
+
+setEnvVariables();
 
 let POST: typeof import("./route").POST;
 let HEAD: typeof import("./route").HEAD;
@@ -39,6 +43,7 @@ beforeEach(() => {
     delete operations[table];
   });
   __resetEnvForTesting();
+  setEnvVariables();
 });
 
 const signRaw = (raw: string, secret: string) =>
