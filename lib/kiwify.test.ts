@@ -9,6 +9,12 @@ describe("normalizeDate", () => {
     expect(normalizeDate(payload, ["occurred_at"])).toBe("2024-10-18T20:40:00.000Z");
   });
 
+  it("handles fractions with microseconds precision", () => {
+    const payload = { occurred_at: "2024-10-18 17:40:00.123456" };
+
+    expect(normalizeDate(payload, ["occurred_at"])).toBe("2024-10-18T20:40:00.123Z");
+  });
+
   it("keeps strings with explicit timezone", () => {
     const payload = { occurred_at: "2024-10-18T17:40:00-03:00" };
 

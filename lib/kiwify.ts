@@ -102,7 +102,7 @@ const parseNaiveDateTime = (value: string) => {
   }
 
   const match = trimmed.match(
-    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?)?$/,
+    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?)?)?$/,
   );
 
   if (!match) {
@@ -110,7 +110,9 @@ const parseNaiveDateTime = (value: string) => {
   }
 
   const [, y, m, d, h = "00", min = "00", s = "00", ms = ""] = match;
-  const millisecond = ms ? Number((ms + "00").slice(0, 3)) : 0;
+  const millisecond = ms
+    ? Math.min(999, Math.round((Number(ms) * 1000) / 10 ** ms.length))
+    : 0;
 
   return {
     year: Number(y),
@@ -149,7 +151,7 @@ const getSaoPauloOffsetMinutesForInstant = (instantMs: number) => {
     components.second ?? 0,
   );
 
-  return (asUtc - instantMs) / 60000;
+  return Math.round((asUtc - instantMs) / 60000);
 };
 
 const convertNaiveStringToSaoPauloIso = (value: string) => {
