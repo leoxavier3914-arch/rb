@@ -1,0 +1,149 @@
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+type OperationRecord = { payload: unknown; options: unknown };
+const operations: Record<string, OperationRecord[]> = {};
+
+vi.mock("@/lib/supabase", () => {
+  const supabaseClient = {
+    from: (table: string) => ({
+      upsert: async (payload: unknown, options?: unknown) => {
+        operations[table] ??= [];
+        operations[table].push({ payload, options });
+        return { data: null, error: null };
+      },
+    }),
+  };
+
+  return {
+    getSupabaseAdmin: () => supabaseClient,
+  };
+});
+
+const TOKEN = "test-token";
+
+process.env.SUPABASE_URL = "https://example.supabase.co";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+process.env.KIWIFY_WEBHOOK_TOKEN = TOKEN;
+
+let POST: typeof import("./route").POST;
+
+beforeAll(async () => {
+  ({ POST } = await import("./route"));
+});
+
+beforeEach(() => {
+  Object.keys(operations).forEach((table) => {
+    delete operations[table];
+  });
+});
+
+const callWebhook = async (payload: Record<string, unknown>) => {
+  const request = new Request("http://localhost/api/kiwify/webhook", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${TOKEN}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return POST(request);
+};
+
+describe("POST /api/kiwify/webhook", () => {
+  it("armazena vendas aprovadas", async () => {
+    const response = await callWebhook({
+      event: "approved_sale",
+      data: {
+        id: "sale-approved",
+        customer: { name: "Alice", email: "alice@example.com" },
+        product: { name: "Curso" },
+        amount: 199.9,
+        currency: "BRL",
+        payment: { method: "pix", status: "paid" },
+        paid_at: "2024-05-31T12:00:00Z",
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("approved_sale");
+    expect(operations.approved_sales).toBeDefined();
+    expect(operations.approved_sales).toHaveLength(1);
+    expect((operations.approved_sales?.[0].payload as Record<string, unknown>).sale_id).toBe(
+      "sale-approved",
+    );
+  });
+
+  it("armazena pagamentos pendentes em pending_payments", async () => {
+    const response = await callWebhook({
+      event: "pending_payment",
+      data: {
+        id: "sale-pending",
+        customer: { name: "Bruno", email: "bruno@example.com" },
+        product: { name: "Curso" },
+        amount: 99.9,
+        currency: "BRL",
+        payment: { method: "pix", status: "pending_payment" },
+        created_at: "2024-05-30T12:00:00Z",
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("pending_payment");
+    expect(operations.pending_payments).toBeDefined();
+    expect(operations.pending_payments).toHaveLength(1);
+    expect(operations.abandoned_carts).toBeUndefined();
+    expect((operations.pending_payments?.[0].payload as Record<string, unknown>).sale_id).toBe(
+      "sale-pending",
+    );
+  });
+
+  it("armazena pagamentos recusados em rejected_payments", async () => {
+    const response = await callWebhook({
+      event: "refused",
+      data: {
+        id: "sale-refused",
+        customer: { name: "Clara", email: "clara@example.com" },
+        product: { name: "Curso" },
+        amount: 149.9,
+        currency: "BRL",
+        payment: { method: "card", status: "refused" },
+        created_at: "2024-05-29T12:00:00Z",
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("rejected_payment");
+    expect(operations.rejected_payments).toBeDefined();
+    expect(operations.rejected_payments).toHaveLength(1);
+    expect((operations.rejected_payments?.[0].payload as Record<string, unknown>).sale_id).toBe(
+      "sale-refused",
+    );
+  });
+
+  it("armazena vendas reembolsadas em refunded_sales", async () => {
+    const response = await callWebhook({
+      event: "chargeback",
+      data: {
+        id: "sale-refunded",
+        customer: { name: "Diego", email: "diego@example.com" },
+        product: { name: "Curso" },
+        amount: 249.9,
+        currency: "BRL",
+        payment: { method: "card", status: "chargeback" },
+        created_at: "2024-05-28T12:00:00Z",
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("refunded_sale");
+    expect(operations.refunded_sales).toBeDefined();
+    expect(operations.refunded_sales).toHaveLength(1);
+    expect((operations.refunded_sales?.[0].payload as Record<string, unknown>).sale_id).toBe(
+      "sale-refunded",
+    );
+  });
+});
