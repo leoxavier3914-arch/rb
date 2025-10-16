@@ -1,14 +1,46 @@
 import { type ZodType, z } from "zod";
 
-const supabaseEnvSchema = z.object({
-  SUPABASE_URL: z.string().url(),
+const httpsUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => value.startsWith("https://"), {
+    message: "A URL do Supabase deve usar o protocolo https://.",
+  });
+
+const ensureSameSupabaseProject = (
+  data: { SUPABASE_URL: string; NEXT_PUBLIC_SUPABASE_URL?: string | null },
+  ctx: z.RefinementCtx,
+) => {
+  if (!data.NEXT_PUBLIC_SUPABASE_URL) {
+    return;
+  }
+
+  const adminUrl = new URL(data.SUPABASE_URL);
+  const publicUrl = new URL(data.NEXT_PUBLIC_SUPABASE_URL);
+
+  if (adminUrl.origin !== publicUrl.origin) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "NEXT_PUBLIC_SUPABASE_URL deve apontar para o mesmo projeto do SUPABASE_URL.",
+      path: ["NEXT_PUBLIC_SUPABASE_URL"],
+    });
+  }
+};
+
+const supabaseEnvBaseSchema = z.object({
+  SUPABASE_URL: httpsUrlSchema,
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
+  NEXT_PUBLIC_SUPABASE_URL: httpsUrlSchema.optional(),
 });
 
-const webhookEnvSchema = supabaseEnvSchema.extend({
-  KIWIFY_WEBHOOK_SECRET: z.string().min(1),
-});
+const supabaseEnvSchema = supabaseEnvBaseSchema.superRefine(ensureSameSupabaseProject);
+
+const webhookEnvSchema = supabaseEnvBaseSchema
+  .extend({
+    KIWIFY_WEBHOOK_SECRET: z.string().min(1),
+  })
+  .superRefine(ensureSameSupabaseProject);
 
 type SupabaseEnv = z.infer<typeof supabaseEnvSchema>;
 type WebhookEnv = z.infer<typeof webhookEnvSchema>;
