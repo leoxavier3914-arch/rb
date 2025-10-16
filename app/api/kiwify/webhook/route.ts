@@ -74,16 +74,18 @@ function findNameDeep(obj: any): string | null {
 
 // ====== PATCH DEFINITIVO: produto sem confundir com nome do cliente ======
 function findProductNameDeep(obj: any): string | null {
+  const collected = new Map<string, string>();
+  const addName = (value: any) => addProductComponent(collected, value, { skipGenericLabels: true });
+
   // 1) Preferência alta: campos explícitos de produto/offer
   const preferred = pickByKeys(
     obj,
     ['product_name', 'offer_name', 'product_title', 'item_title', 'course_name', 'plan_name'],
     (v) => typeof v === 'string' && v.trim().length > 0
   );
-  if (preferred) return String(preferred).trim();
+  if (preferred) addName(String(preferred).trim());
 
   // 2) product.{title|name}
-  let found: string | null = null;
   deepWalk(obj, (k, v, path) => {
     if (typeof v !== 'string' || !v.trim()) return false;
     const key = k.toLowerCase();
@@ -94,12 +96,10 @@ function findProductNameDeep(obj: any): string | null {
       /(^|\.)(product|products|item|items|order_items|line_items|order_products)(\.|$)/i.test(p);
 
     if (looksLikeProductPath && (key === 'title' || key === 'name')) {
-      found = v.trim();
-      return true;
+      addName(v.trim());
     }
     return false;
   });
-  if (found) return found;
 
   // 3) Fallback em arrays comuns (primeiro título/nome de item)
   const listKeys = ['order_items', 'items', 'products', 'order_products', 'line_items', 'purchases', 'courses'];
@@ -108,11 +108,11 @@ function findProductNameDeep(obj: any): string | null {
     if (arr && arr.length) {
       for (const it of arr) {
         if (!it) continue;
-        if (typeof it.title === 'string' && it.title.trim()) return it.title.trim();
-        if (typeof it.name  === 'string' && it.name.trim())  return it.name.trim();
+        if (typeof it.title === 'string' && it.title.trim()) addName(it.title.trim());
+        if (typeof it.name  === 'string' && it.name.trim())  addName(it.name.trim());
         if (it.product) {
-          if (typeof it.product.title === 'string' && it.product.title.trim()) return it.product.title.trim();
-          if (typeof it.product.name  === 'string' && it.product.name.trim())  return it.product.name.trim();
+          if (typeof it.product.title === 'string' && it.product.title.trim()) addName(it.product.title.trim());
+          if (typeof it.product.name  === 'string' && it.product.name.trim())  addName(it.product.name.trim());
         }
       }
     }
@@ -124,7 +124,13 @@ function findProductNameDeep(obj: any): string | null {
     ['product_type', 'plan_type', 'order_ref'],
     (v) => typeof v === 'string' && v.trim().length > 0
   );
-  return alt ? String(alt).trim() : null;
+  if (alt) addName(String(alt).trim());
+
+  if (!collected.size) {
+    return null;
+  }
+
+  return Array.from(collected.values()).join(' + ');
 }
 
 function normalizeIdCandidate(value: any): string | null {
@@ -140,6 +146,9 @@ function normalizeIdCandidate(value: any): string | null {
 }
 
 function findProductIdDeep(obj: any): string | null {
+  const collected = new Map<string, string>();
+  const addId = (value: any) => addProductComponent(collected, value);
+
   const preferred = pickByKeys(
     obj,
     [
@@ -163,10 +172,9 @@ function findProductIdDeep(obj: any): string | null {
   );
   if (preferred != null) {
     const normalized = normalizeIdCandidate(preferred);
-    if (normalized) return normalized;
+    if (normalized) addId(normalized);
   }
 
-  let found: string | null = null;
   deepWalk(obj, (k, v, path) => {
     const normalized = normalizeIdCandidate(v);
     if (!normalized) return false;
@@ -180,12 +188,10 @@ function findProductIdDeep(obj: any): string | null {
       looksLikeProductPath &&
       ['id', 'product_id', 'productid', 'offer_id', 'offerid', 'sku', 'code', 'slug'].includes(key)
     ) {
-      found = normalized;
-      return true;
+      addId(normalized);
     }
     return false;
   });
-  if (found) return found;
 
   const listKeys = ['order_items', 'items', 'products', 'order_products', 'line_items', 'purchases', 'courses'];
   for (const lk of listKeys) {
@@ -194,7 +200,7 @@ function findProductIdDeep(obj: any): string | null {
     for (const it of arr) {
       if (!it) continue;
       const direct = normalizeIdCandidate((it as any).product_id ?? (it as any).id ?? (it as any).sku);
-      if (direct) return direct;
+      if (direct) addId(direct);
       if ((it as any).product) {
         const nested = normalizeIdCandidate(
           (it as any).product.product_id ??
@@ -202,12 +208,16 @@ function findProductIdDeep(obj: any): string | null {
             (it as any).product.sku ??
             (it as any).product.code
         );
-        if (nested) return nested;
+        if (nested) addId(nested);
       }
     }
   }
 
-  return null;
+  if (!collected.size) {
+    return null;
+  }
+
+  return Array.from(collected.values()).join(' + ');
 }
 
 // ====== checkout_url (monta a partir de checkout_link se precisar) ======
@@ -314,6 +324,63 @@ function normalizeProductComponent(value: any): string | null {
   return trimmed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+const PRODUCT_COMPONENT_SPLIT_REGEX = /\s*[+|,;]\s*/;
+const GENERIC_PRODUCT_NAME_COMPONENTS = new Set(['carrinho (kiwify)', 'carrinho']);
+
+function addProductComponent(
+  collection: Map<string, string>,
+  value: any,
+  options: { skipGenericLabels?: boolean } = {},
+) {
+  if (value === null || value === undefined) return;
+
+  const raw = typeof value === 'string' ? value : String(value);
+  const trimmed = raw.trim();
+  if (!trimmed) return;
+
+  const parts = PRODUCT_COMPONENT_SPLIT_REGEX.test(trimmed)
+    ? trimmed.split(PRODUCT_COMPONENT_SPLIT_REGEX).map((part) => part.trim()).filter(Boolean)
+    : [trimmed];
+
+  for (const part of parts) {
+    if (!part) continue;
+    const normalized = normalizeProductComponent(part);
+    if (normalized) {
+      if (options.skipGenericLabels && GENERIC_PRODUCT_NAME_COMPONENTS.has(normalized)) {
+        continue;
+      }
+      if (!collection.has(normalized)) {
+        collection.set(normalized, part);
+      }
+      continue;
+    }
+
+    const fallbackKey = part.toLowerCase();
+    if (fallbackKey && !collection.has(fallbackKey)) {
+      collection.set(fallbackKey, part);
+    }
+  }
+}
+
+function mergeProductComponents(
+  existingValue: string | null | undefined,
+  nextValue: string | null | undefined,
+  options: { skipGenericLabels?: boolean } = {},
+): string | null {
+  const collection = new Map<string, string>();
+  addProductComponent(collection, existingValue ?? null, options);
+  addProductComponent(collection, nextValue ?? null, options);
+
+  if (!collection.size) {
+    const next = typeof nextValue === 'string' ? nextValue.trim() : '';
+    if (next) return next;
+    const existing = typeof existingValue === 'string' ? existingValue.trim() : '';
+    return existing || null;
+  }
+
+  return Array.from(collection.values()).join(' + ');
+}
+
 function normalizeEmailForMatch(value: any): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim().toLowerCase();
@@ -356,11 +423,14 @@ function findCheckoutIdDeep(
     crypto.createHash('sha256').update(seed).digest('hex')
   );
 
+  const candidateSource: Array<string | null> = [];
+  if (direct != null) {
+    candidateSource.push(String(direct));
+  }
+  candidateSource.push(...hashedCandidates);
+
   const candidates = Array.from(
-    new Set([
-      ...hashedCandidates,
-      direct != null ? String(direct) : null,
-    ].filter((value): value is string => Boolean(value)))
+    new Set(candidateSource.filter((value): value is string => Boolean(value)))
   );
 
   if (!candidates.length) {
@@ -454,6 +524,10 @@ function shouldKeepExistingCandidate(
     typeof row.checkout_id === 'string' ? row.checkout_id.trim() : null;
   if (checkoutId && options.checkoutIdCandidateSet.has(checkoutId)) {
     return true;
+  }
+
+  if (checkoutId && options.checkoutIdCandidateSet.size > 0) {
+    return false;
   }
 
   const normalizedRowProductId = normalizeProductComponent(row.product_id);
@@ -1285,8 +1359,22 @@ export async function POST(req: Request) {
 
   const name = nameFromPayload ?? existing?.customer_name ?? 'Cliente';
   const productTitle =
-    productTitleFromPayload ?? existing?.product_title ?? 'Carrinho (Kiwify)';
-  const productId = productIdFromPayload ?? existing?.product_id ?? null;
+    mergeProductComponents(
+      checkoutChanged ? null : existingOriginalProductTitle,
+      productTitleFromPayload,
+      { skipGenericLabels: true },
+    ) ??
+    (checkoutChanged ? null : existing?.product_title) ??
+    productTitleFromPayload ??
+    'Carrinho (Kiwify)';
+  const productId =
+    mergeProductComponents(
+      checkoutChanged ? null : existingOriginalProductId,
+      productIdFromPayload,
+    ) ??
+    (checkoutChanged ? null : existing?.product_id) ??
+    productIdFromPayload ??
+    null;
   const checkoutUrl = mergeCheckoutUrlWithTracking(
     checkoutUrlFromPayload ?? existing?.checkout_url ?? null,
     trackingParamsFromPayload,
