@@ -125,6 +125,50 @@ describe("POST /api/kiwify/webhook", () => {
     expect(body.type).toBe("approved_sale");
   });
 
+  it("aceita tokens enviados no formato Token token=", async () => {
+    const response = await callWebhook(
+      {
+        event: "approved_sale",
+        data: {
+          id: "sale-approved-token-token",
+          customer: { name: "Alice", email: "alice@example.com" },
+          product: { name: "Curso" },
+          amount: 199.9,
+          currency: "BRL",
+          payment: { method: "pix", status: "paid" },
+          paid_at: "2024-05-31T12:00:00Z",
+        },
+      },
+      { authorization: `Token token=${TOKEN}` },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("approved_sale");
+  });
+
+  it("aceita variações de espaços e maiúsculas em Token token=", async () => {
+    const response = await callWebhook(
+      {
+        event: "approved_sale",
+        data: {
+          id: "sale-approved-token-token-spaces",
+          customer: { name: "Alice", email: "alice@example.com" },
+          product: { name: "Curso" },
+          amount: 199.9,
+          currency: "BRL",
+          payment: { method: "pix", status: "paid" },
+          paid_at: "2024-05-31T12:00:00Z",
+        },
+      },
+      { authorization: `TOKEN   token =   ${TOKEN}` },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("approved_sale");
+  });
+
   it("aceita tokens enviados no cabeçalho x-kiwify-token", async () => {
     const response = await callWebhook(
       {

@@ -27,7 +27,10 @@ npm install
 npm run dev
 ```
 
-O painel principal está em `/approved-sales` e `/abandoned-carts`. A rota de webhook aceita `POST /api/kiwify/webhook` com o header `Authorization: Bearer ${KIWIFY_WEBHOOK_TOKEN}`.
+O painel principal está em `/approved-sales` e `/abandoned-carts`. A rota de webhook aceita `POST /api/kiwify/webhook` com um dos headers abaixo:
+
+- `Authorization: Bearer ${KIWIFY_WEBHOOK_TOKEN}`
+- `Authorization: Token token=${KIWIFY_WEBHOOK_TOKEN}` (ou variações de espaçamento/maiúsculas)
 
 ## Migrações
 

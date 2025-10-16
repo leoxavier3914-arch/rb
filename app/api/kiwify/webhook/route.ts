@@ -34,6 +34,11 @@ export async function POST(request: Request) {
       return bearerMatch[1]?.trim() || null;
     }
 
+    const tokenTokenMatch = /^Token\s+token\s*=\s*(.+)$/i.exec(trimmed);
+    if (tokenTokenMatch) {
+      return tokenTokenMatch[1]?.trim() || null;
+    }
+
     return trimmed;
   };
 
