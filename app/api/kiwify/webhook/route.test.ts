@@ -148,6 +148,28 @@ describe("POST /api/kiwify/webhook", () => {
     expect(body.type).toBe("approved_sale");
   });
 
+  it("aceita tokens com aspas no formato Bearer", async () => {
+    const response = await callWebhook(
+      {
+        event: "approved_sale",
+        data: {
+          id: "sale-approved-bearer-quoted",
+          customer: { name: "Alice", email: "alice@example.com" },
+          product: { name: "Curso" },
+          amount: 199.9,
+          currency: "BRL",
+          payment: { method: "pix", status: "paid" },
+          paid_at: "2024-05-31T12:00:00Z",
+        },
+      },
+      { authorization: `Bearer "${TOKEN}"` },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("approved_sale");
+  });
+
   it("aceita token quando a variável de ambiente tem aspas e espaços", async () => {
     process.env.KIWIFY_WEBHOOK_TOKEN = `  "${TOKEN}"  `;
     __resetEnvForTesting();
