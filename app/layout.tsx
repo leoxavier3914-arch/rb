@@ -1,30 +1,20 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import Link from 'next/link';
-import MainNav from '../components/MainNav';
-import '../styles/globals.css';
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: 'Kiwify Hub - Carrinhos abandonados',
-  description: 'Centralize os eventos de carrinho abandonado da Kiwify com disparo manual de e-mails.',
+  title: "Kiwify Sales Hub",
+  description:
+    "Painel interno da KiWiFi para acompanhar vendas aprovadas e carrinhos abandonados em tempo real.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="pt-BR" className={inter.variable}>
-      <body className="min-h-screen bg-slate-950 text-slate-100">
-        <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-10">
-          <header className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-            <Link href="/" className="text-lg font-semibold text-white transition hover:text-brand">
-              Kiwify Hub
-            </Link>
-            <MainNav />
-          </header>
-          {children}
-        </div>
-      </body>
+    <html lang="pt-BR">
+      <body className="bg-background text-white">{children}</body>
     </html>
   );
 }
