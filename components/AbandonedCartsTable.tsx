@@ -389,7 +389,6 @@ export default function AbandonedCartsTable({
             <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
               <DetailItem label="Registrado em" value={formatDate(selectedUpdate?.timestamp)} />
               <DetailItem label="Criado em" value={formatDate(selectedSnapshot.created_at)} />
-              <DetailItem label="Atualizado em" value={formatDate(selectedSnapshot.updated_at)} />
               <DetailItem label="Pago em" value={formatDate(selectedSnapshot.paid_at)} />
               <DetailItem label="Expira em" value={formatDate(selectedSnapshot.expires_at)} />
               <DetailItem label="Fonte" value={selectedUpdate?.source ?? '—'} />
