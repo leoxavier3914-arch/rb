@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Table from '../../components/Table';
 import Modal from '../../components/Modal';
 import Badge from '../../components/Badge';
+import HistoryFilterControls from '../../components/HistoryFilterControls';
 import {
   DetailItem,
   HistoryCheckoutListItem,
@@ -12,6 +13,17 @@ import {
 import { formatSaoPaulo } from '../../lib/dates';
 import { STATUS_LABEL, getBadgeVariant } from '../../lib/status';
 import { PURCHASE_TYPE_LABEL, resolvePurchaseType } from '../../lib/purchaseType';
+import {
+  buildCheckoutHistoryStatusOptions,
+  buildCheckoutHistorySummaries,
+  buildCheckoutHistoryUpdateMetas,
+  filterCheckoutHistorySummaries,
+  filterCheckoutHistoryUpdateMetas,
+  type CheckoutHistorySummaryRow,
+  type CheckoutHistoryUpdateMeta,
+  type SortOrder,
+  type StatusFilterValue,
+} from '../../lib/checkoutHistory';
 import type {
   AbandonedCartHistoryEntry,
   AbandonedCartSnapshot,
@@ -342,11 +354,16 @@ type ClientsContentProps = {
   clients: CustomerCheckoutAggregate[];
 };
 
+type HistorySummaryRow = CheckoutHistorySummaryRow;
+type UpdateMeta = CheckoutHistoryUpdateMeta;
+
 export default function ClientsContent({ clients }: ClientsContentProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClient, setSelectedClient] = useState<CustomerCheckoutAggregate | null>(null);
   const [selectedHistoryKey, setSelectedHistoryKey] = useState<string | null>(null);
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('all');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   const filteredClients = useMemo(
     () => clients.filter((client) => matchesSearch(client, searchQuery)),
@@ -365,18 +382,66 @@ export default function ClientsContent({ clients }: ClientsContentProps) {
     setSelectedClient(client);
     setSelectedHistoryKey(null);
     setSelectedUpdateId(null);
+    setStatusFilter('all');
+    setSortOrder('desc');
   }, []);
 
   const handleCloseDetails = useCallback(() => {
     setSelectedClient(null);
     setSelectedHistoryKey(null);
     setSelectedUpdateId(null);
+    setStatusFilter('all');
+    setSortOrder('desc');
   }, []);
 
   const historyEntries = useMemo(
     () => (selectedClient ? buildCombinedHistoryEntries(selectedClient) : []),
     [selectedClient],
   );
+
+  const historySummaries = useMemo<HistorySummaryRow[]>(
+    () => buildCheckoutHistorySummaries(historyEntries, null),
+    [historyEntries],
+  );
+
+  const filteredHistorySummaries = useMemo(
+    () => filterCheckoutHistorySummaries(historySummaries, statusFilter, sortOrder),
+    [historySummaries, sortOrder, statusFilter],
+  );
+
+  const activeHistory = useMemo(
+    () =>
+      (selectedHistoryKey
+        ? historyEntries.find((entry) => entry.cartKey === selectedHistoryKey) ?? null
+        : null),
+    [historyEntries, selectedHistoryKey],
+  );
+
+  const updateMetas = useMemo<UpdateMeta[]>(
+    () => buildCheckoutHistoryUpdateMetas(activeHistory),
+    [activeHistory],
+  );
+
+  const filteredUpdateMetas = useMemo(
+    () => filterCheckoutHistoryUpdateMetas(updateMetas, statusFilter, sortOrder),
+    [updateMetas, sortOrder, statusFilter],
+  );
+
+  const statusOptions = useMemo(
+    () => buildCheckoutHistoryStatusOptions(historySummaries, updateMetas),
+    [historySummaries, updateMetas],
+  );
+
+  useEffect(() => {
+    if (statusFilter === 'all') {
+      return;
+    }
+
+    const availableTokens = new Set(statusOptions.map((option) => option.value));
+    if (!availableTokens.has(statusFilter)) {
+      setStatusFilter('all');
+    }
+  }, [statusFilter, statusOptions]);
 
   useEffect(() => {
     if (!selectedClient) {
@@ -385,54 +450,60 @@ export default function ClientsContent({ clients }: ClientsContentProps) {
       return;
     }
 
-    if (historyEntries.length === 0) {
-      setSelectedHistoryKey(null);
-      setSelectedUpdateId(null);
+    if (filteredHistorySummaries.length === 0) {
+      if (selectedHistoryKey !== null) {
+        setSelectedHistoryKey(null);
+      }
+      if (selectedUpdateId !== null) {
+        setSelectedUpdateId(null);
+      }
       return;
     }
 
     const availableKeys = new Set(historyEntries.map((entry) => entry.cartKey));
-    const fallbackKey = historyEntries[0]?.cartKey ?? null;
+    const fallbackKey =
+      filteredHistorySummaries[0]?.entry.cartKey ??
+      historyEntries[0]?.cartKey ??
+      null;
 
-    if (!fallbackKey) {
-      setSelectedHistoryKey(null);
-      setSelectedUpdateId(null);
+    if (
+      !selectedHistoryKey ||
+      !availableKeys.has(selectedHistoryKey) ||
+      !filteredHistorySummaries.some((item) => item.entry.cartKey === selectedHistoryKey)
+    ) {
+      if (fallbackKey !== null && fallbackKey !== selectedHistoryKey) {
+        setSelectedHistoryKey(fallbackKey);
+        setSelectedUpdateId(null);
+      } else if (fallbackKey === null) {
+        setSelectedHistoryKey(null);
+        setSelectedUpdateId(null);
+      }
       return;
     }
 
-    if (!selectedHistoryKey || !availableKeys.has(selectedHistoryKey)) {
-      setSelectedHistoryKey(fallbackKey);
-      const fallbackEntry = historyEntries.find((entry) => entry.cartKey === fallbackKey);
-      const fallbackUpdates = fallbackEntry?.updates ?? [];
-      const fallbackUpdateId = fallbackUpdates[fallbackUpdates.length - 1]?.id ?? null;
-      setSelectedUpdateId(fallbackUpdateId);
+    if (filteredUpdateMetas.length === 0) {
+      if (selectedUpdateId !== null) {
+        setSelectedUpdateId(null);
+      }
       return;
     }
 
-    const activeEntry = historyEntries.find((entry) => entry.cartKey === selectedHistoryKey);
-    const updates = activeEntry?.updates ?? [];
-    if (updates.length === 0) {
-      setSelectedUpdateId(null);
-      return;
-    }
-
-    const availableUpdateIds = new Set(updates.map((update) => update.id));
+    const availableUpdateIds = new Set(filteredUpdateMetas.map((meta) => meta.update.id));
     if (!selectedUpdateId || !availableUpdateIds.has(selectedUpdateId)) {
-      const fallbackUpdateId = updates[updates.length - 1]?.id ?? null;
-      setSelectedUpdateId(fallbackUpdateId);
+      const fallbackUpdateId = filteredUpdateMetas[0]?.update.id ?? null;
+      if (fallbackUpdateId && fallbackUpdateId !== selectedUpdateId) {
+        setSelectedUpdateId(fallbackUpdateId);
+      }
     }
-  }, [historyEntries, selectedClient, selectedHistoryKey, selectedUpdateId]);
+  }, [
+    filteredHistorySummaries,
+    filteredUpdateMetas,
+    historyEntries,
+    selectedClient,
+    selectedHistoryKey,
+    selectedUpdateId,
+  ]);
 
-  const activeHistory = useMemo(
-    () => historyEntries.find((entry) => entry.cartKey === selectedHistoryKey) ?? null,
-    [historyEntries, selectedHistoryKey],
-  );
-
-  const updates = activeHistory?.updates ?? [];
-  const orderedUpdates = useMemo(
-    () => (updates.length > 0 ? [...updates].reverse() : []),
-    [updates],
-  );
   const purchaseType = useMemo(() => {
     if (!activeHistory) {
       return null;
@@ -442,14 +513,18 @@ export default function ClientsContent({ clients }: ClientsContentProps) {
   const purchaseTypeLabel = purchaseType ? PURCHASE_TYPE_LABEL[purchaseType] : null;
 
   const selectedUpdate = useMemo(() => {
-    if (updates.length === 0) {
+    if (!activeHistory) {
       return null;
     }
     if (!selectedUpdateId) {
-      return updates[updates.length - 1];
+      return activeHistory.updates[activeHistory.updates.length - 1] ?? null;
     }
-    return updates.find((update) => update.id === selectedUpdateId) ?? updates[updates.length - 1];
-  }, [updates, selectedUpdateId]);
+    return (
+      activeHistory.updates.find((update) => update.id === selectedUpdateId) ??
+      activeHistory.updates[activeHistory.updates.length - 1] ??
+      null
+    );
+  }, [activeHistory, selectedUpdateId]);
 
   const selectedSnapshot = selectedUpdate?.snapshot ?? activeHistory?.snapshot ?? null;
 
@@ -539,142 +614,237 @@ export default function ClientsContent({ clients }: ClientsContentProps) {
     [handleOpenDetails],
   );
 
+  const historySummaryColumns = useMemo(
+    () => [
+      {
+        key: 'checkout' as const,
+        header: 'Checkout',
+        render: (row: HistorySummaryRow) => (
+          <div className="flex flex-col">
+            <span className="font-medium text-slate-100">{row.checkoutLabel}</span>
+            {row.purchaseTypeLabel ? (
+              <span className="text-xs text-slate-500">Tipo: {row.purchaseTypeLabel}</span>
+            ) : null}
+            {row.isCurrent ? (
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-brand">
+                Atual
+              </span>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        key: 'status' as const,
+        header: 'Status',
+        render: (row: HistorySummaryRow) => (
+          <Badge variant={row.status.variant}>{row.status.label}</Badge>
+        ),
+      },
+      {
+        key: 'lastUpdated' as const,
+        header: 'Última atualização',
+        render: (row: HistorySummaryRow) => <span>{row.lastUpdatedLabel}</span>,
+      },
+      {
+        key: 'interactions' as const,
+        header: 'Interações',
+        className: 'whitespace-nowrap',
+        render: (row: HistorySummaryRow) => <span>{row.interactionsLabel}</span>,
+      },
+    ],
+    [],
+  );
+
   let modalContent = null;
 
   if (selectedClient) {
     const approvedSales = selectedClient.approvedSales;
 
     modalContent = (
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <aside className="space-y-6 lg:w-72 xl:w-80">
-          <section>
+      <div className="flex flex-col gap-6">
+        <section>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-              Checkouts do cliente
+              Resumo dos checkouts
             </h3>
-            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
-              {historyEntries.length === 0 ? (
-                <p className="text-sm text-slate-400">Nenhum checkout registrado.</p>
-              ) : (
-                historyEntries.map((entry) => {
-                  const entryPurchaseType = resolvePurchaseType(entry.updates, entry.snapshot);
-                  const entryPurchaseTypeLabel = entryPurchaseType
-                    ? PURCHASE_TYPE_LABEL[entryPurchaseType]
-                    : null;
+            <HistoryFilterControls
+              statusFilter={statusFilter}
+              onStatusChange={setStatusFilter}
+              sortOrder={sortOrder}
+              onSortChange={setSortOrder}
+              statusOptions={statusOptions}
+            />
+          </div>
+          <div className="mt-3">
+            <Table<HistorySummaryRow>
+              columns={historySummaryColumns}
+              data={filteredHistorySummaries}
+              getRowKey={(row) => row.key}
+              onRowClick={(row) => {
+                if (row.entry.cartKey !== selectedHistoryKey) {
+                  setSelectedHistoryKey(row.entry.cartKey);
+                  setSelectedUpdateId(null);
+                }
+              }}
+              expandedRowKey={selectedHistoryKey}
+              emptyMessage="Nenhum checkout corresponde aos filtros selecionados."
+            />
+          </div>
+        </section>
 
-                  return (
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <aside className="space-y-6 lg:w-72 xl:w-80">
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                Checkouts do cliente
+              </h3>
+              <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                {historyEntries.length === 0 ? (
+                  <p className="text-sm text-slate-400">Nenhum checkout registrado.</p>
+                ) : filteredHistorySummaries.length === 0 ? (
+                  <p className="text-sm text-slate-400">
+                    Nenhum checkout registrado com os filtros atuais.
+                  </p>
+                ) : (
+                  filteredHistorySummaries.map((summary) => (
                     <HistoryCheckoutListItem
-                      key={entry.cartKey}
-                      entry={entry}
-                      active={entry.cartKey === selectedHistoryKey}
+                      key={summary.entry.cartKey}
+                      entry={summary.entry}
+                      active={summary.entry.cartKey === selectedHistoryKey}
                       isCurrent={false}
-                      purchaseTypeLabel={entryPurchaseTypeLabel}
+                      purchaseTypeLabel={summary.purchaseTypeLabel}
                       onSelect={(key) => {
                         setSelectedHistoryKey(key);
                         setSelectedUpdateId(null);
                       }}
                     />
-                  );
-                })
-              )}
-            </div>
-          </section>
+                  ))
+                )}
+              </div>
+            </section>
 
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-              Histórico do checkout selecionado
-            </h3>
-            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
-              {orderedUpdates.length === 0 ? (
-                <p className="text-sm text-slate-400">Nenhuma atualização registrada.</p>
-              ) : (
-                orderedUpdates.map((update) => (
-                  <UpdateListItem
-                    key={update.id}
-                    update={update}
-                    active={update.id === selectedUpdateId}
-                    purchaseTypeLabel={purchaseTypeLabel}
-                    onSelect={(id) => setSelectedUpdateId(id)}
-                  />
-                ))
-              )}
-            </div>
-          </section>
-        </aside>
+            <section>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                  Histórico do checkout selecionado
+                </h3>
+                <HistoryFilterControls
+                  statusFilter={statusFilter}
+                  onStatusChange={setStatusFilter}
+                  sortOrder={sortOrder}
+                  onSortChange={setSortOrder}
+                  statusOptions={statusOptions}
+                />
+              </div>
+              <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                {activeHistory?.updates.length === 0 ? (
+                  <p className="text-sm text-slate-400">Nenhuma atualização registrada.</p>
+                ) : filteredUpdateMetas.length === 0 ? (
+                  <p className="text-sm text-slate-400">
+                    Nenhuma atualização corresponde aos filtros selecionados.
+                  </p>
+                ) : (
+                  filteredUpdateMetas.map((meta) => (
+                    <UpdateListItem
+                      key={meta.update.id}
+                      update={meta.update}
+                      active={meta.update.id === selectedUpdateId}
+                      purchaseTypeLabel={purchaseTypeLabel}
+                      onSelect={(id) => setSelectedUpdateId(id)}
+                    />
+                  ))
+                )}
+              </div>
+            </section>
+          </aside>
 
-        <div className="flex-1 space-y-6">
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-              Pedidos aprovados
-            </h3>
-            <div className="mt-3 space-y-3">
-              {approvedSales.length === 0 ? (
-                <p className="text-sm text-slate-400">Nenhum pagamento aprovado registrado.</p>
-              ) : (
-                approvedSales.map((sale) => (
-                  <article
-                    key={sale.id}
-                    className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-sm text-slate-200"
-                  >
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                      <span className="font-medium text-white">
-                        {sale.product_name ?? 'Produto não informado'}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        {formatDate(sale.paid_at)}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                      <span>Status: {sale.status === 'approved' ? 'Aprovado' : 'Reembolsado'}</span>
-                      {sale.checkout_url ? (
-                        <a
-                          href={sale.checkout_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-brand hover:underline"
-                        >
-                          Abrir checkout
-                        </a>
-                      ) : null}
-                    </div>
-                  </article>
-                ))
-              )}
-            </div>
-          </section>
+          <div className="flex-1 space-y-6">
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                Pedidos aprovados
+              </h3>
+              <div className="mt-3 space-y-3">
+                {approvedSales.length === 0 ? (
+                  <p className="text-sm text-slate-400">Nenhum pagamento aprovado registrado.</p>
+                ) : (
+                  approvedSales.map((sale) => (
+                    <article
+                      key={sale.id}
+                      className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-sm text-slate-200"
+                    >
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="font-medium text-white">
+                          {sale.product_name ?? 'Produto não informado'}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          {formatDate(sale.paid_at)}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                        <span>Status: {sale.status === 'approved' ? 'Aprovado' : 'Reembolsado'}</span>
+                        {sale.checkout_url ? (
+                          <a
+                            href={sale.checkout_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand hover:underline"
+                          >
+                            Abrir checkout
+                          </a>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
 
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Cliente</h3>
-            <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
-              <DetailItem label="Nome" value={selectedClient.name ?? '—'} />
-              <DetailItem label="E-mail" value={selectedClient.email} />
-              <DetailItem label="Telefone" value={selectedClient.phone ?? '—'} />
-            </dl>
-          </section>
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Cliente</h3>
+              <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
+                <DetailItem label="Nome" value={selectedClient.name ?? '—'} />
+                <DetailItem label="E-mail" value={selectedClient.email} />
+                <DetailItem label="Telefone" value={selectedClient.phone ?? '—'} />
+              </dl>
+            </section>
 
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Checkout</h3>
-            <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
-              <DetailItem label="Produto" value={selectedSnapshot?.product_name ?? '—'} />
-              <DetailItem label="ID do produto" value={selectedSnapshot?.product_id ?? '—'} />
-              <DetailItem
-                label="Status"
-                value={(() => {
-                  if (!selectedSnapshot) {
-                    return '—';
-                  }
-                  const statusVariant = getBadgeVariant(selectedSnapshot.status);
-                  const statusLabel = STATUS_LABEL[statusVariant] ?? selectedSnapshot.status;
-                  return <Badge variant={statusVariant}>{statusLabel}</Badge>;
-                })()}
-              />
-              <DetailItem label="Pago" value={selectedSnapshot?.paid ? 'Sim' : 'Não'} />
-              <DetailItem label="Checkout ID" value={selectedSnapshot?.checkout_id ?? '—'} />
-              <DetailItem label="Cupom" value={selectedSnapshot?.discount_code ?? '—'} />
-              <DetailItem label="Origem do tráfego" value={selectedSnapshot?.traffic_source ?? '—'} />
-              <DetailItem
-                label="Link do checkout"
-                value={
-                  selectedSnapshot?.checkout_url ? (
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Checkout</h3>
+              <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
+                <DetailItem label="Produto" value={selectedSnapshot?.product_name ?? '—'} />
+                <DetailItem label="ID do produto" value={selectedSnapshot?.product_id ?? '—'} />
+                <DetailItem
+                  label="Status"
+                  value={(() => {
+                    const updateStatus = selectedSnapshot?.status ?? null;
+                    if (!updateStatus) {
+                      return '—';
+                    }
+                    const variant = getBadgeVariant(updateStatus);
+                    const label = STATUS_LABEL[variant] ?? updateStatus;
+                    return <Badge variant={variant}>{label}</Badge>;
+                  })()}
+                />
+                <DetailItem label="Cupom" value={selectedSnapshot?.discount_code ?? '—'} />
+                <DetailItem
+                  label="Pagamento"
+                  value={selectedSnapshot?.paid ? 'Pagamento confirmado' : 'Pagamento pendente'}
+                />
+                <DetailItem
+                  label="Atualizado em"
+                  value={formatDate(selectedSnapshot?.updated_at ?? null)}
+                />
+                <DetailItem
+                  label="Checkout"
+                  value={selectedSnapshot?.checkout_id ?? selectedSnapshot?.id ?? '—'}
+                />
+                <DetailItem
+                  label="Origem do tráfego"
+                  value={selectedSnapshot?.traffic_source ?? '—'}
+                />
+                <DetailItem
+                  label="Link do checkout"
+                  value={selectedSnapshot?.checkout_url ? (
                     <a
                       href={selectedSnapshot.checkout_url}
                       target="_blank"
@@ -685,25 +855,25 @@ export default function ClientsContent({ clients }: ClientsContentProps) {
                     </a>
                   ) : (
                     '—'
-                  )
-                }
-              />
-            </dl>
-          </section>
+                  )}
+                />
+              </dl>
+            </section>
 
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-              Detalhes do evento selecionado
-            </h3>
-            <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
-              <DetailItem label="Registrado em" value={formatDate(selectedUpdate?.timestamp ?? null)} />
-              <DetailItem label="Criado em" value={formatDate(selectedSnapshot?.created_at)} />
-              <DetailItem label="Atualizado em" value={formatDate(selectedSnapshot?.updated_at)} />
-              <DetailItem label="Pago em" value={formatDate(selectedSnapshot?.paid_at)} />
-              <DetailItem label="Expira em" value={formatDate(selectedSnapshot?.expires_at)} />
-              <DetailItem label="Fonte" value={selectedUpdate?.source ?? '—'} />
-            </dl>
-          </section>
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                Detalhes do evento selecionado
+              </h3>
+              <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[160px_minmax(0,1fr)]">
+                <DetailItem label="Registrado em" value={formatDate(selectedUpdate?.timestamp ?? null)} />
+                <DetailItem label="Criado em" value={formatDate(selectedSnapshot?.created_at ?? null)} />
+                <DetailItem label="Atualizado em" value={formatDate(selectedSnapshot?.updated_at ?? null)} />
+                <DetailItem label="Pago em" value={formatDate(selectedSnapshot?.paid_at ?? null)} />
+                <DetailItem label="Expira em" value={formatDate(selectedSnapshot?.expires_at ?? null)} />
+                <DetailItem label="Fonte" value={selectedUpdate?.source ?? '—'} />
+              </dl>
+            </section>
+          </div>
         </div>
       </div>
     );
