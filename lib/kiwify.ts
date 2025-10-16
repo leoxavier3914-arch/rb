@@ -525,11 +525,63 @@ const gatherCandidates = (payload: UnknownPayload, paths: string[]) => {
   return values;
 };
 
-const equalsAny = (candidates: string[], keywords: string[]) =>
-  candidates.some((candidate) => keywords.includes(candidate));
+const matchesAny = (candidates: string[], keywords: Set<string>) =>
+  candidates.some((candidate) => keywords.has(candidate));
 
-const includesAny = (candidates: string[], keywords: string[]) =>
-  candidates.some((candidate) => keywords.some((keyword) => candidate.includes(keyword)));
+const KEYWORDS = {
+  approved: new Set([
+    "order_approved",
+    "order.approved",
+    "paid",
+    "pagamento aprovado",
+    "pagamento_aprovado",
+    "compra aprovada",
+    "compra_aprovada",
+  ]),
+  rejected: new Set([
+    "order_rejected",
+    "refused",
+    "compra recusada",
+    "compra_recusada",
+  ]),
+  refunded: new Set([
+    "order_refunded",
+    "refunded",
+    "chargeback",
+    "chargedback",
+    "reembolso",
+  ]),
+  pending: new Set([
+    "waiting_payment",
+    "pix_created",
+    "billet_created",
+    "pix gerado",
+    "pix_gerado",
+    "boleto gerado",
+    "boleto_gerado",
+    "boleto e pix aguardando pagamento",
+    "boleto_e_pix_aguardando_pagamento",
+  ]),
+  abandoned: new Set([
+    "cart_abandoned",
+    "checkout.abandoned",
+    "checkout_abandoned",
+    "abandoned",
+    "carrinho abandonado",
+    "carrinho_abandonado",
+  ]),
+  subscription: new Set([
+    "subscription_canceled",
+    "subscription_late",
+    "subscription_renewed",
+    "assinatura cancelada",
+    "assinatura_cancelada",
+    "assinatura atrasada",
+    "assinatura_atrasada",
+    "assinatura renovada",
+    "assinatura_renovada",
+  ]),
+};
 
 const EVENT_TYPE_PATHS = [
   "webhook_event_type",
@@ -580,62 +632,27 @@ export const detectEventKind = (payload: UnknownPayload): EventKind | null => {
   const statuses = gatherCandidates(payload, STATUS_PATHS);
   const combined = [...eventTypes, ...statuses];
 
-  if (equalsAny(eventTypes, ["order_approved", "approved_sale"])) {
-    return "approved_sale";
-  }
-
-  if (equalsAny(eventTypes, ["order_rejected", "purchase_rejected"])) {
-    return "rejected_payment";
-  }
-
-  if (equalsAny(eventTypes, ["order_refunded", "refund", "chargeback"])) {
-    return "refunded_sale";
-  }
-
-  if (equalsAny(eventTypes, ["pix_created", "billet_created", "pending_payment"])) {
-    return "pending_payment";
-  }
-
-  if (eventTypes.some((candidate) => candidate.startsWith("subscription_"))) {
+  if (matchesAny(combined, KEYWORDS.subscription)) {
     return "subscription_event";
   }
 
-  if (includesAny(eventTypes, ["abandon", "cart_abandoned"])) {
+  if (matchesAny(combined, KEYWORDS.abandoned)) {
     return "abandoned_cart";
   }
 
-  if (includesAny(combined, ["subscription"])) {
-    return "subscription_event";
-  }
-
-  if (includesAny(combined, ["abandon"])) {
-    return "abandoned_cart";
-  }
-
-  if (includesAny(combined, ["chargeback", "refund", "refunded", "reversal", "charge_back"])) {
+  if (matchesAny(combined, KEYWORDS.refunded)) {
     return "refunded_sale";
   }
 
-  if (includesAny(combined, ["refuse", "reject", "denied", "failed", "cancelled", "canceled", "void"])) {
+  if (matchesAny(combined, KEYWORDS.rejected)) {
     return "rejected_payment";
   }
 
-  if (includesAny(combined, [
-    "pix_created",
-    "billet_created",
-    "pending",
-    "awaiting",
-    "waiting",
-    "processing",
-    "pix",
-    "billet",
-    "boleto",
-    "issued",
-  ])) {
+  if (matchesAny(combined, KEYWORDS.pending)) {
     return "pending_payment";
   }
 
-  if (includesAny(combined, ["approved", "paid", "completed", "confirmed"])) {
+  if (matchesAny(combined, KEYWORDS.approved)) {
     return "approved_sale";
   }
 
