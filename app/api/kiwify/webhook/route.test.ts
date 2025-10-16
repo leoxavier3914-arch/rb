@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetEnvForTesting } from "@/lib/env";
 
@@ -20,444 +21,250 @@ vi.mock("@/lib/supabase", () => {
   };
 });
 
-const TOKEN = "test-token";
+const SECRET = "test-secret";
 
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
-process.env.KIWIFY_WEBHOOK_TOKEN = TOKEN;
+process.env.KIWIFY_WEBHOOK_SECRET = SECRET;
 
 let POST: typeof import("./route").POST;
+let HEAD: typeof import("./route").HEAD;
 
 beforeAll(async () => {
-  ({ POST } = await import("./route"));
+  ({ POST, HEAD } = await import("./route"));
 });
 
 beforeEach(() => {
   Object.keys(operations).forEach((table) => {
     delete operations[table];
   });
+  __resetEnvForTesting();
 });
+
+const signRaw = (raw: string, secret: string) =>
+  createHmac("sha1", secret).update(raw).digest("hex");
+
+const signPayload = (payload: Record<string, unknown>, secret = SECRET) =>
+  signRaw(JSON.stringify(payload), secret);
+
+type CallOptions = {
+  signature?: string | null;
+  overrideSecret?: string;
+};
 
 const callWebhook = async (
   payload: Record<string, unknown>,
-  headers: Record<string, string> = {},
+  options: CallOptions = {},
 ) => {
-  const request = new Request("http://localhost/api/kiwify/webhook", {
+  const body = JSON.stringify(payload);
+  const url = new URL("http://localhost/api/kiwify/webhook");
+
+  const signature =
+    options.signature !== undefined
+      ? options.signature
+      : signPayload(payload, options.overrideSecret ?? SECRET);
+
+  if (signature) {
+    url.searchParams.set("signature", signature);
+  }
+
+  const request = new Request(url, {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${TOKEN}`,
-      ...headers,
-    },
-    body: JSON.stringify(payload),
+    headers: { "content-type": "application/json" },
+    body,
   });
 
   return POST(request);
 };
 
-describe("POST /api/kiwify/webhook", () => {
-  it("armazena vendas aprovadas", async () => {
-    const response = await callWebhook({
-      event: "approved_sale",
-      data: {
-        id: "sale-approved",
-        customer: { name: "Alice", email: "alice@example.com" },
-        product: { name: "Curso" },
-        amount: 199.9,
-        currency: "BRL",
-        payment: { method: "pix", status: "paid" },
-        paid_at: "2024-05-31T12:00:00Z",
-      },
-    });
+describe("/api/kiwify/webhook", () => {
+  it("retorna 200 em requisições HEAD", async () => {
+    const response = await HEAD();
+    expect(response.status).toBe(200);
+  });
+
+  it("armazena vendas aprovadas seguindo o layout da documentação", async () => {
+    const payload = {
+      order_id: "sale-approved",
+      order_ref: "Quzqwus",
+      order_status: "paid",
+      webhook_event_type: "order_approved",
+      payment_method: "credit_card",
+      approved_date: "2024-12-23T15:58:00Z",
+      Customer: { full_name: "Alice", email: "alice@example.com" },
+      Product: { product_name: "Curso de Testes" },
+      Commissions: { charge_amount: 19990, currency: "BRL" },
+    };
+
+    const response = await callWebhook(payload);
 
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.type).toBe("approved_sale");
-    expect(operations.approved_sales).toBeDefined();
     expect(operations.approved_sales).toHaveLength(1);
-    expect((operations.approved_sales?.[0].payload as Record<string, unknown>).sale_id).toBe(
-      "sale-approved",
-    );
+    const stored = operations.approved_sales?.[0].payload as Record<string, unknown>;
+    expect(stored.sale_id).toBe("sale-approved");
+    expect(stored.payment_method).toBe("credit_card");
+    expect(stored.currency).toBe("BRL");
+    expect(stored.amount).toBeCloseTo(199.9, 3);
   });
 
-  it("armazena pagamentos pendentes em pending_payments", async () => {
-    const response = await callWebhook({
-      event: "pending_payment",
-      data: {
-        id: "sale-pending",
-        customer: { name: "Bruno", email: "bruno@example.com" },
-        product: { name: "Curso" },
-        amount: 99.9,
-        currency: "BRL",
-        payment: { method: "pix", status: "pending_payment" },
-        created_at: "2024-05-30T12:00:00Z",
-      },
-    });
+  it("classifica eventos pix_created como pagamentos pendentes", async () => {
+    const payload = {
+      order_id: "pending-sale",
+      order_status: "waiting_payment",
+      webhook_event_type: "pix_created",
+      payment_method: "pix",
+      created_at: "2024-12-22T10:00:00Z",
+      Customer: { full_name: "Bruno", email: "bruno@example.com" },
+      Product: { product_name: "Curso de Backend" },
+      Commissions: { charge_amount: 5990, currency: "BRL" },
+    };
+
+    const response = await callWebhook(payload);
 
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.type).toBe("pending_payment");
-    expect(operations.pending_payments).toBeDefined();
     expect(operations.pending_payments).toHaveLength(1);
-    expect(operations.abandoned_carts).toBeUndefined();
-    expect((operations.pending_payments?.[0].payload as Record<string, unknown>).sale_id).toBe(
-      "sale-pending",
-    );
+    const stored = operations.pending_payments?.[0].payload as Record<string, unknown>;
+    expect(stored.sale_id).toBe("pending-sale");
+    expect(stored.amount).toBeCloseTo(59.9, 3);
+    expect(operations.approved_sales).toBeUndefined();
   });
 
-  it("aceita tokens enviados sem o prefixo Bearer", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-no-bearer",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: TOKEN },
-    );
+  it("armazena compras recusadas em rejected_payments", async () => {
+    const payload = {
+      order_id: "sale-refused",
+      order_status: "refused",
+      webhook_event_type: "order_rejected",
+      card_rejection_reason: "insufficient_funds",
+      Customer: { full_name: "Clara", email: "clara@example.com" },
+      Product: { product_name: "Curso de UX" },
+      Commissions: { charge_amount: 14990, currency: "BRL" },
+      created_at: "2024-12-21T08:30:00Z",
+    };
 
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-  });
-
-  it("retorna 200 e ok true para Authorization Bearer com aspas", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-bearer-quoted-ok-duplicate",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: `Bearer "${TOKEN}"` },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.ok).toBe(true);
-  });
-
-  it("aceita tokens enviados no formato Token token=", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-token-token",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: `Token token=${TOKEN}` },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-  });
-
-  it("retorna ok true para tokens Bearer com aspas", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-bearer-quoted-ok",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: `Bearer "${TOKEN}"` },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.ok).toBe(true);
-    expect(body.type).toBe("approved_sale");
-  });
-
-  it("aceita tokens Bearer no formato token=", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-bearer-token-prefix",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: `Bearer token=${TOKEN}` },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-  });
-
-  it("aceita tokens Bearer no formato token=\"\"", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-bearer-token-prefix-quoted",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: `Bearer token="${TOKEN}"` },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-  });
-
-  it("aceita tokens com aspas no formato Bearer", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-bearer-quoted",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: `Bearer "${TOKEN}"` },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-  });
-
-  it("aceita token quando a variável de ambiente tem aspas e espaços", async () => {
-    process.env.KIWIFY_WEBHOOK_TOKEN = `  "${TOKEN}"  `;
-    __resetEnvForTesting();
-
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-env-quoted",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: `Bearer ${TOKEN}` },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-
-    process.env.KIWIFY_WEBHOOK_TOKEN = TOKEN;
-    __resetEnvForTesting();
-  });
-
-  it("aceita tokens entre aspas no formato Token token=", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-token-token-quoted",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: `Token token="${TOKEN}"` },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-  });
-
-  it("aceita variações de espaços e maiúsculas em Token token=", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-token-token-spaces",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { authorization: `TOKEN   token =   ${TOKEN}` },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-  });
-
-  it("aceita tokens enviados no cabeçalho x-kiwify-token", async () => {
-    const response = await callWebhook(
-      {
-        event: "approved_sale",
-        data: {
-          id: "sale-approved-x-kiwify-token",
-          customer: { name: "Alice", email: "alice@example.com" },
-          product: { name: "Curso" },
-          amount: 199.9,
-          currency: "BRL",
-          payment: { method: "pix", status: "paid" },
-          paid_at: "2024-05-31T12:00:00Z",
-        },
-      },
-      { "x-kiwify-token": TOKEN },
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("approved_sale");
-  });
-
-  it("classifica payloads com order.order_status = waiting_payment como pending_payment", async () => {
-    const response = await callWebhook({
-      event: "pix_created",
-      order: {
-        id: "order-waiting",
-        order_status: "waiting_payment",
-        webhook_event_type: "pix_created",
-        amount: 59.9,
-        currency: "BRL",
-      },
-      data: {
-        order: {
-          id: "order-waiting",
-          order_status: "waiting_payment",
-          webhook_event_type: "pix_created",
-        },
-      },
-    });
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("pending_payment");
-    expect(operations.pending_payments).toBeDefined();
-    expect(operations.pending_payments).toHaveLength(1);
-    const pendingPayload = operations.pending_payments?.[0]
-      .payload as Record<string, unknown>;
-    expect(pendingPayload?.sale_id ?? null).toBeNull();
-  });
-
-  it("prefere order.order_status a order.status ao classificar pagamentos pendentes", async () => {
-    const response = await callWebhook({
-      event: "pix_created",
-      order: {
-        id: "order-waiting-priority",
-        status: "pix_created",
-        order_status: "waiting_payment",
-        webhook_event_type: "pix_created",
-        amount: 39.9,
-        currency: "BRL",
-      },
-      data: {
-        order: {
-          id: "order-waiting-priority",
-          status: "pix_created",
-          order_status: "waiting_payment",
-          webhook_event_type: "pix_created",
-        },
-      },
-    });
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.type).toBe("pending_payment");
-    expect(operations.pending_payments).toBeDefined();
-    expect(operations.pending_payments).toHaveLength(1);
-    const pendingPayload = operations.pending_payments?.[0]
-      .payload as Record<string, unknown>;
-    expect(pendingPayload?.sale_id ?? null).toBeNull();
-  });
-
-  it("armazena pagamentos recusados em rejected_payments", async () => {
-    const response = await callWebhook({
-      event: "refused",
-      data: {
-        id: "sale-refused",
-        customer: { name: "Clara", email: "clara@example.com" },
-        product: { name: "Curso" },
-        amount: 149.9,
-        currency: "BRL",
-        payment: { method: "card", status: "refused" },
-        created_at: "2024-05-29T12:00:00Z",
-      },
-    });
+    const response = await callWebhook(payload);
 
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.type).toBe("rejected_payment");
-    expect(operations.rejected_payments).toBeDefined();
     expect(operations.rejected_payments).toHaveLength(1);
-    expect((operations.rejected_payments?.[0].payload as Record<string, unknown>).sale_id).toBe(
-      "sale-refused",
-    );
+    const stored = operations.rejected_payments?.[0].payload as Record<string, unknown>;
+    expect(stored.sale_id).toBe("sale-refused");
   });
 
-  it("armazena vendas reembolsadas em refunded_sales", async () => {
-    const response = await callWebhook({
-      event: "chargeback",
-      data: {
-        id: "sale-refunded",
-        customer: { name: "Diego", email: "diego@example.com" },
-        product: { name: "Curso" },
-        amount: 249.9,
-        currency: "BRL",
-        payment: { method: "card", status: "chargeback" },
-        created_at: "2024-05-28T12:00:00Z",
-      },
-    });
+  it("armazena chargeback em refunded_sales", async () => {
+    const payload = {
+      order_id: "sale-refunded",
+      order_status: "refunded",
+      webhook_event_type: "chargeback",
+      Customer: { full_name: "Diego", email: "diego@example.com" },
+      Product: { product_name: "Curso de Design" },
+      Commissions: { charge_amount: 24990, currency: "BRL" },
+      updated_at: "2024-12-25T11:00:00Z",
+    };
+
+    const response = await callWebhook(payload);
 
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.type).toBe("refunded_sale");
-    expect(operations.refunded_sales).toBeDefined();
     expect(operations.refunded_sales).toHaveLength(1);
-    expect((operations.refunded_sales?.[0].payload as Record<string, unknown>).sale_id).toBe(
-      "sale-refunded",
-    );
+    const stored = operations.refunded_sales?.[0].payload as Record<string, unknown>;
+    expect(stored.sale_id).toBe("sale-refunded");
+  });
+
+  it("armazena carrinhos abandonados mesmo sem webhook_event_type", async () => {
+    const payload = {
+      cart_id: "cart-123",
+      status: "abandoned",
+      checkout_link: "https://pay.kiwify.com.br/cart-123",
+      Customer: { full_name: "Elaine", email: "elaine@example.com" },
+      Product: { product_name: "Curso de Tráfego" },
+      amount: 12990,
+      currency: "BRL",
+      created_at: "2024-12-20T09:00:00Z",
+    };
+
+    const response = await callWebhook(payload);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("abandoned_cart");
+    expect(operations.abandoned_carts).toHaveLength(1);
+    const stored = operations.abandoned_carts?.[0].payload as Record<string, unknown>;
+    expect(stored.cart_id).toBe("cart-123");
+    expect(stored.checkout_url).toBe("https://pay.kiwify.com.br/cart-123");
+  });
+
+  it("armazena eventos de assinatura em subscription_events", async () => {
+    const payload = {
+      order_id: "sale-subscription",
+      subscription_id: "sub-001",
+      webhook_event_type: "subscription_canceled",
+      Subscription: { status: "canceled", updated_at: "2024-12-26T12:00:00Z" },
+      Customer: { full_name: "Fernanda", email: "fernanda@example.com" },
+      Product: { product_name: "Clube VIP" },
+      Commissions: { charge_amount: 8900, currency: "BRL" },
+    };
+
+    const response = await callWebhook(payload);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("subscription_event");
+    expect(operations.subscription_events).toHaveLength(1);
+    const stored = operations.subscription_events?.[0].payload as Record<string, unknown>;
+    expect(stored.subscription_id).toBe("sub-001");
+    expect(stored.event_type).toBe("subscription_canceled");
+    expect(stored.sale_id).toBe("sale-subscription");
+  });
+
+  it("retorna 400 quando a assinatura não é enviada", async () => {
+    const payload = {
+      order_id: "sale-approved",
+      webhook_event_type: "order_approved",
+      Customer: { full_name: "Alice", email: "alice@example.com" },
+      Product: { product_name: "Curso" },
+      Commissions: { charge_amount: 19990, currency: "BRL" },
+    };
+
+    const response = await callWebhook(payload, { signature: null });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Assinatura ausente" });
+    expect(operations.approved_sales).toBeUndefined();
+  });
+
+  it("retorna 400 quando a assinatura não confere", async () => {
+    const payload = {
+      order_id: "sale-approved",
+      webhook_event_type: "order_approved",
+      Customer: { full_name: "Alice", email: "alice@example.com" },
+      Product: { product_name: "Curso" },
+      Commissions: { charge_amount: 19990, currency: "BRL" },
+    };
+
+    const response = await callWebhook(payload, { signature: "assinatura-invalida" });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Assinatura inválida" });
+    expect(operations.approved_sales).toBeUndefined();
+  });
+
+  it("retorna 400 quando o JSON é inválido", async () => {
+    const rawBody = "{";
+    const signature = signRaw(rawBody, SECRET);
+    const url = new URL("http://localhost/api/kiwify/webhook");
+    url.searchParams.set("signature", signature);
+
+    const request = new Request(url, {
+      method: "POST",
+      body: rawBody,
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Payload inválido" });
   });
 });

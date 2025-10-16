@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   detectEventKind,
@@ -6,12 +8,14 @@ import {
   normalizePendingPayment,
   normalizeRejectedPayment,
   normalizeRefundedSale,
+  normalizeSubscriptionEvent,
   type EventKind,
   type NormalizedAbandonedCart,
   type NormalizedApprovedSale,
   type NormalizedPendingPayment,
   type NormalizedRejectedPayment,
   type NormalizedRefundedSale,
+  type NormalizedSubscriptionEvent,
 } from "@/lib/kiwify";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getEnv } from "@/lib/env";
@@ -23,7 +27,8 @@ type NormalizedPayload =
   | { kind: "pending_payment"; value: NormalizedPendingPayment }
   | { kind: "rejected_payment"; value: NormalizedRejectedPayment }
   | { kind: "refunded_sale"; value: NormalizedRefundedSale }
-  | { kind: "abandoned_cart"; value: NormalizedAbandonedCart };
+  | { kind: "abandoned_cart"; value: NormalizedAbandonedCart }
+  | { kind: "subscription_event"; value: NormalizedSubscriptionEvent };
 
 type NormalizedByKind = {
   approved_sale: NormalizedApprovedSale;
@@ -31,6 +36,7 @@ type NormalizedByKind = {
   rejected_payment: NormalizedRejectedPayment;
   refunded_sale: NormalizedRefundedSale;
   abandoned_cart: NormalizedAbandonedCart;
+  subscription_event: NormalizedSubscriptionEvent;
 };
 
 type UpsertConfig<K extends EventKind> = {
@@ -115,6 +121,24 @@ const normalizeMap: { [K in EventKind]: () => UpsertConfig<K> } = {
       payload: cart.payload,
     }),
   }),
+  subscription_event: () => ({
+    table: "subscription_events",
+    buildRow: (event) => ({
+      event_reference: event.eventReference,
+      subscription_id: event.subscriptionId,
+      sale_id: event.saleId,
+      customer_name: event.customerName,
+      customer_email: event.customerEmail,
+      product_name: event.productName,
+      amount: event.amount,
+      currency: event.currency,
+      payment_method: event.paymentMethod,
+      event_type: event.eventType,
+      subscription_status: event.subscriptionStatus,
+      occurred_at: event.occurredAt,
+      payload: event.payload,
+    }),
+  }),
 };
 
 const getUpsertConfig = <K extends EventKind>(kind: K): UpsertConfig<K> =>
@@ -122,7 +146,7 @@ const getUpsertConfig = <K extends EventKind>(kind: K): UpsertConfig<K> =>
 
 const ON_CONFLICT = { onConflict: "event_reference" } as const;
 
-const sanitizeToken = (value: string | null): string | null => {
+const normalizeSignature = (value: string | null): string | null => {
   if (!value) {
     return null;
   }
@@ -132,42 +156,36 @@ const sanitizeToken = (value: string | null): string | null => {
     return null;
   }
 
-  const fromBearer = /^Bearer\s+(.+)$/i.exec(trimmed);
-  if (fromBearer) {
-    return sanitizeToken(fromBearer[1]);
-  }
-
-  const fromToken = /^Token\s+token\s*=\s*(.+)$/i.exec(trimmed);
-  if (fromToken) {
-    return sanitizeToken(fromToken[1]);
-  }
-
-  const withoutPrefix = /^token\s*=\s*(.+)$/i.exec(trimmed);
-  const candidate = withoutPrefix ? withoutPrefix[1] : trimmed;
-
-  return candidate.replace(/^(["'])(.*)\1$/, "$2");
+  return trimmed.replace(/^(["'])(.*)\1$/, "$2").replace(/\s+/g, "").toLowerCase();
 };
 
-const extractToken = (headers: Headers): string | null => {
-  const headerCandidates = [
-    headers.get("authorization"),
-    headers.get("x-kiwify-token"),
-    headers.get("token"),
-  ];
+const buildSignature = (rawBody: string, secret: string) =>
+  createHmac("sha1", secret).update(rawBody).digest("hex");
 
-  for (const candidate of headerCandidates) {
-    const token = sanitizeToken(candidate);
-    if (token) {
-      return token;
-    }
+const isSignatureValid = (rawBody: string, provided: string | null, secret: string) => {
+  if (!provided) {
+    return false;
   }
 
-  return null;
-};
-
-const parseBody = async (request: Request): Promise<JsonRecord | null> => {
   try {
-    const body = await request.json();
+    const expected = buildSignature(rawBody, secret);
+    const expectedBuffer = Buffer.from(expected, "hex");
+    const providedBuffer = Buffer.from(provided, "hex");
+
+    if (expectedBuffer.length !== providedBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(expectedBuffer, providedBuffer);
+  } catch (error) {
+    console.error("Assinatura inválida", error);
+    return false;
+  }
+};
+
+const parseBody = (rawBody: string): JsonRecord | null => {
+  try {
+    const body = JSON.parse(rawBody);
     if (body && typeof body === "object") {
       return body as JsonRecord;
     }
@@ -190,8 +208,18 @@ const normalizePayload = (kind: EventKind, payload: JsonRecord): NormalizedPaylo
       return { kind, value: normalizeRefundedSale(payload) };
     case "abandoned_cart":
       return { kind, value: normalizeAbandonedCart(payload) };
+    case "subscription_event":
+      return { kind, value: normalizeSubscriptionEvent(payload) };
   }
 };
+
+export async function HEAD() {
+  return new NextResponse(null, { status: 200 });
+}
+
+export async function GET() {
+  return NextResponse.json({ ok: true });
+}
 
 export async function POST(request: Request) {
   let env;
@@ -202,12 +230,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Configuração do servidor ausente" }, { status: 500 });
   }
 
-  const providedToken = extractToken(request.headers);
-  if (!providedToken || providedToken !== env.KIWIFY_WEBHOOK_TOKEN) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  const url = new URL(request.url);
+  const providedSignature = normalizeSignature(url.searchParams.get("signature"));
+  const rawBody = await request.text();
+
+  if (!providedSignature) {
+    return NextResponse.json({ error: "Assinatura ausente" }, { status: 400 });
   }
 
-  const payload = await parseBody(request);
+  if (!isSignatureValid(rawBody, providedSignature, env.KIWIFY_WEBHOOK_SECRET)) {
+    return NextResponse.json({ error: "Assinatura inválida" }, { status: 400 });
+  }
+
+  const payload = parseBody(rawBody);
   if (!payload) {
     return NextResponse.json({ error: "Payload inválido" }, { status: 400 });
   }
@@ -223,7 +258,9 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
 
   try {
-    const { error } = await supabase.from(config.table).upsert(config.buildRow(normalized.value), ON_CONFLICT);
+    const { error } = await supabase
+      .from(config.table)
+      .upsert(config.buildRow(normalized.value), ON_CONFLICT);
 
     if (error) {
       console.error("Erro ao gravar evento do webhook", error);
