@@ -176,12 +176,12 @@ describe("/api/kiwify/webhook", () => {
   it("classifica eventos order.pending como pagamentos pendentes", async () => {
     const payload = {
       id: "evt-pending-sale",
-      event: "order.pending",
+      event: "Pix gerado",
       resource: "order",
       sent_at: "2024-12-22T10:05:00Z",
       data: {
         id: "pending-sale",
-        status: "pending",
+        status: "waiting_payment",
         created_at: "2024-12-22T10:00:00Z",
         amount: { value_cents: 5990, currency: "BRL" },
         payment: { method: "pix" },
@@ -205,12 +205,12 @@ describe("/api/kiwify/webhook", () => {
   it("armazena compras recusadas em rejected_payments", async () => {
     const payload = {
       id: "evt-sale-refused",
-      event: "order.rejected",
+      event: "Compra recusada",
       resource: "order",
       sent_at: "2024-12-21T08:40:00Z",
       data: {
         id: "sale-refused",
-        status: "rejected",
+        status: "refused",
         created_at: "2024-12-21T08:30:00Z",
         rejection_reason: "insufficient_funds",
         amount: { value_cents: 14990, currency: "BRL" },
@@ -232,7 +232,7 @@ describe("/api/kiwify/webhook", () => {
   it("armazena chargeback em refunded_sales", async () => {
     const payload = {
       id: "evt-sale-refunded",
-      event: "order.refunded",
+      event: "Reembolso",
       resource: "order",
       sent_at: "2024-12-25T11:05:00Z",
       data: {
@@ -253,6 +253,32 @@ describe("/api/kiwify/webhook", () => {
     expect(operations.refunded_sales).toHaveLength(1);
     const stored = operations.refunded_sales?.[0].payload as Record<string, unknown>;
     expect(stored.sale_id).toBe("sale-refunded");
+  });
+
+  it("interpreta descrição em português como pagamento pendente", async () => {
+    const payload = {
+      id: "evt-sale-portuguese-pending",
+      event: "Boleto gerado",
+      resource: "order",
+      data: {
+        id: "sale-portuguese-pending",
+        status: "Boleto e pix aguardando pagamento",
+        amount: { value_cents: 8900, currency: "BRL" },
+        payment: { method: "boleto" },
+        customer: { name: "Guilherme", email: "gui@example.com" },
+        items: [{ product: { name: "Curso Frontend" } }],
+      },
+    } satisfies Record<string, unknown>;
+
+    const response = await callWebhook(payload);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("pending_payment");
+    expect(operations.pending_payments).toHaveLength(1);
+    const stored = operations.pending_payments?.[0].payload as Record<string, unknown>;
+    expect(stored.sale_id).toBe("sale-portuguese-pending");
+    expect(operations.approved_sales).toBeUndefined();
   });
 
   it("armazena carrinhos abandonados no layout oficial", async () => {
