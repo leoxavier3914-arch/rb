@@ -79,13 +79,132 @@ function get(payload: UnknownPayload, path: string) {
   }, payload);
 }
 
-const normalizeDate = (payload: UnknownPayload, paths: string[]) => {
+const SAO_PAULO_TIME_ZONE = "America/Sao_Paulo";
+const SAO_PAULO_OFFSET_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: SAO_PAULO_TIME_ZONE,
+  hour12: false,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+const SAO_PAULO_OFFSET_DEFAULT = -3 * 60;
+
+const TIMEZONE_REGEX = /(Z|[+-]\d{2}:?\d{2})$/i;
+
+const parseNaiveDateTime = (value: string) => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const match = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?)?$/,
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const [, y, m, d, h = "00", min = "00", s = "00", ms = ""] = match;
+  const millisecond = ms ? Number((ms + "00").slice(0, 3)) : 0;
+
+  return {
+    year: Number(y),
+    month: Number(m),
+    day: Number(d),
+    hour: Number(h),
+    minute: Number(min),
+    second: Number(s),
+    millisecond,
+  };
+};
+
+const getSaoPauloOffsetMinutesForInstant = (instantMs: number) => {
+  const parts = SAO_PAULO_OFFSET_FORMATTER.formatToParts(new Date(instantMs));
+  const components: Record<string, number> = {};
+
+  for (const part of parts) {
+    if (part.type === "literal") continue;
+    components[part.type] = Number(part.value);
+  }
+
+  if (
+    components.year === undefined ||
+    components.month === undefined ||
+    components.day === undefined
+  ) {
+    return SAO_PAULO_OFFSET_DEFAULT;
+  }
+
+  const asUtc = Date.UTC(
+    components.year,
+    (components.month ?? 1) - 1,
+    components.day ?? 1,
+    components.hour ?? 0,
+    components.minute ?? 0,
+    components.second ?? 0,
+  );
+
+  return (asUtc - instantMs) / 60000;
+};
+
+const convertNaiveStringToSaoPauloIso = (value: string) => {
+  const parsed = parseNaiveDateTime(value);
+  if (!parsed) {
+    return null;
+  }
+
+  const { year, month, day, hour, minute, second, millisecond } = parsed;
+
+  const baselineUtc = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+
+  let offset = getSaoPauloOffsetMinutesForInstant(baselineUtc);
+  let adjustedUtc = Date.UTC(year, month - 1, day, hour, minute, second, millisecond) -
+    offset * 60_000;
+
+  offset = getSaoPauloOffsetMinutesForInstant(adjustedUtc);
+  adjustedUtc = Date.UTC(year, month - 1, day, hour, minute, second, millisecond) -
+    offset * 60_000;
+
+  const candidate = new Date(adjustedUtc);
+  if (Number.isNaN(candidate.getTime())) {
+    return null;
+  }
+
+  return candidate.toISOString();
+};
+
+export const normalizeDate = (payload: UnknownPayload, paths: string[]) => {
   for (const path of paths) {
     const value = get(payload, path);
     if (!value) continue;
-    const candidate = typeof value === "number" ? new Date(value * 1000) : new Date(String(value));
-    if (!Number.isNaN(candidate.getTime())) {
-      return candidate.toISOString();
+    if (typeof value === "number") {
+      const candidate = new Date(value * 1000);
+      if (!Number.isNaN(candidate.getTime())) {
+        return candidate.toISOString();
+      }
+      continue;
+    }
+
+    if (typeof value === "string") {
+      const strValue = value.trim();
+      if (strValue.length === 0) continue;
+
+      if (!TIMEZONE_REGEX.test(strValue)) {
+        const converted = convertNaiveStringToSaoPauloIso(strValue.replace(" ", "T"));
+        if (converted) {
+          return converted;
+        }
+      }
+
+      const candidate = new Date(strValue);
+      if (!Number.isNaN(candidate.getTime())) {
+        return candidate.toISOString();
+      }
     }
   }
   return null;
