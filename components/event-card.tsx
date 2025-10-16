@@ -9,6 +9,7 @@ export interface EventCardProps {
   occurredAt?: string | null;
   meta?: string | null;
   payload?: Record<string, unknown> | null;
+  details?: { label: string; value: string }[];
 }
 
 const buildMetaLink = (value: string) => {
@@ -39,6 +40,7 @@ export function EventCard({
   badge,
   occurredAt,
   meta,
+  details = [],
 }: EventCardProps) {
   const relativeTime = occurredAt
     ? formatDistanceToNow(new Date(occurredAt), { locale: ptBR, addSuffix: true })
@@ -48,6 +50,7 @@ export function EventCard({
   const metaLink = normalizedMeta ? buildMetaLink(normalizedMeta) : null;
   const metaHref = metaLink?.href;
   const metaDisplay = normalizedMeta ? formatMetaDisplay(normalizedMeta, metaLink) : null;
+  const hasDetails = Array.isArray(details) && details.length > 0;
 
   return (
     <article className="group relative overflow-hidden rounded-3xl border border-surface-accent/40 bg-surface-accent/70 p-6 transition-all hover:-translate-y-1 hover:border-primary hover:shadow-soft">
@@ -74,6 +77,16 @@ export function EventCard({
                 {metaDisplay}
               </p>
             )
+          ) : null}
+          {hasDetails ? (
+            <dl className="flex flex-wrap gap-x-4 gap-y-1 pt-2 text-xs text-muted-foreground">
+              {details.map((detail, index) => (
+                <div key={`${detail.label}-${detail.value}-${index}`} className="flex gap-1">
+                  <dt className="font-medium text-muted-foreground/80">{detail.label}:</dt>
+                  <dd>{detail.value}</dd>
+                </div>
+              ))}
+            </dl>
           ) : null}
         </div>
         <div className="flex flex-col items-end gap-2 text-right">

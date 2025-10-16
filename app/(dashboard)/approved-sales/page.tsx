@@ -5,35 +5,80 @@ import { getApprovedSales } from "@/lib/queries";
 export const dynamic = "force-dynamic";
 
 export default async function ApprovedSalesPage() {
-  const { records, totalAmount, totalCount, lastEvent } = await getApprovedSales();
+  const {
+    records,
+    totalAmount,
+    totalGrossAmount,
+    totalKiwifyCommissionAmount,
+    totalAffiliateCommissionAmount,
+    totalCount,
+    lastEvent,
+  } = await getApprovedSales();
 
-  const events = records.map((sale) => ({
-    id: sale.id,
-    title: sale.product_name ?? "Produto sem nome",
-    subtitle: sale.customer_name ?? sale.customer_email ?? "Cliente desconhecido",
-    amount: formatCurrency(sale.amount, sale.currency) ?? undefined,
-    badge: sale.payment_method?.toUpperCase() ?? null,
-    occurredAt: sale.occurred_at ?? sale.created_at,
-    meta: sale.sale_id ?? undefined,
-  }));
+  const events = records.map((sale) => {
+    const netDisplay = formatCurrency(sale.net_amount ?? sale.amount, sale.currency);
+    const grossDisplay = formatCurrency(sale.gross_amount ?? sale.amount, sale.currency);
+    const kiwifyDisplay = formatCurrency(sale.kiwify_commission_amount, sale.currency);
+    const affiliateDisplay = formatCurrency(sale.affiliate_commission_amount, sale.currency);
+
+    const details = [
+      grossDisplay && grossDisplay !== netDisplay
+        ? { label: "Valor cheio", value: grossDisplay }
+        : null,
+      kiwifyDisplay ? { label: "Comissão Kiwify", value: kiwifyDisplay } : null,
+      affiliateDisplay ? { label: "Comissão Afiliados", value: affiliateDisplay } : null,
+    ].filter((detail): detail is { label: string; value: string } => detail !== null);
+
+    return {
+      id: sale.id,
+      title: sale.product_name ?? "Produto sem nome",
+      subtitle: sale.customer_name ?? sale.customer_email ?? "Cliente desconhecido",
+      amount: netDisplay ?? undefined,
+      badge: sale.payment_method?.toUpperCase() ?? null,
+      occurredAt: sale.occurred_at ?? sale.created_at,
+      meta: sale.sale_id ?? undefined,
+      details,
+    };
+  });
 
   const currency = records[0]?.currency;
 
+  const stats = [
+    { label: "Total de vendas", value: totalCount.toString() },
+    {
+      label: "Receita líquida",
+      value: formatCurrency(totalAmount, currency) ?? "—",
+      helper: "Somatório líquido considerando as últimas confirmações",
+    },
+    {
+      label: "Valor cheio capturado",
+      value: formatCurrency(totalGrossAmount, currency) ?? "—",
+      helper: "Preço integral antes das taxas",
+    },
+    {
+      label: "Comissão Kiwify",
+      value: formatCurrency(totalKiwifyCommissionAmount, currency) ?? "—",
+      helper: "Total retido pela Kiwify nos últimos eventos",
+    },
+  ];
+
+  if (totalAffiliateCommissionAmount > 0) {
+    stats.push({
+      label: "Comissão de afiliados",
+      value: formatCurrency(totalAffiliateCommissionAmount, currency) ?? "—",
+      helper: "Repasse somado aos parceiros em destaque",
+    });
+  }
+
+  stats.push({
+    label: "Última confirmação",
+    value: lastEvent ? formatDate(lastEvent) ?? "—" : "—",
+    helper: "Atualize a página para forçar a sincronização",
+  });
+
   return (
     <EventsBoard
-      stats={[
-        { label: "Total de vendas", value: totalCount.toString() },
-        {
-          label: "Receita capturada",
-          value: formatCurrency(totalAmount, currency) ?? "—",
-          helper: "Somatório das últimas entradas",
-        },
-        {
-          label: "Última confirmação",
-          value: lastEvent ? formatDate(lastEvent) ?? "—" : "—",
-          helper: "Atualize a página para forçar a sincronização",
-        },
-      ]}
+      stats={stats}
       heading="Entradas mais recentes"
       description="Listagem limitada aos últimos 40 eventos confirmados pela Kiwify."
       emptyState="Ainda não recebemos vendas aprovadas. Aguardando o primeiro webhook da Kiwify."

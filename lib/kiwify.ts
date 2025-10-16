@@ -7,6 +7,10 @@ interface NormalizedBase {
   customerEmail: string | null;
   productName: string | null;
   amount: number | null;
+  grossAmount: number | null;
+  netAmount: number | null;
+  kiwifyCommissionAmount: number | null;
+  affiliateCommissionAmount: number | null;
   currency: string | null;
   occurredAt: string | null;
   payload: Record<string, unknown>;
@@ -229,6 +233,421 @@ const normalizeAmount = (value: number | null): number | null => {
   return value;
 };
 
+const asciiFold = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const normalizeKey = (value: string) =>
+  asciiFold(value)
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+type CommissionRole = "producer" | "kiwify" | "affiliate" | "gross" | string;
+
+const normalizeCommissionRole = (value: string | null | undefined): CommissionRole | null => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = normalizeKey(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const directMap: Record<string, CommissionRole> = {
+    producer: "producer",
+    produtores: "producer",
+    produtor: "producer",
+    produtor_principal: "producer",
+    criador: "producer",
+    creator: "producer",
+    owner: "producer",
+    seller: "producer",
+    vendedor: "producer",
+    liquid: "producer",
+    liquido: "producer",
+    valor_liquido: "producer",
+    net: "producer",
+    net_amount: "producer",
+    minha_comissao: "producer",
+    minha_receita: "producer",
+    kiwify: "kiwify",
+    taxa_kiwify: "kiwify",
+    comissao_kiwify: "kiwify",
+    plataforma: "kiwify",
+    platform: "kiwify",
+    gateway: "kiwify",
+    taxa: "kiwify",
+    fee: "kiwify",
+    affiliate: "affiliate",
+    afiliado: "affiliate",
+    afiliada: "affiliate",
+    coprodutor: "affiliate",
+    coprodutora: "affiliate",
+    co_produtor: "affiliate",
+    coproducer: "affiliate",
+    partner: "affiliate",
+    gross: "gross",
+    bruto: "gross",
+    valor_bruto: "gross",
+    valor_cheio: "gross",
+    valor_total: "gross",
+    total: "gross",
+    total_bruto: "gross",
+    charge: "gross",
+    charge_amount: "gross",
+    full_price: "gross",
+    price_total: "gross",
+  };
+
+  if (directMap[normalized]) {
+    return directMap[normalized];
+  }
+
+  if (/kiwify|plataforma|platform|gateway|taxa|tarifa|fee/.test(normalized)) {
+    return "kiwify";
+  }
+
+  if (/afiliad|affiliate|coprodut|partner/.test(normalized)) {
+    return "affiliate";
+  }
+
+  if (/produt|producer|creator|owner|seller|liquid|net|minha/.test(normalized)) {
+    return "producer";
+  }
+
+  if (/gross|bruto|cheio|total|charge|price/.test(normalized)) {
+    return "gross";
+  }
+
+  return normalized;
+};
+
+interface CommissionEntry {
+  role: CommissionRole | null;
+  amount: number | null;
+}
+
+const COMMISSION_CONTAINER_PATHS = [
+  "Commissions",
+  "commissions",
+  "data.Commissions",
+  "data.commissions",
+  "data.order.Commissions",
+  "data.order.commissions",
+  "data.order.commission_split",
+  "data.order.commission",
+  "data.order.commission_details",
+  "data.checkout.Commissions",
+  "data.checkout.commissions",
+  "data.checkout.commission",
+  "data.checkout.commission_split",
+  "data.transaction.commissions",
+  "data.payment.commissions",
+  "order.commissions",
+  "Order.commissions",
+  "charges.completed.0.commissions",
+  "Subscription.charges.completed.0.commissions",
+];
+
+const COMMISSION_ROLE_HINT_KEYS = [
+  "producer",
+  "produtor",
+  "produtora",
+  "creator",
+  "criador",
+  "owner",
+  "seller",
+  "vendedor",
+  "kiwify",
+  "affiliate",
+  "afiliado",
+  "afiliada",
+  "coprodutor",
+  "coprodutora",
+  "coproducer",
+  "co_produtor",
+];
+
+const COMMISSION_NESTED_KEYS = [
+  "entries",
+  "items",
+  "list",
+  "values",
+  "details",
+  "components",
+  "breakdown",
+];
+
+const COMMISSION_AMOUNT_PATHS = [
+  "amount",
+  "amount.value",
+  "amount.value_cents",
+  "amount.total",
+  "amount.total_value",
+  "value",
+  "value.amount",
+  "value_cents",
+  "commission",
+  "commission_value",
+  "net_value",
+  "net_amount",
+  "total_value",
+];
+
+const collectCommissionEntriesFromValue = (
+  value: unknown,
+  inheritedRole: CommissionRole | null = null,
+): CommissionEntry[] => {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectCommissionEntriesFromValue(entry));
+  }
+
+  if (typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as UnknownPayload;
+  const entries: CommissionEntry[] = [];
+
+  const roleCandidate = stringCoalesce(record, [
+    "type",
+    "role",
+    "kind",
+    "commission_type",
+    "commissionType",
+    "title",
+    "name",
+    "label",
+  ]);
+
+  const resolvedRole = normalizeCommissionRole(roleCandidate ?? inheritedRole ?? null);
+  const amountCandidate = normalizeAmount(numberCoalesce(record, COMMISSION_AMOUNT_PATHS));
+
+  if (resolvedRole || amountCandidate !== null) {
+    entries.push({ role: resolvedRole, amount: amountCandidate });
+  }
+
+  for (const [key, nested] of Object.entries(record)) {
+    const normalizedKey = normalizeKey(key);
+
+    if (COMMISSION_ROLE_HINT_KEYS.some((candidate) => normalizeKey(candidate) === normalizedKey)) {
+      const nestedRole = normalizeCommissionRole(key);
+      entries.push(...collectCommissionEntriesFromValue(nested, nestedRole));
+      continue;
+    }
+
+    const detectedRole = normalizeCommissionRole(key);
+    if (detectedRole && detectedRole !== resolvedRole) {
+      const directAmount = normalizeAmount(numberCoalesce(record, [key]));
+      if (directAmount !== null) {
+        entries.push({ role: detectedRole, amount: directAmount });
+      }
+    }
+
+    if (COMMISSION_NESTED_KEYS.includes(normalizedKey) && nested !== record) {
+      entries.push(...collectCommissionEntriesFromValue(nested, resolvedRole));
+    }
+  }
+
+  return entries.filter((entry) => entry.role || entry.amount !== null);
+};
+
+const collectCommissionEntries = (payload: UnknownPayload): CommissionEntry[] => {
+  const entries: CommissionEntry[] = [];
+
+  for (const path of COMMISSION_CONTAINER_PATHS) {
+    const value = get(payload, path);
+    if (value !== null && value !== undefined) {
+      entries.push(...collectCommissionEntriesFromValue(value));
+    }
+  }
+
+  return entries;
+};
+
+const pickCommissionAmount = (
+  entries: CommissionEntry[],
+  role: CommissionRole,
+): number | null => {
+  for (const entry of entries) {
+    if (entry.role && normalizeCommissionRole(entry.role) === role && entry.amount !== null) {
+      return entry.amount;
+    }
+  }
+
+  return null;
+};
+
+const firstNonNull = <T>(values: (T | null | undefined)[]): T | null => {
+  for (const value of values) {
+    if (value !== null && value !== undefined) {
+      return value;
+    }
+  }
+
+  return null;
+};
+
+const DEFAULT_AMOUNT_PATHS = [
+  "Commissions.charge_amount",
+  "commissions.charge_amount",
+  "charge_amount",
+  "amount",
+  "data.amount",
+  "data.amount.value",
+  "data.amount.value_cents",
+  "data.amount.total",
+  "data.amount.total_value",
+  "data.amount.amount",
+  "data.order.amount",
+  "data.order.amount.value",
+  "data.order.amount.value_cents",
+  "data.order.amount.total",
+  "data.order.amount.total_value",
+  "data.order.total",
+  "data.order.total_value",
+  "data.checkout.amount",
+  "data.checkout.amount.value",
+  "data.checkout.amount.value_cents",
+  "data.checkout.amount.total",
+  "data.checkout.amount.total_value",
+  "transaction.amount",
+  "data.transaction.amount",
+  "order.amount",
+  "Order.amount",
+  "value",
+  "price",
+  "charges.completed.0.amount",
+  "Subscription.charges.completed.0.amount",
+  "SmartInstallment.amount_total",
+];
+
+const DEFAULT_NET_AMOUNT_PATHS = [
+  "Commissions.producer_commission",
+  "commissions.producer_commission",
+  "Commissions.producer_amount",
+  "commissions.producer_amount",
+  "Commissions.producer",
+  "commissions.producer",
+  "Commissions.my_commission",
+  "commissions.my_commission",
+  "Commissions.net_amount",
+  "commissions.net_amount",
+  "data.commissions.producer_commission",
+  "data.Commissions.producer_commission",
+  "data.order.commissions.producer_commission",
+  "data.order.Commissions.producer_commission",
+  "data.checkout.commissions.producer_commission",
+  "data.checkout.Commissions.producer_commission",
+  "data.commissions.my_commission",
+  "data.order.commissions.my_commission",
+  "data.checkout.commissions.my_commission",
+  "data.commissions.net_amount",
+  "data.order.commissions.net_amount",
+  "data.checkout.commissions.net_amount",
+];
+
+const DEFAULT_KIWIFY_COMMISSION_PATHS = [
+  "Commissions.kiwify_commission",
+  "commissions.kiwify_commission",
+  "Commissions.kiwify_fee",
+  "commissions.kiwify_fee",
+  "Commissions.kiwify_amount",
+  "commissions.kiwify_amount",
+  "data.commissions.kiwify_commission",
+  "data.order.commissions.kiwify_commission",
+  "data.checkout.commissions.kiwify_commission",
+  "data.commissions.kiwify_fee",
+  "data.order.commissions.kiwify_fee",
+  "data.checkout.commissions.kiwify_fee",
+];
+
+const DEFAULT_AFFILIATE_COMMISSION_PATHS = [
+  "Commissions.affiliate_commission",
+  "commissions.affiliate_commission",
+  "Commissions.affiliate_amount",
+  "commissions.affiliate_amount",
+  "Commissions.affiliate_fee",
+  "commissions.affiliate_fee",
+  "data.commissions.affiliate_commission",
+  "data.order.commissions.affiliate_commission",
+  "data.checkout.commissions.affiliate_commission",
+  "data.commissions.affiliate_fee",
+  "data.order.commissions.affiliate_fee",
+  "data.checkout.commissions.affiliate_fee",
+  "data.commissions.coproducer_commission",
+  "data.order.commissions.coproducer_commission",
+  "data.checkout.commissions.coproducer_commission",
+];
+
+interface AmountBreakdown {
+  amount: number | null;
+  grossAmount: number | null;
+  netAmount: number | null;
+  kiwifyCommissionAmount: number | null;
+  affiliateCommissionAmount: number | null;
+}
+
+const resolveAmountFields = (
+  payload: UnknownPayload,
+  overrides?: Partial<{
+    amountPaths: string[];
+    netPaths: string[];
+    kiwifyPaths: string[];
+    affiliatePaths: string[];
+  }>,
+): AmountBreakdown => {
+  const entries = collectCommissionEntries(payload);
+
+  const amountPaths = overrides?.amountPaths ?? DEFAULT_AMOUNT_PATHS;
+  const netPaths = overrides?.netPaths ?? DEFAULT_NET_AMOUNT_PATHS;
+  const kiwifyPaths = overrides?.kiwifyPaths ?? DEFAULT_KIWIFY_COMMISSION_PATHS;
+  const affiliatePaths = overrides?.affiliatePaths ?? DEFAULT_AFFILIATE_COMMISSION_PATHS;
+
+  const baseAmount = normalizeAmount(numberCoalesce(payload, amountPaths));
+  const netDirect = normalizeAmount(numberCoalesce(payload, netPaths));
+  const kiwifyDirect = normalizeAmount(numberCoalesce(payload, kiwifyPaths));
+  const affiliateDirect = normalizeAmount(numberCoalesce(payload, affiliatePaths));
+
+  const grossFromEntries = pickCommissionAmount(entries, "gross");
+  const netFromEntries = pickCommissionAmount(entries, "producer");
+  const kiwifyFromEntries = pickCommissionAmount(entries, "kiwify");
+  const affiliateFromEntries = pickCommissionAmount(entries, "affiliate");
+
+  const grossAmount = firstNonNull([grossFromEntries, baseAmount]);
+  const kiwifyCommissionAmount = firstNonNull([kiwifyDirect, kiwifyFromEntries]);
+  const affiliateCommissionAmount = firstNonNull([affiliateDirect, affiliateFromEntries]);
+
+  let netAmount = firstNonNull([netDirect, netFromEntries]);
+
+  if (netAmount === null && grossAmount !== null) {
+    const deductions = [kiwifyCommissionAmount, affiliateCommissionAmount]
+      .filter((value): value is number => value !== null)
+      .reduce((total, value) => total + value, 0);
+
+    if (deductions > 0 && deductions <= grossAmount) {
+      netAmount = grossAmount - deductions;
+    }
+  }
+
+  const amount = firstNonNull([netAmount, baseAmount, grossAmount]);
+
+  return {
+    amount,
+    grossAmount: grossAmount ?? amount,
+    netAmount: netAmount ?? amount,
+    kiwifyCommissionAmount,
+    affiliateCommissionAmount,
+  };
+};
+
 const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
   const topLevelId = stringCoalesce(payload, ["id", "event_id", "payload_id", "data.event_id"]);
 
@@ -297,36 +716,13 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     "data.order.items.0.product.name",
   ]);
 
-  const amount = normalizeAmount(
-    numberCoalesce(payload, [
-      "Commissions.charge_amount",
-      "commissions.charge_amount",
-      "charge_amount",
-      "amount",
-      "data.amount",
-      "data.amount.value",
-      "data.amount.value_cents",
-      "data.amount.total",
-      "data.amount.total_value",
-      "data.order.amount",
-      "data.order.amount.value",
-      "data.order.amount.value_cents",
-      "data.order.amount.total",
-      "data.order.amount.total_value",
-      "data.order.total",
-      "data.order.total_value",
-      "transaction.amount",
-      "data.transaction.amount",
-      "order.amount",
-      "Order.amount",
-      "data.order.amount",
-      "value",
-      "price",
-      "charges.completed.0.amount",
-      "Subscription.charges.completed.0.amount",
-      "SmartInstallment.amount_total",
-    ]),
-  );
+  const {
+    amount,
+    grossAmount,
+    netAmount,
+    kiwifyCommissionAmount,
+    affiliateCommissionAmount,
+  } = resolveAmountFields(payload);
 
   const currency = stringCoalesce(payload, [
     "Commissions.currency",
@@ -391,6 +787,10 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     customerEmail,
     productName,
     amount,
+    grossAmount,
+    netAmount,
+    kiwifyCommissionAmount,
+    affiliateCommissionAmount,
     currency,
     paymentMethod,
     occurredAt,
@@ -468,27 +868,13 @@ export const normalizeAbandonedCart = (
     "data.checkout.items.0.product.name",
   ]);
 
-  const amount = normalizeAmount(
-    numberCoalesce(payload, [
-      "amount",
-      "data.amount",
-      "data.amount.value",
-      "data.amount.value_cents",
-      "data.amount.total",
-      "data.amount.total_value",
-      "order.amount",
-      "Order.amount",
-      "data.order.amount",
-      "data.checkout.amount",
-      "data.checkout.amount.value",
-      "data.checkout.amount.value_cents",
-      "data.checkout.amount.total",
-      "data.checkout.amount.total_value",
-      "value",
-      "price",
-      "Commissions.charge_amount",
-    ]),
-  );
+  const {
+    amount,
+    grossAmount,
+    netAmount,
+    kiwifyCommissionAmount,
+    affiliateCommissionAmount,
+  } = resolveAmountFields(payload);
 
   const currency = stringCoalesce(payload, [
     "currency",
@@ -557,6 +943,10 @@ export const normalizeAbandonedCart = (
     customerEmail,
     productName,
     amount,
+    grossAmount,
+    netAmount,
+    kiwifyCommissionAmount,
+    affiliateCommissionAmount,
     currency,
     checkoutUrl,
     status,

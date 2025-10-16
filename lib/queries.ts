@@ -9,6 +9,10 @@ interface SaleEventBase {
   customer_email: string | null;
   product_name: string | null;
   amount: Numeric;
+  gross_amount: Numeric;
+  net_amount: Numeric;
+  kiwify_commission_amount: Numeric;
+  affiliate_commission_amount: Numeric;
   currency: string | null;
   payment_method: string | null;
   occurred_at: string | null;
@@ -16,19 +20,45 @@ interface SaleEventBase {
   created_at: string;
 }
 
-type AmountCarrier = Pick<SaleEventBase, "amount" | "occurred_at" | "created_at">;
+type AmountCarrier = Pick<
+  SaleEventBase,
+  |
+    "amount"
+    | "gross_amount"
+    | "net_amount"
+    | "kiwify_commission_amount"
+    | "affiliate_commission_amount"
+    | "occurred_at"
+    | "created_at"
+>;
 
 interface EventQueryResult<T> {
   records: T[];
   totalCount: number;
-  sum: number;
+  totals: EventTotals;
   lastEvent: string | null;
 }
+
+interface EventTotals {
+  amount: number;
+  netAmount: number;
+  grossAmount: number;
+  kiwifyCommissionAmount: number;
+  affiliateCommissionAmount: number;
+}
+
+const emptyTotals: EventTotals = {
+  amount: 0,
+  netAmount: 0,
+  grossAmount: 0,
+  kiwifyCommissionAmount: 0,
+  affiliateCommissionAmount: 0,
+};
 
 const buildEmptyResult = <T>(): EventQueryResult<T> => ({
   records: [],
   totalCount: 0,
-  sum: 0,
+  totals: { ...emptyTotals },
   lastEvent: null,
 });
 
@@ -59,13 +89,24 @@ const fetchEvents = async <T extends AmountCarrier>({
   }
 
   const records = (data ?? []) as T[];
-  const sum = records.reduce((acc, item) => acc + toNumber(item.amount), 0);
+  const totals = records.reduce<EventTotals>(
+    (acc, item) => ({
+      amount: acc.amount + toNumber(item.amount),
+      netAmount: acc.netAmount + toNumber(item.net_amount ?? item.amount),
+      grossAmount: acc.grossAmount + toNumber(item.gross_amount ?? item.amount),
+      kiwifyCommissionAmount:
+        acc.kiwifyCommissionAmount + toNumber(item.kiwify_commission_amount),
+      affiliateCommissionAmount:
+        acc.affiliateCommissionAmount + toNumber(item.affiliate_commission_amount),
+    }),
+    { ...emptyTotals },
+  );
   const lastEvent = records[0]?.occurred_at ?? records[0]?.created_at ?? null;
 
   return {
     records,
     totalCount: count ?? 0,
-    sum,
+    totals,
     lastEvent,
   };
 };
@@ -85,6 +126,10 @@ export interface AbandonedCart {
   customer_email: string | null;
   product_name: string | null;
   amount: Numeric;
+  gross_amount: Numeric;
+  net_amount: Numeric;
+  kiwify_commission_amount: Numeric;
+  affiliate_commission_amount: Numeric;
   currency: string | null;
   checkout_url: string | null;
   status: string | null;
@@ -94,7 +139,7 @@ export interface AbandonedCart {
 }
 
 export async function getApprovedSales(limit = 40) {
-  const { sum, ...result } = await fetchEvents<ApprovedSale>({
+  const { totals, ...result } = await fetchEvents<ApprovedSale>({
     table: "approved_sales",
     limit,
     logContext: "vendas aprovadas",
@@ -102,12 +147,16 @@ export async function getApprovedSales(limit = 40) {
 
   return {
     ...result,
-    totalAmount: sum,
+    totals,
+    totalAmount: totals.netAmount,
+    totalGrossAmount: totals.grossAmount,
+    totalKiwifyCommissionAmount: totals.kiwifyCommissionAmount,
+    totalAffiliateCommissionAmount: totals.affiliateCommissionAmount,
   };
 }
 
 export async function getAbandonedCarts(limit = 40) {
-  const { sum, ...result } = await fetchEvents<AbandonedCart>({
+  const { totals, ...result } = await fetchEvents<AbandonedCart>({
     table: "abandoned_carts",
     limit,
     logContext: "carrinhos abandonados",
@@ -115,12 +164,16 @@ export async function getAbandonedCarts(limit = 40) {
 
   return {
     ...result,
-    potentialAmount: sum,
+    totals,
+    potentialAmount: totals.netAmount,
+    potentialGrossAmount: totals.grossAmount,
+    potentialKiwifyCommissionAmount: totals.kiwifyCommissionAmount,
+    potentialAffiliateCommissionAmount: totals.affiliateCommissionAmount,
   };
 }
 
 export async function getRefundedSales(limit = 40) {
-  const { sum, ...result } = await fetchEvents<RefundedSale>({
+  const { totals, ...result } = await fetchEvents<RefundedSale>({
     table: "refunded_sales",
     limit,
     logContext: "vendas reembolsadas",
@@ -128,12 +181,16 @@ export async function getRefundedSales(limit = 40) {
 
   return {
     ...result,
-    totalAmount: sum,
+    totals,
+    totalAmount: totals.netAmount,
+    totalGrossAmount: totals.grossAmount,
+    totalKiwifyCommissionAmount: totals.kiwifyCommissionAmount,
+    totalAffiliateCommissionAmount: totals.affiliateCommissionAmount,
   };
 }
 
 export async function getRejectedPayments(limit = 40) {
-  const { sum, ...result } = await fetchEvents<RejectedPayment>({
+  const { totals, ...result } = await fetchEvents<RejectedPayment>({
     table: "rejected_payments",
     limit,
     logContext: "pagamentos recusados",
@@ -141,12 +198,16 @@ export async function getRejectedPayments(limit = 40) {
 
   return {
     ...result,
-    totalAmount: sum,
+    totals,
+    totalAmount: totals.netAmount,
+    totalGrossAmount: totals.grossAmount,
+    totalKiwifyCommissionAmount: totals.kiwifyCommissionAmount,
+    totalAffiliateCommissionAmount: totals.affiliateCommissionAmount,
   };
 }
 
 export async function getPendingPayments(limit = 40) {
-  const { sum, ...result } = await fetchEvents<PendingPayment>({
+  const { totals, ...result } = await fetchEvents<PendingPayment>({
     table: "pending_payments",
     limit,
     logContext: "pagamentos pendentes",
@@ -154,7 +215,11 @@ export async function getPendingPayments(limit = 40) {
 
   return {
     ...result,
-    totalAmount: sum,
+    totals,
+    totalAmount: totals.netAmount,
+    totalGrossAmount: totals.grossAmount,
+    totalKiwifyCommissionAmount: totals.kiwifyCommissionAmount,
+    totalAffiliateCommissionAmount: totals.affiliateCommissionAmount,
   };
 }
 

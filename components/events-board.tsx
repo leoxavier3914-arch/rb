@@ -19,7 +19,7 @@ export function EventsBoard({ stats, heading, description, emptyState, events }:
   return (
     <div className="space-y-10">
       {stats.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {stats.map((stat) => (
             <StatCard key={stat.label} label={stat.label} value={stat.value} helper={stat.helper} />
           ))}
