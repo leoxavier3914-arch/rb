@@ -18,7 +18,7 @@ import {
   type NormalizedSubscriptionEvent,
 } from "@/lib/kiwify";
 import { getSupabaseAdmin } from "@/lib/supabase";
-import { getWebhookEnv } from "@/lib/env";
+import { kiwifyWebhookEnv } from "@/lib/env";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -224,7 +224,7 @@ export async function GET() {
 export async function POST(request: Request) {
   let env;
   try {
-    env = getWebhookEnv();
+    env = kiwifyWebhookEnv.get();
   } catch (error) {
     console.error("Variáveis de ambiente ausentes", error);
     return NextResponse.json({ error: "Configuração do servidor ausente" }, { status: 500 });

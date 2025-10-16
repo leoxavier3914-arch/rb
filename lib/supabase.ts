@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { getSupabaseEnv, hasSupabaseEnv } from "./env";
+import { supabaseEnv } from "./env";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -7,7 +7,7 @@ declare global {
 }
 
 export function getSupabaseAdmin() {
-  const env = getSupabaseEnv();
+  const env = supabaseEnv.get();
   if (!globalThis.__supabaseAdmin) {
     globalThis.__supabaseAdmin = createClient(
       env.SUPABASE_URL,
@@ -24,5 +24,5 @@ export function getSupabaseAdmin() {
 }
 
 export function hasSupabaseConfig() {
-  return hasSupabaseEnv();
+  return supabaseEnv.has();
 }

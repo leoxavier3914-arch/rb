@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { type ZodType, z } from "zod";
 
 const supabaseEnvSchema = z.object({
   SUPABASE_URL: z.string().url(),
@@ -13,8 +13,12 @@ const webhookEnvSchema = supabaseEnvSchema.extend({
 type SupabaseEnv = z.infer<typeof supabaseEnvSchema>;
 type WebhookEnv = z.infer<typeof webhookEnvSchema>;
 
-let cachedSupabaseEnv: SupabaseEnv | null = null;
-let cachedWebhookEnv: WebhookEnv | null = null;
+type EnvHelper<T> = {
+  get: () => T;
+  has: () => boolean;
+  maybe: () => T | null;
+  reset: () => void;
+};
 
 const normalizeToken = (value: string | undefined) => {
   const trimmed = value?.trim() ?? "";
@@ -24,6 +28,45 @@ const normalizeToken = (value: string | undefined) => {
   }
 
   return trimmed.replace(/^(["'])(.*)\1$/, "$2");
+};
+
+const createEnvHelper = <T>(schema: ZodType<T>, buildRawEnv: () => unknown): EnvHelper<T> => {
+  let cache: T | undefined;
+
+  const maybe = (): T | null => {
+    if (cache) {
+      return cache;
+    }
+
+    const parsed = schema.safeParse(buildRawEnv());
+
+    if (!parsed.success) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Variáveis de ambiente incompletas", parsed.error.flatten().fieldErrors);
+      }
+      return null;
+    }
+
+    cache = parsed.data;
+    return cache;
+  };
+
+  return {
+    get: () => {
+      const env = maybe();
+
+      if (!env) {
+        throw new Error("Configure todas as variáveis de ambiente obrigatórias.");
+      }
+
+      return env;
+    },
+    has: () => maybe() !== null,
+    maybe,
+    reset: () => {
+      cache = undefined;
+    },
+  };
 };
 
 const buildRawSupabaseEnv = () => ({
@@ -36,75 +79,38 @@ const buildRawSupabaseEnv = () => ({
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
 });
 
-const maybeSupabaseEnv = (): SupabaseEnv | null => {
-  if (cachedSupabaseEnv) {
-    return cachedSupabaseEnv;
-  }
+const supabaseEnvHelper = createEnvHelper(supabaseEnvSchema, buildRawSupabaseEnv);
 
-  const parsed = supabaseEnvSchema.safeParse(buildRawSupabaseEnv());
+const buildRawWebhookEnv = () => ({
+  ...(supabaseEnvHelper.maybe() ?? buildRawSupabaseEnv()),
+  KIWIFY_WEBHOOK_SECRET: normalizeToken(process.env.KIWIFY_WEBHOOK_SECRET),
+});
 
-  if (!parsed.success) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("Variáveis de ambiente incompletas", parsed.error.flatten().fieldErrors);
-    }
-    return null;
-  }
+const kiwifyWebhookEnvHelper = createEnvHelper(webhookEnvSchema, buildRawWebhookEnv);
 
-  cachedSupabaseEnv = parsed.data;
-  return cachedSupabaseEnv;
+export const supabaseEnv = {
+  get: () => supabaseEnvHelper.get(),
+  has: () => supabaseEnvHelper.has(),
 };
 
-const maybeWebhookEnv = (): WebhookEnv | null => {
-  if (cachedWebhookEnv) {
-    return cachedWebhookEnv;
-  }
-
-  const baseEnv = maybeSupabaseEnv();
-  if (!baseEnv) {
-    return null;
-  }
-
-  const parsed = webhookEnvSchema.safeParse({
-    ...baseEnv,
-    KIWIFY_WEBHOOK_SECRET: normalizeToken(process.env.KIWIFY_WEBHOOK_SECRET),
-  });
-
-  if (!parsed.success) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("Variáveis de ambiente incompletas", parsed.error.flatten().fieldErrors);
-    }
-    return null;
-  }
-
-  cachedWebhookEnv = parsed.data;
-  return cachedWebhookEnv;
+export const kiwifyWebhookEnv = {
+  get: () => kiwifyWebhookEnvHelper.get(),
+  has: () => kiwifyWebhookEnvHelper.has(),
 };
-
-export function hasSupabaseEnv() {
-  return maybeSupabaseEnv() !== null;
-}
 
 export function getSupabaseEnv(): SupabaseEnv {
-  const env = maybeSupabaseEnv();
-
-  if (!env) {
-    throw new Error("Configure todas as variáveis de ambiente obrigatórias.");
-  }
-
-  return env;
+  return supabaseEnv.get();
 }
 
-export function getWebhookEnv(): WebhookEnv {
-  const env = maybeWebhookEnv();
+export function hasSupabaseEnv() {
+  return supabaseEnv.has();
+}
 
-  if (!env) {
-    throw new Error("Configure todas as variáveis de ambiente obrigatórias.");
-  }
-
-  return env;
+export function getKiwifyWebhookEnv(): WebhookEnv {
+  return kiwifyWebhookEnv.get();
 }
 
 export function __resetEnvForTesting() {
-  cachedSupabaseEnv = null;
-  cachedWebhookEnv = null;
+  supabaseEnvHelper.reset();
+  kiwifyWebhookEnvHelper.reset();
 }
