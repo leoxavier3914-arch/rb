@@ -9,6 +9,7 @@ import {
   formatSaleRole,
   formatSaleStatus,
   normalizeSaleMetadataValue,
+  resolveSaleDocumentLabel,
 } from "@/lib/sale-event-metadata"
 
 export const dynamic = "force-dynamic"
@@ -121,6 +122,8 @@ const DOCUMENT_PATHS = [
   "customerDocumentNumber",
   "Customer.CPF",
   "Customer.CNPJ",
+  "Customer.cpf",
+  "Customer.cnpj",
   "data.customer.document",
   "data.customer.cpf",
   "data.customer.CPF",
@@ -380,6 +383,7 @@ const buildCustomerItems = (entries: SaleDetailRecord[], primary: SaleDetailReco
   const phoneCandidate = primary.customer_phone ?? pickStringFromEntries(entries, PHONE_PATHS)
   const phone = normalizeSaleMetadataValue(phoneCandidate)
   const documentCandidate = primary.customer_document ?? pickStringFromEntries(entries, DOCUMENT_PATHS)
+  const documentLabel = resolveSaleDocumentLabel(documentCandidate)
   const document = normalizeSaleMetadataValue(documentCandidate)
   const ipCandidate = primary.customer_ip ?? pickStringFromEntries(entries, IP_PATHS)
   const ip = normalizeSaleMetadataValue(ipCandidate)
@@ -394,7 +398,7 @@ const buildCustomerItems = (entries: SaleDetailRecord[], primary: SaleDetailReco
     { label: "Nome", value: primary.customer_name },
     { label: "Email", value: primary.customer_email },
     { label: "Celular", value: phone },
-    { label: "Documento", value: document },
+    { label: documentLabel, value: document },
     { label: "IP", value: ip },
     { label: "UTM Source", value: utmSource },
     { label: "UTM Medium", value: utmMedium },
