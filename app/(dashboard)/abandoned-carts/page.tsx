@@ -1,5 +1,6 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { formatSaleStatus } from "@/lib/sale-event-metadata";
 import { getAbandonedCarts } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +22,15 @@ export default async function AbandonedCartsPage() {
     const kiwifyDisplay = formatCurrency(cart.kiwify_commission_amount, cart.currency);
     const affiliateDisplay = formatCurrency(cart.affiliate_commission_amount, cart.currency);
 
+    const statusDisplay = formatSaleStatus(cart.status);
+
     const details = [
       grossDisplay && grossDisplay !== netDisplay
         ? { label: "Valor cheio", value: grossDisplay }
         : null,
       kiwifyDisplay ? { label: "Comissão Kiwify", value: kiwifyDisplay } : null,
       affiliateDisplay ? { label: "Comissão Afiliados", value: affiliateDisplay } : null,
+      statusDisplay ? { label: "Status", value: statusDisplay } : null,
     ].filter((detail): detail is { label: string; value: string } => detail !== null);
 
     return {

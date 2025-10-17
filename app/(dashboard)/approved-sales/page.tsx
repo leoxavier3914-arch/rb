@@ -1,6 +1,6 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { buildSaleMetadataDetails } from "@/lib/sale-event-metadata";
+import { formatSaleStatus } from "@/lib/sale-event-metadata";
 import { getApprovedSales } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -30,8 +30,11 @@ export default async function ApprovedSalesPage() {
       affiliateDisplay ? { label: "Comissão Afiliados", value: affiliateDisplay } : null,
     ].filter((detail): detail is { label: string; value: string } => detail !== null);
 
-    const metadataDetails = buildSaleMetadataDetails(sale);
-    const details = [...monetaryDetails, ...metadataDetails];
+    const statusDisplay = formatSaleStatus(sale.status);
+    const details = [
+      ...monetaryDetails,
+      ...(statusDisplay ? [{ label: "Status", value: statusDisplay }] : []),
+    ];
 
     return {
       id: sale.id,
