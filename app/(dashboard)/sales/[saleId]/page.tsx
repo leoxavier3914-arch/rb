@@ -56,6 +56,14 @@ const PHONE_PATHS = [
   "data.order.customer.phone_number",
   "buyer.phone",
   "buyer.phone_number",
+  "customer_phone",
+  "customer_phone_number",
+  "customer_phone_1",
+  "customer_phone_2",
+  "customer_phone_3",
+  "customer_phone1",
+  "customer_phone2",
+  "customer_phone3",
 ]
 
 const DOCUMENT_PATHS = [
@@ -71,6 +79,9 @@ const DOCUMENT_PATHS = [
   "data.order.customer.cpf",
   "buyer.document",
   "buyer.cpf",
+  "customer_document",
+  "customer_document_number",
+  "customer_cpf_number",
 ]
 
 const IP_PATHS = [
