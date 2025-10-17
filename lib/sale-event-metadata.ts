@@ -54,6 +54,49 @@ const humanize = (value: string) =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(" ");
 
+const DOCUMENT_LABELS = {
+  cpf: "CPF",
+  cnpj: "CNPJ",
+} as const;
+
+type DocumentKind = keyof typeof DOCUMENT_LABELS;
+
+const detectDocumentKind = (value: string | null | undefined): DocumentKind | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const lowered = trimmed.toLowerCase();
+  if (lowered.includes("cnpj")) {
+    return "cnpj";
+  }
+  if (lowered.includes("cpf")) {
+    return "cpf";
+  }
+
+  const digits = trimmed.replace(/\D+/g, "");
+  if (digits.length === 14) {
+    return "cnpj";
+  }
+  if (digits.length === 11) {
+    return "cpf";
+  }
+
+  return null;
+};
+
+export const resolveSaleDocumentLabel = (
+  value: string | null | undefined,
+): string => {
+  const kind = detectDocumentKind(value);
+  return kind ? DOCUMENT_LABELS[kind] : "Documento";
+};
+
 export const normalizeSaleMetadataValue = (
   value: string | null | undefined,
 ): string | null => {
@@ -104,9 +147,10 @@ export const buildSaleMetadataDetails = (
     details.push({ label: "Tipo", value: role });
   }
 
+  const documentLabel = resolveSaleDocumentLabel(sale.customer_document);
   const document = normalizeSaleMetadataValue(sale.customer_document);
   if (document) {
-    details.push({ label: "Documento", value: document });
+    details.push({ label: documentLabel, value: document });
   }
 
   const phone = normalizeSaleMetadataValue(sale.customer_phone);
