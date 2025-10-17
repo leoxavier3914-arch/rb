@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -10,6 +11,7 @@ export interface EventCardProps {
   meta?: string | null;
   payload?: Record<string, unknown> | null;
   details?: { label: string; value: string }[];
+  href?: string | null;
 }
 
 const buildMetaLink = (value: string) => {
@@ -41,13 +43,14 @@ export function EventCard({
   occurredAt,
   meta,
   details = [],
+  href,
 }: EventCardProps) {
   const relativeTime = occurredAt
     ? formatDistanceToNow(new Date(occurredAt), { locale: ptBR, addSuffix: true })
     : null;
 
   const normalizedMeta = typeof meta === "string" ? meta.trim() : meta ?? null;
-  const metaLink = normalizedMeta ? buildMetaLink(normalizedMeta) : null;
+  const metaLink = !href && normalizedMeta ? buildMetaLink(normalizedMeta) : null;
   const metaHref = metaLink?.href;
   const metaDisplay = normalizedMeta ? formatMetaDisplay(normalizedMeta, metaLink) : null;
   const hasDetails = Array.isArray(details) && details.length > 0;
@@ -59,7 +62,15 @@ export function EventCard({
           <h3 className="text-lg font-semibold text-primary-foreground">{title}</h3>
           {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
           {metaDisplay ? (
-            metaHref ? (
+            href ? (
+              <Link
+                href={href}
+                title={normalizedMeta ?? undefined}
+                className="inline-flex max-w-full items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs uppercase tracking-[0.3em] text-primary transition-colors hover:text-primary-foreground"
+              >
+                {metaDisplay}
+              </Link>
+            ) : metaHref ? (
               <a
                 href={metaHref}
                 target="_blank"

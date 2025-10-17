@@ -229,3 +229,97 @@ const toNumber = (value: Numeric) => {
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
 };
+
+const saleSources = [
+  { table: "approved_sales", kind: "approved" as const, label: "Venda aprovada" },
+  { table: "pending_payments", kind: "pending" as const, label: "Pagamento pendente" },
+  { table: "rejected_payments", kind: "rejected" as const, label: "Pagamento recusado" },
+  { table: "refunded_sales", kind: "refunded" as const, label: "Venda reembolsada" },
+] as const;
+
+type SaleSource = (typeof saleSources)[number];
+
+type SaleDetailRecord =
+  | (ApprovedSale & { table: SaleSource["table"]; kind: SaleSource["kind"]; label: string })
+  | (PendingPayment & { table: SaleSource["table"]; kind: SaleSource["kind"]; label: string })
+  | (RejectedPayment & { table: SaleSource["table"]; kind: SaleSource["kind"]; label: string })
+  | (RefundedSale & { table: SaleSource["table"]; kind: SaleSource["kind"]; label: string });
+
+interface SaleDetailsResult {
+  saleId: string;
+  primary: SaleDetailRecord;
+  entries: SaleDetailRecord[];
+}
+
+const resolveEventTimestamp = (event: SaleEventBase) => {
+  const candidate = event.occurred_at ?? event.created_at;
+  if (!candidate) {
+    return 0;
+  }
+
+  const parsed = new Date(candidate);
+  const time = parsed.getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
+export async function getSaleDetails(saleId: string): Promise<SaleDetailsResult | null> {
+  if (!saleId) {
+    return null;
+  }
+
+  if (!hasSupabaseConfig()) {
+    return null;
+  }
+
+  const supabase = getSupabaseAdmin();
+
+  const results = await Promise.all(
+    saleSources.map(async (source): Promise<SaleDetailRecord | null> => {
+      const { data, error } = await supabase
+        .from(source.table)
+        .select("*")
+        .eq("sale_id", saleId)
+        .order("occurred_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error(`Erro ao buscar detalhes da venda (${source.table})`, error);
+        throw error;
+      }
+
+      const rows = (data ?? []) as SaleEventBase[];
+      const record = rows[0];
+      if (!record) {
+        return null;
+      }
+
+      return {
+        ...(record as SaleEventBase),
+        table: source.table,
+        kind: source.kind,
+        label: source.label,
+      } as SaleDetailRecord;
+    }),
+  );
+
+  const entries = results.filter(
+    (entry): entry is SaleDetailRecord => entry !== null,
+  );
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const sorted = entries
+    .slice()
+    .sort((a, b) => resolveEventTimestamp(b) - resolveEventTimestamp(a));
+
+  return {
+    saleId,
+    primary: sorted[0],
+    entries: sorted,
+  };
+}
+
+export type { SaleDetailRecord, SaleDetailsResult };

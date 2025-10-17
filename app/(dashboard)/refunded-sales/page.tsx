@@ -37,6 +37,7 @@ export default async function RefundedSalesPage() {
       badge: sale.payment_method?.toUpperCase() ?? null,
       occurredAt: sale.occurred_at ?? sale.created_at,
       meta: sale.sale_id ?? undefined,
+      href: sale.sale_id ? `/sales/${encodeURIComponent(sale.sale_id)}` : undefined,
       details,
     };
   });
