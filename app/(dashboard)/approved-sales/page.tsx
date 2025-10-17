@@ -1,5 +1,6 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { formatSaleStatus } from "@/lib/sale-event-metadata";
 import { getApprovedSales } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,12 @@ export default async function ApprovedSalesPage() {
       kiwifyDisplay ? { label: "Comissão Kiwify", value: kiwifyDisplay } : null,
       affiliateDisplay ? { label: "Comissão Afiliados", value: affiliateDisplay } : null,
     ].filter((detail): detail is { label: string; value: string } => detail !== null);
+
+    const statusDisplay = formatSaleStatus(sale.status);
+    const details = [
+      ...monetaryDetails,
+      ...(statusDisplay ? [{ label: "Status", value: statusDisplay }] : []),
+    ];
 
     return {
       id: sale.id,
