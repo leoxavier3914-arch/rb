@@ -122,6 +122,8 @@ const DOCUMENT_PATHS = [
   "customerDocumentNumber",
   "Customer.CPF",
   "Customer.CNPJ",
+  "Customer.cpf",
+  "Customer.cnpj",
   "data.customer.document",
   "data.customer.cpf",
   "data.customer.CPF",
