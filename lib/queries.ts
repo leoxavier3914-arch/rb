@@ -2,7 +2,7 @@ import { getSupabaseAdmin, hasSupabaseConfig } from "./supabase";
 
 type Numeric = number | string | null;
 
-interface SaleEventBase {
+export interface SaleEventBase {
   id: string;
   sale_id: string | null;
   customer_name: string | null;
@@ -35,10 +35,23 @@ type AmountCarrier = Pick<
     | "gross_amount"
     | "net_amount"
     | "kiwify_commission_amount"
-    | "affiliate_commission_amount"
-    | "occurred_at"
-    | "created_at"
+  | "affiliate_commission_amount"
+  | "occurred_at"
+  | "created_at"
 >;
+
+const resolveEventTimestamp = (
+  event: Pick<SaleEventBase, "occurred_at" | "created_at">,
+) => {
+  const candidate = event.occurred_at ?? event.created_at;
+  if (!candidate) {
+    return Number.MIN_SAFE_INTEGER;
+  }
+
+  const parsed = new Date(candidate);
+  const time = parsed.getTime();
+  return Number.isNaN(time) ? Number.MIN_SAFE_INTEGER : time;
+};
 
 interface EventQueryResult<T> {
   records: T[];
@@ -109,7 +122,21 @@ const fetchEvents = async <T extends AmountCarrier>({
     }),
     { ...emptyTotals },
   );
-  const lastEvent = records[0]?.occurred_at ?? records[0]?.created_at ?? null;
+
+  let latestRecord: T | null = null;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+
+  for (const record of records) {
+    const timestamp = resolveEventTimestamp(record);
+    if (timestamp > latestTimestamp) {
+      latestTimestamp = timestamp;
+      latestRecord = record;
+    }
+  }
+
+  const lastEvent = latestRecord
+    ? latestRecord.occurred_at ?? latestRecord.created_at ?? null
+    : null;
 
   return {
     records,
@@ -285,17 +312,6 @@ interface SaleDetailsResult {
   entries: SaleDetailRecord[];
 }
 
-const resolveEventTimestamp = (event: SaleEventBase) => {
-  const candidate = event.occurred_at ?? event.created_at;
-  if (!candidate) {
-    return 0;
-  }
-
-  const parsed = new Date(candidate);
-  const time = parsed.getTime();
-  return Number.isNaN(time) ? 0 : time;
-};
-
 export async function getSaleDetails(saleId: string): Promise<SaleDetailsResult | null> {
   if (!saleId) {
     return null;
@@ -356,4 +372,4 @@ export async function getSaleDetails(saleId: string): Promise<SaleDetailsResult 
   };
 }
 
-export type { SaleDetailRecord, SaleDetailsResult };
+export type { SaleDetailRecord, SaleDetailsResult, SaleEventBase };

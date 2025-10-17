@@ -1,5 +1,6 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { buildSaleMetadataDetails } from "@/lib/sale-event-metadata";
 import { getRejectedPayments } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -21,13 +22,16 @@ export default async function RejectedPaymentsPage() {
     const kiwifyDisplay = formatCurrency(sale.kiwify_commission_amount, sale.currency);
     const affiliateDisplay = formatCurrency(sale.affiliate_commission_amount, sale.currency);
 
-    const details = [
+    const monetaryDetails = [
       grossDisplay && grossDisplay !== netDisplay
         ? { label: "Valor cheio", value: grossDisplay }
         : null,
       kiwifyDisplay ? { label: "Comissão Kiwify", value: kiwifyDisplay } : null,
       affiliateDisplay ? { label: "Comissão Afiliados", value: affiliateDisplay } : null,
     ].filter((detail): detail is { label: string; value: string } => detail !== null);
+
+    const metadataDetails = buildSaleMetadataDetails(sale);
+    const details = [...monetaryDetails, ...metadataDetails];
 
     return {
       id: sale.id,

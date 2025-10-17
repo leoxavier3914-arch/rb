@@ -5,6 +5,11 @@ import SaleDetailsTabs, { type DetailItem, type DetailListItem } from "@/compone
 
 import { formatCurrency, formatDate } from "@/lib/format"
 import { getSaleDetails, type SaleDetailRecord } from "@/lib/queries"
+import {
+  formatSaleRole,
+  formatSaleStatus,
+  normalizeSaleMetadataValue,
+} from "@/lib/sale-event-metadata"
 
 export const dynamic = "force-dynamic"
 
@@ -225,8 +230,10 @@ const formatPaymentMethod = (paymentMethod: string | null | undefined) => {
 }
 
 const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
-  const status = primary.status ?? pickStringFromEntries(entries, STATUS_PATHS)
-  const role = primary.role ?? pickStringFromEntries(entries, ROLE_PATHS)
+  const statusCandidate = primary.status ?? pickStringFromEntries(entries, STATUS_PATHS)
+  const status = formatSaleStatus(statusCandidate)
+  const roleCandidate = primary.role ?? pickStringFromEntries(entries, ROLE_PATHS)
+  const role = formatSaleRole(roleCandidate)
   const installments = pickNumberFromEntries(entries, INSTALLMENT_PATHS)
   const createdAt = pickStringFromEntries(entries, [
     "created_at",
@@ -254,12 +261,18 @@ const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord):
 }
 
 const buildCustomerItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
-  const phone = primary.customer_phone ?? pickStringFromEntries(entries, PHONE_PATHS)
-  const document = primary.customer_document ?? pickStringFromEntries(entries, DOCUMENT_PATHS)
-  const ip = primary.customer_ip ?? pickStringFromEntries(entries, IP_PATHS)
-  const utmSource = primary.utm_source ?? pickStringFromEntries(entries, UTM_SOURCE_PATHS)
-  const utmMedium = primary.utm_medium ?? pickStringFromEntries(entries, UTM_MEDIUM_PATHS)
-  const utmCampaign = primary.utm_campaign ?? pickStringFromEntries(entries, UTM_CAMPAIGN_PATHS)
+  const phoneCandidate = primary.customer_phone ?? pickStringFromEntries(entries, PHONE_PATHS)
+  const phone = normalizeSaleMetadataValue(phoneCandidate)
+  const documentCandidate = primary.customer_document ?? pickStringFromEntries(entries, DOCUMENT_PATHS)
+  const document = normalizeSaleMetadataValue(documentCandidate)
+  const ipCandidate = primary.customer_ip ?? pickStringFromEntries(entries, IP_PATHS)
+  const ip = normalizeSaleMetadataValue(ipCandidate)
+  const utmSourceCandidate = primary.utm_source ?? pickStringFromEntries(entries, UTM_SOURCE_PATHS)
+  const utmSource = normalizeSaleMetadataValue(utmSourceCandidate)
+  const utmMediumCandidate = primary.utm_medium ?? pickStringFromEntries(entries, UTM_MEDIUM_PATHS)
+  const utmMedium = normalizeSaleMetadataValue(utmMediumCandidate)
+  const utmCampaignCandidate = primary.utm_campaign ?? pickStringFromEntries(entries, UTM_CAMPAIGN_PATHS)
+  const utmCampaign = normalizeSaleMetadataValue(utmCampaignCandidate)
 
   return [
     { label: "Nome", value: primary.customer_name },
