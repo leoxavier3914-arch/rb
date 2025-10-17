@@ -41,7 +41,7 @@ export default async function ApprovedSalesPage() {
       occurredAt: sale.occurred_at ?? sale.created_at,
       meta: sale.sale_id ?? undefined,
       href: sale.sale_id ? `/sales/${encodeURIComponent(sale.sale_id)}` : undefined,
-      details,
+      details: monetaryDetails,
     };
   });
 
