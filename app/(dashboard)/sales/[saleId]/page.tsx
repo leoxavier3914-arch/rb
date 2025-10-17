@@ -176,11 +176,13 @@ const getNestedValue = (payload: UnknownPayload, path: string): unknown => {
   }, payload)
 }
 
-const pickString = (payload: UnknownPayload, paths: string[]): string | null => {
+const pickStringFromSources = (sources: UnknownPayload[], paths: string[]): string | null => {
   for (const path of paths) {
-    const value = getNestedValue(payload, path)
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim()
+    for (const source of sources) {
+      const value = getNestedValue(source, path)
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim()
+      }
     }
   }
   return null
@@ -188,7 +190,8 @@ const pickString = (payload: UnknownPayload, paths: string[]): string | null => 
 
 const pickStringFromEntries = (entries: SaleDetailRecord[], paths: string[]): string | null => {
   for (const entry of entries) {
-    const candidate = pickString(entry.payload, paths)
+    const sources: UnknownPayload[] = [entry as unknown as UnknownPayload, entry.payload]
+    const candidate = pickStringFromSources(sources, paths)
     if (candidate) {
       return candidate
     }
@@ -196,29 +199,35 @@ const pickStringFromEntries = (entries: SaleDetailRecord[], paths: string[]): st
   return null
 }
 
-const pickNumber = (payload: UnknownPayload, paths: string[]): number | null => {
+const pickNumberFromSources = (sources: UnknownPayload[], paths: string[]): number | null => {
   for (const path of paths) {
-    const value = getNestedValue(payload, path)
+    for (const source of sources) {
+      const value = getNestedValue(source, path)
 
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value
-    }
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value
+      }
 
-    if (typeof value === "string") {
-      const normalized = value.replace(/[^0-9.,-]/g, "").replace(",", ".")
-      if (normalized.length === 0) continue
-      const parsed = Number(normalized)
-      if (!Number.isNaN(parsed)) {
-        return parsed
+      if (typeof value === "string") {
+        const normalized = value.replace(/[^0-9.,-]/g, "").replace(",", ".")
+        if (normalized.length === 0) continue
+        const parsed = Number(normalized)
+        if (!Number.isNaN(parsed)) {
+          return parsed
+        }
       }
     }
   }
   return null
 }
 
+const pickNumber = (payload: UnknownPayload, paths: string[]): number | null =>
+  pickNumberFromSources([payload], paths)
+
 const pickNumberFromEntries = (entries: SaleDetailRecord[], paths: string[]): number | null => {
   for (const entry of entries) {
-    const candidate = pickNumber(entry.payload, paths)
+    const sources: UnknownPayload[] = [entry as unknown as UnknownPayload, entry.payload]
+    const candidate = pickNumberFromSources(sources, paths)
     if (candidate !== null) {
       return candidate
     }
