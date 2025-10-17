@@ -1,6 +1,5 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { buildSaleMetadataDetails } from "@/lib/sale-event-metadata";
 import { getApprovedSales } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -30,9 +29,6 @@ export default async function ApprovedSalesPage() {
       affiliateDisplay ? { label: "Comissão Afiliados", value: affiliateDisplay } : null,
     ].filter((detail): detail is { label: string; value: string } => detail !== null);
 
-    const metadataDetails = buildSaleMetadataDetails(sale);
-    const details = [...monetaryDetails, ...metadataDetails];
-
     return {
       id: sale.id,
       title: sale.product_name ?? "Produto sem nome",
@@ -42,7 +38,7 @@ export default async function ApprovedSalesPage() {
       occurredAt: sale.occurred_at ?? sale.created_at,
       meta: sale.sale_id ?? undefined,
       href: sale.sale_id ? `/sales/${encodeURIComponent(sale.sale_id)}` : undefined,
-      details,
+      details: monetaryDetails,
     };
   });
 
