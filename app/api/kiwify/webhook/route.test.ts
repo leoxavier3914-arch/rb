@@ -191,6 +191,48 @@ describe("/api/kiwify/webhook", () => {
     expect(stored.utm_campaign).toBe("jan-campaign");
   });
 
+  it("extrai dados das chaves Customer e TrackingParameters fora de data.*", async () => {
+    const payload = {
+      webhook_event_type: "order_approved",
+      order_status: "paid",
+      order_id: "1f524862-d773-4cda-be90-470fe6c7ab09",
+      order_ref: "AbiNg11",
+      sale_type: "producer",
+      created_at: "2025-10-16 13:56",
+      Product: {
+        product_id: "f501c5a0-9331-11f0-8cae-cdf7401374c7",
+        product_name: "Protocolo de Dezembro - EDITÁVEL",
+      },
+      Customer: {
+        ip: "2804:7b5c:a0e6:e000:15e7:6d10:7f35:1ac9",
+        CPF: "70066953685",
+        email: "vivianepereiraadosanjos@gmail.com",
+        mobile: "+5531995943977",
+        full_name: "Vivianepereiraa",
+      },
+      Commissions: {
+        currency: "BRL",
+        kiwify_fee: 384,
+        charge_amount: 1579,
+        my_commission: 1116,
+      },
+      TrackingParameters: {
+        utm_medium: "organic",
+        utm_source: "agnes",
+      },
+    } satisfies Record<string, unknown>;
+
+    const response = await callWebhook(payload);
+
+    expect(response.status).toBe(200);
+    const stored = operations.approved_sales?.[0].payload as Record<string, unknown>;
+    expect(stored.role).toBe("producer");
+    expect(stored.customer_phone).toBe("+5531995943977");
+    expect(stored.customer_document).toBe("70066953685");
+    expect(stored.utm_source).toBe("agnes");
+    expect(stored.utm_medium).toBe("organic");
+  });
+
   it("mantém registros distintos para webhooks com mesmo e-mail e IDs diferentes", async () => {
     const firstPayload = {
       id: "evt-sale-duplicate-1",
