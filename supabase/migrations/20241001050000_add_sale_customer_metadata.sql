@@ -1,0 +1,424 @@
+-- Add customer metadata columns to sale event tables
+alter table public.approved_sales
+  add column status text,
+  add column role text,
+  add column customer_phone text,
+  add column customer_document text,
+  add column customer_ip text,
+  add column utm_source text,
+  add column utm_medium text,
+  add column utm_campaign text;
+
+alter table public.pending_payments
+  add column status text,
+  add column role text,
+  add column customer_phone text,
+  add column customer_document text,
+  add column customer_ip text,
+  add column utm_source text,
+  add column utm_medium text,
+  add column utm_campaign text;
+
+alter table public.rejected_payments
+  add column status text,
+  add column role text,
+  add column customer_phone text,
+  add column customer_document text,
+  add column customer_ip text,
+  add column utm_source text,
+  add column utm_medium text,
+  add column utm_campaign text;
+
+alter table public.refunded_sales
+  add column status text,
+  add column role text,
+  add column customer_phone text,
+  add column customer_document text,
+  add column customer_ip text,
+  add column utm_source text,
+  add column utm_medium text,
+  add column utm_campaign text;
+
+with approved as (
+  select
+    id,
+    coalesce(
+      nullif(btrim(payload->>'status'), ''),
+      nullif(btrim(payload#>>'{data,status}'), ''),
+      nullif(btrim(payload#>>'{data,order,status}'), ''),
+      nullif(btrim(payload#>>'{data,order,payment,status}'), ''),
+      nullif(btrim(payload#>>'{data,payment,status}'), ''),
+      nullif(btrim(payload#>>'{transaction,status}'), ''),
+      nullif(btrim(payload#>>'{order,status}'), ''),
+      nullif(btrim(payload#>>'{Order,status}'), '')
+    ) as status,
+    coalesce(
+      nullif(btrim(payload->>'role'), ''),
+      nullif(btrim(payload#>>'{data,role}'), ''),
+      nullif(btrim(payload#>>'{data,order,role}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,role}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,role}'), ''),
+      nullif(btrim(payload#>>'{metadata,role}'), '')
+    ) as role,
+    coalesce(
+      nullif(btrim(payload->>'customer_phone'), ''),
+      nullif(btrim(payload->>'customer_phone_number'), ''),
+      nullif(btrim(payload#>>'{customer,phone}'), ''),
+      nullif(btrim(payload#>>'{customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{data,customer,phone}'), ''),
+      nullif(btrim(payload#>>'{data,customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,phone}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{buyer,phone}'), '')
+    ) as customer_phone,
+    coalesce(
+      nullif(btrim(payload->>'customer_document'), ''),
+      nullif(btrim(payload->>'customer_document_number'), ''),
+      nullif(btrim(payload#>>'{customer,document}'), ''),
+      nullif(btrim(payload#>>'{customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{data,customer,document}'), ''),
+      nullif(btrim(payload#>>'{data,customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{data,customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,document}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{buyer,document}'), ''),
+      nullif(btrim(payload#>>'{buyer,cpf}'), '')
+    ) as customer_document,
+    coalesce(
+      nullif(btrim(payload->>'customer_ip'), ''),
+      nullif(btrim(payload#>>'{customer,ip}'), ''),
+      nullif(btrim(payload->>'client_ip'), ''),
+      nullif(btrim(payload#>>'{data,client_ip}'), ''),
+      nullif(btrim(payload#>>'{data,customer,ip}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,ip}'), ''),
+      nullif(btrim(payload#>>'{data,request,ip}'), ''),
+      nullif(btrim(payload#>>'{request,ip}'), '')
+    ) as customer_ip,
+    coalesce(
+      nullif(btrim(payload->>'utm_source'), ''),
+      nullif(btrim(payload#>>'{data,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_source}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_source}'), '')
+    ) as utm_source,
+    coalesce(
+      nullif(btrim(payload->>'utm_medium'), ''),
+      nullif(btrim(payload#>>'{data,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_medium}'), '')
+    ) as utm_medium,
+    coalesce(
+      nullif(btrim(payload->>'utm_campaign'), ''),
+      nullif(btrim(payload#>>'{data,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_campaign}'), '')
+    ) as utm_campaign
+  from public.approved_sales
+)
+update public.approved_sales a
+set
+  status = coalesce(approved.status, a.status),
+  role = coalesce(approved.role, a.role),
+  customer_phone = coalesce(approved.customer_phone, a.customer_phone),
+  customer_document = coalesce(approved.customer_document, a.customer_document),
+  customer_ip = coalesce(approved.customer_ip, a.customer_ip),
+  utm_source = coalesce(approved.utm_source, a.utm_source),
+  utm_medium = coalesce(approved.utm_medium, a.utm_medium),
+  utm_campaign = coalesce(approved.utm_campaign, a.utm_campaign)
+from approved
+where approved.id = a.id;
+
+with pending as (
+  select
+    id,
+    coalesce(
+      nullif(btrim(payload->>'status'), ''),
+      nullif(btrim(payload#>>'{data,status}'), ''),
+      nullif(btrim(payload#>>'{data,order,status}'), ''),
+      nullif(btrim(payload#>>'{data,order,payment,status}'), ''),
+      nullif(btrim(payload#>>'{data,payment,status}'), ''),
+      nullif(btrim(payload#>>'{transaction,status}'), ''),
+      nullif(btrim(payload#>>'{order,status}'), ''),
+      nullif(btrim(payload#>>'{Order,status}'), '')
+    ) as status,
+    coalesce(
+      nullif(btrim(payload->>'role'), ''),
+      nullif(btrim(payload#>>'{data,role}'), ''),
+      nullif(btrim(payload#>>'{data,order,role}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,role}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,role}'), ''),
+      nullif(btrim(payload#>>'{metadata,role}'), '')
+    ) as role,
+    coalesce(
+      nullif(btrim(payload->>'customer_phone'), ''),
+      nullif(btrim(payload->>'customer_phone_number'), ''),
+      nullif(btrim(payload#>>'{customer,phone}'), ''),
+      nullif(btrim(payload#>>'{customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{data,customer,phone}'), ''),
+      nullif(btrim(payload#>>'{data,customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,phone}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{buyer,phone}'), '')
+    ) as customer_phone,
+    coalesce(
+      nullif(btrim(payload->>'customer_document'), ''),
+      nullif(btrim(payload->>'customer_document_number'), ''),
+      nullif(btrim(payload#>>'{customer,document}'), ''),
+      nullif(btrim(payload#>>'{customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{data,customer,document}'), ''),
+      nullif(btrim(payload#>>'{data,customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{data,customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,document}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{buyer,document}'), ''),
+      nullif(btrim(payload#>>'{buyer,cpf}'), '')
+    ) as customer_document,
+    coalesce(
+      nullif(btrim(payload->>'customer_ip'), ''),
+      nullif(btrim(payload#>>'{customer,ip}'), ''),
+      nullif(btrim(payload->>'client_ip'), ''),
+      nullif(btrim(payload#>>'{data,client_ip}'), ''),
+      nullif(btrim(payload#>>'{data,customer,ip}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,ip}'), ''),
+      nullif(btrim(payload#>>'{data,request,ip}'), ''),
+      nullif(btrim(payload#>>'{request,ip}'), '')
+    ) as customer_ip,
+    coalesce(
+      nullif(btrim(payload->>'utm_source'), ''),
+      nullif(btrim(payload#>>'{data,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_source}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_source}'), '')
+    ) as utm_source,
+    coalesce(
+      nullif(btrim(payload->>'utm_medium'), ''),
+      nullif(btrim(payload#>>'{data,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_medium}'), '')
+    ) as utm_medium,
+    coalesce(
+      nullif(btrim(payload->>'utm_campaign'), ''),
+      nullif(btrim(payload#>>'{data,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_campaign}'), '')
+    ) as utm_campaign
+  from public.pending_payments
+)
+update public.pending_payments p
+set
+  status = coalesce(pending.status, p.status),
+  role = coalesce(pending.role, p.role),
+  customer_phone = coalesce(pending.customer_phone, p.customer_phone),
+  customer_document = coalesce(pending.customer_document, p.customer_document),
+  customer_ip = coalesce(pending.customer_ip, p.customer_ip),
+  utm_source = coalesce(pending.utm_source, p.utm_source),
+  utm_medium = coalesce(pending.utm_medium, p.utm_medium),
+  utm_campaign = coalesce(pending.utm_campaign, p.utm_campaign)
+from pending
+where pending.id = p.id;
+
+with rejected as (
+  select
+    id,
+    coalesce(
+      nullif(btrim(payload->>'status'), ''),
+      nullif(btrim(payload#>>'{data,status}'), ''),
+      nullif(btrim(payload#>>'{data,order,status}'), ''),
+      nullif(btrim(payload#>>'{data,order,payment,status}'), ''),
+      nullif(btrim(payload#>>'{data,payment,status}'), ''),
+      nullif(btrim(payload#>>'{transaction,status}'), ''),
+      nullif(btrim(payload#>>'{order,status}'), ''),
+      nullif(btrim(payload#>>'{Order,status}'), '')
+    ) as status,
+    coalesce(
+      nullif(btrim(payload->>'role'), ''),
+      nullif(btrim(payload#>>'{data,role}'), ''),
+      nullif(btrim(payload#>>'{data,order,role}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,role}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,role}'), ''),
+      nullif(btrim(payload#>>'{metadata,role}'), '')
+    ) as role,
+    coalesce(
+      nullif(btrim(payload->>'customer_phone'), ''),
+      nullif(btrim(payload->>'customer_phone_number'), ''),
+      nullif(btrim(payload#>>'{customer,phone}'), ''),
+      nullif(btrim(payload#>>'{customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{data,customer,phone}'), ''),
+      nullif(btrim(payload#>>'{data,customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,phone}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{buyer,phone}'), '')
+    ) as customer_phone,
+    coalesce(
+      nullif(btrim(payload->>'customer_document'), ''),
+      nullif(btrim(payload->>'customer_document_number'), ''),
+      nullif(btrim(payload#>>'{customer,document}'), ''),
+      nullif(btrim(payload#>>'{customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{data,customer,document}'), ''),
+      nullif(btrim(payload#>>'{data,customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{data,customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,document}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{buyer,document}'), ''),
+      nullif(btrim(payload#>>'{buyer,cpf}'), '')
+    ) as customer_document,
+    coalesce(
+      nullif(btrim(payload->>'customer_ip'), ''),
+      nullif(btrim(payload#>>'{customer,ip}'), ''),
+      nullif(btrim(payload->>'client_ip'), ''),
+      nullif(btrim(payload#>>'{data,client_ip}'), ''),
+      nullif(btrim(payload#>>'{data,customer,ip}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,ip}'), ''),
+      nullif(btrim(payload#>>'{data,request,ip}'), ''),
+      nullif(btrim(payload#>>'{request,ip}'), '')
+    ) as customer_ip,
+    coalesce(
+      nullif(btrim(payload->>'utm_source'), ''),
+      nullif(btrim(payload#>>'{data,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_source}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_source}'), '')
+    ) as utm_source,
+    coalesce(
+      nullif(btrim(payload->>'utm_medium'), ''),
+      nullif(btrim(payload#>>'{data,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_medium}'), '')
+    ) as utm_medium,
+    coalesce(
+      nullif(btrim(payload->>'utm_campaign'), ''),
+      nullif(btrim(payload#>>'{data,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_campaign}'), '')
+    ) as utm_campaign
+  from public.rejected_payments
+)
+update public.rejected_payments r
+set
+  status = coalesce(rejected.status, r.status),
+  role = coalesce(rejected.role, r.role),
+  customer_phone = coalesce(rejected.customer_phone, r.customer_phone),
+  customer_document = coalesce(rejected.customer_document, r.customer_document),
+  customer_ip = coalesce(rejected.customer_ip, r.customer_ip),
+  utm_source = coalesce(rejected.utm_source, r.utm_source),
+  utm_medium = coalesce(rejected.utm_medium, r.utm_medium),
+  utm_campaign = coalesce(rejected.utm_campaign, r.utm_campaign)
+from rejected
+where rejected.id = r.id;
+
+with refunded as (
+  select
+    id,
+    coalesce(
+      nullif(btrim(payload->>'status'), ''),
+      nullif(btrim(payload#>>'{data,status}'), ''),
+      nullif(btrim(payload#>>'{data,order,status}'), ''),
+      nullif(btrim(payload#>>'{data,order,payment,status}'), ''),
+      nullif(btrim(payload#>>'{data,payment,status}'), ''),
+      nullif(btrim(payload#>>'{transaction,status}'), ''),
+      nullif(btrim(payload#>>'{order,status}'), ''),
+      nullif(btrim(payload#>>'{Order,status}'), '')
+    ) as status,
+    coalesce(
+      nullif(btrim(payload->>'role'), ''),
+      nullif(btrim(payload#>>'{data,role}'), ''),
+      nullif(btrim(payload#>>'{data,order,role}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,role}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,role}'), ''),
+      nullif(btrim(payload#>>'{metadata,role}'), '')
+    ) as role,
+    coalesce(
+      nullif(btrim(payload->>'customer_phone'), ''),
+      nullif(btrim(payload->>'customer_phone_number'), ''),
+      nullif(btrim(payload#>>'{customer,phone}'), ''),
+      nullif(btrim(payload#>>'{customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{data,customer,phone}'), ''),
+      nullif(btrim(payload#>>'{data,customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,phone}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,phone_number}'), ''),
+      nullif(btrim(payload#>>'{buyer,phone}'), '')
+    ) as customer_phone,
+    coalesce(
+      nullif(btrim(payload->>'customer_document'), ''),
+      nullif(btrim(payload->>'customer_document_number'), ''),
+      nullif(btrim(payload#>>'{customer,document}'), ''),
+      nullif(btrim(payload#>>'{customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{data,customer,document}'), ''),
+      nullif(btrim(payload#>>'{data,customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{data,customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,document}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,cpf}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,tax_id}'), ''),
+      nullif(btrim(payload#>>'{buyer,document}'), ''),
+      nullif(btrim(payload#>>'{buyer,cpf}'), '')
+    ) as customer_document,
+    coalesce(
+      nullif(btrim(payload->>'customer_ip'), ''),
+      nullif(btrim(payload#>>'{customer,ip}'), ''),
+      nullif(btrim(payload->>'client_ip'), ''),
+      nullif(btrim(payload#>>'{data,client_ip}'), ''),
+      nullif(btrim(payload#>>'{data,customer,ip}'), ''),
+      nullif(btrim(payload#>>'{data,order,customer,ip}'), ''),
+      nullif(btrim(payload#>>'{data,request,ip}'), ''),
+      nullif(btrim(payload#>>'{request,ip}'), '')
+    ) as customer_ip,
+    coalesce(
+      nullif(btrim(payload->>'utm_source'), ''),
+      nullif(btrim(payload#>>'{data,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_source}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_source}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_source}'), '')
+    ) as utm_source,
+    coalesce(
+      nullif(btrim(payload->>'utm_medium'), ''),
+      nullif(btrim(payload#>>'{data,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_medium}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_medium}'), '')
+    ) as utm_medium,
+    coalesce(
+      nullif(btrim(payload->>'utm_campaign'), ''),
+      nullif(btrim(payload#>>'{data,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,metadata,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,order,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{data,order,metadata,utm_campaign}'), ''),
+      nullif(btrim(payload#>>'{metadata,utm_campaign}'), '')
+    ) as utm_campaign
+  from public.refunded_sales
+)
+update public.refunded_sales r
+set
+  status = coalesce(refunded.status, r.status),
+  role = coalesce(refunded.role, r.role),
+  customer_phone = coalesce(refunded.customer_phone, r.customer_phone),
+  customer_document = coalesce(refunded.customer_document, r.customer_document),
+  customer_ip = coalesce(refunded.customer_ip, r.customer_ip),
+  utm_source = coalesce(refunded.utm_source, r.utm_source),
+  utm_medium = coalesce(refunded.utm_medium, r.utm_medium),
+  utm_campaign = coalesce(refunded.utm_campaign, r.utm_campaign)
+from refunded
+where refunded.id = r.id;
