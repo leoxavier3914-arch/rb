@@ -19,6 +19,14 @@ interface NormalizedBase {
 export interface NormalizedSaleLike extends NormalizedBase {
   saleId: string | null;
   paymentMethod: string | null;
+  status: string | null;
+  role: string | null;
+  customerPhone: string | null;
+  customerDocument: string | null;
+  customerIp: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
 }
 
 export type NormalizedApprovedSale = NormalizedSaleLike;
@@ -648,6 +656,137 @@ const resolveAmountFields = (
   };
 };
 
+const SALE_STATUS_PATHS = [
+  "status",
+  "Status",
+  "order_status",
+  "order.status",
+  "order.order_status",
+  "Order.status",
+  "Order.order_status",
+  "payment_status",
+  "payment.status",
+  "Payment.status",
+  "sale.status",
+  "transaction.status",
+  "charges.completed.0.status",
+  "Subscription.status",
+  "subscription.status",
+  "subscription_status",
+  "data.status",
+  "data.order.status",
+  "data.order.order_status",
+  "data.order.payment.status",
+  "data.payment.status",
+  "data.transaction.status",
+];
+
+const SALE_ROLE_PATHS = [
+  "role",
+  "Role",
+  "data.role",
+  "data.order.role",
+  "metadata.role",
+  "data.metadata.role",
+  "data.order.metadata.role",
+];
+
+const CUSTOMER_PHONE_PATHS = [
+  "customer.phone",
+  "customer.phone_number",
+  "customer_phone",
+  "customer_phone_number",
+  "Customer.phone",
+  "Customer.phone_number",
+  "data.customer.phone",
+  "data.customer.phone_number",
+  "data.order.customer.phone",
+  "data.order.customer.phone_number",
+  "buyer.phone",
+  "data.buyer.phone",
+];
+
+const CUSTOMER_DOCUMENT_PATHS = [
+  "customer.document",
+  "customer.cpf",
+  "customer.tax_id",
+  "customer.taxId",
+  "customer_document",
+  "customer_document_number",
+  "Customer.document",
+  "Customer.cpf",
+  "Customer.tax_id",
+  "data.customer.document",
+  "data.customer.cpf",
+  "data.customer.tax_id",
+  "data.order.customer.document",
+  "data.order.customer.cpf",
+  "data.order.customer.tax_id",
+  "buyer.document",
+  "buyer.cpf",
+  "buyer.tax_id",
+  "data.buyer.document",
+  "data.buyer.cpf",
+  "data.buyer.tax_id",
+];
+
+const CUSTOMER_IP_PATHS = [
+  "customer.ip",
+  "customer_ip",
+  "Customer.ip",
+  "client_ip",
+  "data.client_ip",
+  "data.customer.ip",
+  "data.order.customer.ip",
+  "request.ip",
+  "data.request.ip",
+];
+
+const UTM_SOURCE_PATHS = [
+  "utm_source",
+  "utmSource",
+  "data.utm_source",
+  "data.utmSource",
+  "data.metadata.utm_source",
+  "data.metadata.utmSource",
+  "data.order.utm_source",
+  "data.order.utmSource",
+  "data.order.metadata.utm_source",
+  "data.order.metadata.utmSource",
+  "metadata.utm_source",
+  "metadata.utmSource",
+];
+
+const UTM_MEDIUM_PATHS = [
+  "utm_medium",
+  "utmMedium",
+  "data.utm_medium",
+  "data.utmMedium",
+  "data.metadata.utm_medium",
+  "data.metadata.utmMedium",
+  "data.order.utm_medium",
+  "data.order.utmMedium",
+  "data.order.metadata.utm_medium",
+  "data.order.metadata.utmMedium",
+  "metadata.utm_medium",
+  "metadata.utmMedium",
+];
+
+const UTM_CAMPAIGN_PATHS = [
+  "utm_campaign",
+  "utmCampaign",
+  "data.utm_campaign",
+  "data.utmCampaign",
+  "data.metadata.utm_campaign",
+  "data.metadata.utmCampaign",
+  "data.order.utm_campaign",
+  "data.order.utmCampaign",
+  "data.order.metadata.utm_campaign",
+  "data.order.metadata.utmCampaign",
+  "metadata.utm_campaign",
+  "metadata.utmCampaign",
+];
+
 const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
   const topLevelId = stringCoalesce(payload, ["id", "event_id", "payload_id", "data.event_id"]);
 
@@ -750,6 +889,15 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     "Subscription.charges.completed.0.payment_method",
   ]);
 
+  const status = stringCoalesce(payload, SALE_STATUS_PATHS);
+  const role = stringCoalesce(payload, SALE_ROLE_PATHS);
+  const customerPhone = stringCoalesce(payload, CUSTOMER_PHONE_PATHS);
+  const customerDocument = stringCoalesce(payload, CUSTOMER_DOCUMENT_PATHS);
+  const customerIp = stringCoalesce(payload, CUSTOMER_IP_PATHS);
+  const utmSource = stringCoalesce(payload, UTM_SOURCE_PATHS);
+  const utmMedium = stringCoalesce(payload, UTM_MEDIUM_PATHS);
+  const utmCampaign = stringCoalesce(payload, UTM_CAMPAIGN_PATHS);
+
   const occurredAt = normalizeDate(payload, [
     "approved_date",
     "paid_at",
@@ -793,6 +941,14 @@ const normalizeSaleLike = (payload: UnknownPayload): NormalizedSaleLike => {
     affiliateCommissionAmount,
     currency,
     paymentMethod,
+    status,
+    role,
+    customerPhone,
+    customerDocument,
+    customerIp,
+    utmSource,
+    utmMedium,
+    utmCampaign,
     occurredAt,
     payload,
   };
