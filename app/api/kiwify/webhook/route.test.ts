@@ -107,8 +107,24 @@ describe("/api/kiwify/webhook", () => {
           kiwify_commission: 5000,
           affiliate_commission: 0,
         },
-        payment: { method: "credit_card", paid_at: "2024-12-23T15:58:00Z" },
-        customer: { name: "Alice", email: "alice@example.com" },
+        payment: {
+          method: "credit_card",
+          paid_at: "2024-12-23T15:58:00Z",
+          status: "paid",
+        },
+        customer: {
+          name: "Alice",
+          email: "alice@example.com",
+          phone: "+5511987654321",
+          document: "12345678901",
+        },
+        metadata: {
+          utm_source: "google",
+          utm_medium: "cpc",
+          utm_campaign: "black-friday",
+          role: "producer",
+        },
+        request: { ip: "203.0.113.42" },
         items: [{ product: { name: "Curso de Testes" } }],
       },
     } satisfies Record<string, unknown>;
@@ -128,6 +144,14 @@ describe("/api/kiwify/webhook", () => {
     expect(stored.gross_amount).toBeCloseTo(199.9, 3);
     expect(stored.kiwify_commission_amount).toBeCloseTo(50, 3);
     expect(stored.affiliate_commission_amount).toBeCloseTo(0, 3);
+    expect(stored.status).toBe("paid");
+    expect(stored.role).toBe("producer");
+    expect(stored.customer_phone).toBe("+5511987654321");
+    expect(stored.customer_document).toBe("12345678901");
+    expect(stored.customer_ip).toBe("203.0.113.42");
+    expect(stored.utm_source).toBe("google");
+    expect(stored.utm_medium).toBe("cpc");
+    expect(stored.utm_campaign).toBe("black-friday");
   });
 
   it("mantém registros distintos para webhooks com mesmo e-mail e IDs diferentes", async () => {
