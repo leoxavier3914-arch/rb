@@ -22,6 +22,18 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   paypal: "PayPal",
 }
 
+const PAYMENT_METHOD_PATHS = [
+  "payment_method",
+  "payment.method",
+  "data.payment_method",
+  "data.payment.method",
+  "data.order.payment_method",
+  "data.order.payment.method",
+  "data.order.payment.method_name",
+  "payment.method_name",
+  "payment.methodName",
+]
+
 const STATUS_PATHS = [
   "data.status",
   "data.order.status",
@@ -250,6 +262,61 @@ const SALE_KIND_BADGE: Record<SaleDetailRecord['kind'], { label: string; tone: s
   refunded: { label: "Venda reembolsada", tone: "bg-sky-500/20 text-sky-200 border-sky-400/40" },
 }
 
+const PIX_CODE_PATHS = [
+  "pix_code",
+  "pixCode",
+  "pix.qr_code",
+  "pix.qrCode",
+  "data.pix_code",
+  "data.pixCode",
+  "data.pix.qr_code",
+  "data.pix.qrCode",
+  "data.payment.pix_code",
+  "data.payment.pixCode",
+  "data.payment.qr_code",
+  "data.payment.qrCode",
+  "data.order.pix_code",
+  "data.order.pixCode",
+  "data.order.payment.pix_code",
+  "data.order.payment.pixCode",
+  "data.order.payment.qr_code",
+  "data.order.payment.qrCode",
+  "payment.pix_code",
+  "payment.pixCode",
+  "payment.qr_code",
+  "payment.qrCode",
+]
+
+const PIX_EXPIRATION_PATHS = [
+  "pix_expiration",
+  "pixExpiration",
+  "pix.expiration",
+  "pix.expira_em",
+  "pix.expiraEm",
+  "data.pix_expiration",
+  "data.pixExpiration",
+  "data.pix.expiration",
+  "data.pix.expira_em",
+  "data.pix.expiraEm",
+  "data.payment.pix_expiration",
+  "data.payment.pixExpiration",
+  "data.payment.expiration",
+  "data.payment.expira_em",
+  "data.payment.expiraEm",
+  "data.order.pix_expiration",
+  "data.order.pixExpiration",
+  "data.order.payment.pix_expiration",
+  "data.order.payment.pixExpiration",
+  "data.order.payment.expiration",
+  "data.order.payment.expira_em",
+  "data.order.payment.expiraEm",
+  "payment.pix_expiration",
+  "payment.pixExpiration",
+  "payment.expiration",
+  "payment.expira_em",
+  "payment.expiraEm",
+]
+
 type UnknownPayload = Record<string, unknown>
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -348,12 +415,47 @@ const formatPaymentMethod = (paymentMethod: string | null | undefined) => {
   return PAYMENT_METHOD_LABELS[lower] ?? paymentMethod.toUpperCase()
 }
 
+const formatPixExpirationValue = (value: string | null): string | null => {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  const formatted = formatDate(trimmed)
+  if (formatted) {
+    return formatted
+  }
+
+  const normalizedIsoLike = formatDate(trimmed.replace(" ", "T"))
+  if (normalizedIsoLike) {
+    return normalizedIsoLike
+  }
+
+  const match = trimmed.match(/^(\d{2})[\/](\d{2})[\/](\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/)
+  if (match) {
+    const [, day, month, year, hour = "00", minute = "00", second = "00"] = match
+    const isoCandidate = `${year}-${month}-${day}T${hour}:${minute}:${second}`
+    const normalized = formatDate(isoCandidate)
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  return trimmed
+}
+
 const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
   const statusCandidate = primary.status ?? pickStringFromEntries(entries, STATUS_PATHS)
   const status = formatSaleStatus(statusCandidate)
   const roleCandidate = primary.role ?? pickStringFromEntries(entries, ROLE_PATHS)
   const role = formatSaleRole(roleCandidate)
   const installments = pickNumberFromEntries(entries, INSTALLMENT_PATHS)
+  const paymentMethodCandidate =
+    primary.payment_method ?? pickStringFromEntries(entries, PAYMENT_METHOD_PATHS)
+  const paymentMethod = formatPaymentMethod(paymentMethodCandidate)
+  const isPixPayment = paymentMethodCandidate?.toLowerCase() === "pix"
+  const pixCode = isPixPayment ? pickStringFromEntries(entries, PIX_CODE_PATHS) : null
+  const pixExpirationRaw = isPixPayment ? pickStringFromEntries(entries, PIX_EXPIRATION_PATHS) : null
+  const pixExpirationDisplay = formatPixExpirationValue(pixExpirationRaw)
   const createdAt = pickStringFromEntries(entries, [
     "created_at",
     "data.created_at",
@@ -362,7 +464,7 @@ const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord):
     "data.order.createdAt",
   ])
 
-  return [
+  const items: DetailItem[] = [
     { label: "ID da venda", value: (primary.sale_id ?? primary.id)?.toString() ?? null },
     { label: "Status", value: status },
     { label: "Categoria", value: SALE_KIND_BADGE[primary.kind]?.label ?? primary.label ?? null },
@@ -373,10 +475,25 @@ const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord):
         primary.product_name ??
         pickStringFromEntries(entries, ["product.name", "Product.name", "data.product.name", "data.order.product.name"]),
     },
-    { label: "Método de pagamento", value: formatPaymentMethod(primary.payment_method) },
+    { label: "Método de pagamento", value: paymentMethod },
+  ]
+
+  if (isPixPayment && (pixExpirationDisplay ?? pixExpirationRaw ?? pixCode)) {
+    items.push({
+      label: "Expiração do PIX",
+      value: pixExpirationDisplay ?? pixExpirationRaw,
+      action: pixCode
+        ? { type: "pix-qr", pixCode, expiresAt: pixExpirationDisplay ?? pixExpirationRaw ?? null }
+        : undefined,
+    })
+  }
+
+  items.push(
     { label: "Parcelas", value: formatInstallments(installments) },
     { label: "Data de criação", value: formatDate(createdAt ?? primary.created_at) },
-  ]
+  )
+
+  return items
 }
 
 const buildCustomerItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
