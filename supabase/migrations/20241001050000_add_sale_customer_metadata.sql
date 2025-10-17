@@ -1,43 +1,43 @@
 -- Add customer metadata columns to sale event tables
 alter table public.approved_sales
-  add column status text,
-  add column role text,
-  add column customer_phone text,
-  add column customer_document text,
-  add column customer_ip text,
-  add column utm_source text,
-  add column utm_medium text,
-  add column utm_campaign text;
+  add column if not exists status text,
+  add column if not exists role text,
+  add column if not exists customer_phone text,
+  add column if not exists customer_document text,
+  add column if not exists customer_ip text,
+  add column if not exists utm_source text,
+  add column if not exists utm_medium text,
+  add column if not exists utm_campaign text;
 
 alter table public.pending_payments
-  add column status text,
-  add column role text,
-  add column customer_phone text,
-  add column customer_document text,
-  add column customer_ip text,
-  add column utm_source text,
-  add column utm_medium text,
-  add column utm_campaign text;
+  add column if not exists status text,
+  add column if not exists role text,
+  add column if not exists customer_phone text,
+  add column if not exists customer_document text,
+  add column if not exists customer_ip text,
+  add column if not exists utm_source text,
+  add column if not exists utm_medium text,
+  add column if not exists utm_campaign text;
 
 alter table public.rejected_payments
-  add column status text,
-  add column role text,
-  add column customer_phone text,
-  add column customer_document text,
-  add column customer_ip text,
-  add column utm_source text,
-  add column utm_medium text,
-  add column utm_campaign text;
+  add column if not exists status text,
+  add column if not exists role text,
+  add column if not exists customer_phone text,
+  add column if not exists customer_document text,
+  add column if not exists customer_ip text,
+  add column if not exists utm_source text,
+  add column if not exists utm_medium text,
+  add column if not exists utm_campaign text;
 
 alter table public.refunded_sales
-  add column status text,
-  add column role text,
-  add column customer_phone text,
-  add column customer_document text,
-  add column customer_ip text,
-  add column utm_source text,
-  add column utm_medium text,
-  add column utm_campaign text;
+  add column if not exists status text,
+  add column if not exists role text,
+  add column if not exists customer_phone text,
+  add column if not exists customer_document text,
+  add column if not exists customer_ip text,
+  add column if not exists utm_source text,
+  add column if not exists utm_medium text,
+  add column if not exists utm_campaign text;
 
 with approved as (
   select
