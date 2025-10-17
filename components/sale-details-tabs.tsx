@@ -1,17 +1,35 @@
 "use client"
 
-import { useId, useRef, useState, type KeyboardEvent } from "react"
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react"
 import clsx from "clsx"
+import QRCode from "qrcode"
 
 export type DetailListItem = {
   label: string
   value: string
 }
 
+type PixQrAction = {
+  type: "pix-qr"
+  pixCode: string
+  triggerLabel?: string
+  expiresAt?: string | null
+}
+
+type DetailAction = PixQrAction
+
 export type DetailItem = {
   label: string
   value: string | null
   list?: DetailListItem[]
+  action?: DetailAction
 }
 
 type Section = {
@@ -29,7 +47,175 @@ const fallbackValue = (value: string | null | undefined) => {
     return <span className="text-muted-foreground/70">—</span>
   }
 
-  return value
+  return typeof value === "string" ? value.trim() : value
+}
+
+const PixQrCodeAction = ({ action }: { action: PixQrAction }) => {
+  const [open, setOpen] = useState(false)
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle")
+  const dialogTitleId = useId()
+  const descriptionId = `${dialogTitleId}-description`
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    let cancelled = false
+    setIsLoading(true)
+    setCopyState("idle")
+
+    QRCode.toDataURL(action.pixCode, {
+      width: 256,
+      margin: 1,
+      errorCorrectionLevel: "M",
+    })
+      .then((url) => {
+        if (!cancelled) {
+          setQrCodeUrl(url)
+        }
+      })
+      .catch((error) => {
+        console.error("Erro ao gerar QR Code do PIX", error)
+        if (!cancelled) {
+          setQrCodeUrl(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [action.pixCode, open])
+
+  useEffect(() => {
+    if (!open) return
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false)
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [open])
+
+  const handleCopy = useCallback(async () => {
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard) {
+        throw new Error("Clipboard API indisponível")
+      }
+
+      await navigator.clipboard.writeText(action.pixCode)
+      setCopyState("success")
+    } catch (error) {
+      console.error("Erro ao copiar código PIX", error)
+      setCopyState("error")
+    } finally {
+      setTimeout(() => setCopyState("idle"), 2500)
+    }
+  }, [action.pixCode])
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center rounded-full border border-primary/50 bg-transparent px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-primary transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+      >
+        {action.triggerLabel ?? "ver QR"}
+      </button>
+
+      {open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={dialogTitleId}
+          aria-describedby={descriptionId}
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-md rounded-3xl border border-surface-accent/30 bg-surface p-6 text-primary-foreground shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="absolute right-4 top-4 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+            >
+              Fechar
+            </button>
+
+            <div className="space-y-3">
+              <div>
+                <h4 id={dialogTitleId} className="text-lg font-semibold">
+                  QR Code do PIX
+                </h4>
+                <p id={descriptionId} className="text-sm text-muted-foreground">
+                  Escaneie o QR Code abaixo ou copie o código PIX para concluir o pagamento.
+                </p>
+                {action.expiresAt ? (
+                  <p className="text-xs text-muted-foreground/80">
+                    Expira em: <span className="font-medium text-primary-foreground">{action.expiresAt}</span>
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col items-center gap-4">
+                <div className="flex h-64 w-64 items-center justify-center rounded-3xl border border-surface-accent/40 bg-surface-accent/50 p-4">
+                  {isLoading ? (
+                    <span className="text-sm text-muted-foreground">Gerando QR Code…</span>
+                  ) : qrCodeUrl ? (
+                    <img src={qrCodeUrl} alt="QR Code do PIX" className="h-full w-full rounded-2xl object-contain" />
+                  ) : (
+                    <span className="text-center text-sm text-muted-foreground">
+                      Não foi possível gerar o QR Code. Copie o código PIX abaixo.
+                    </span>
+                  )}
+                </div>
+
+                <code className="w-full break-all rounded-2xl border border-surface-accent/40 bg-surface-accent/30 p-4 text-xs text-muted-foreground">
+                  {action.pixCode}
+                </code>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCopy}
+                    className="inline-flex items-center rounded-full border border-primary/60 px-4 py-2 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  >
+                    {copyState === "success"
+                      ? "Copiado!"
+                      : copyState === "error"
+                        ? "Tentar novamente"
+                        : "Copiar código PIX"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+const DetailActionButton = ({ action }: { action: DetailAction }) => {
+  if (action.type === "pix-qr") {
+    return <PixQrCodeAction action={action} />
+  }
+
+  return null
 }
 
 const DetailsSection = ({ title, items }: { title: string; items: DetailItem[] }) => {
@@ -39,6 +225,7 @@ const DetailsSection = ({ title, items }: { title: string; items: DetailItem[] }
       <dl className="mt-4 space-y-3 text-sm">
         {items.map((item) => {
           const hasList = item.list && item.list.length > 0
+          const renderedValue = fallbackValue(item.value)
           return (
             <div key={item.label} className="flex flex-col gap-1">
               <dt className="text-muted-foreground/80">{item.label}</dt>
@@ -52,7 +239,19 @@ const DetailsSection = ({ title, items }: { title: string; items: DetailItem[] }
                     ))}
                   </ul>
                 ) : (
-                  fallbackValue(item.value)
+                  <div
+                    className={clsx(
+                      "flex flex-wrap items-center gap-3",
+                      item.action ? "justify-between" : "justify-start",
+                    )}
+                  >
+                    {typeof renderedValue === "string" ? (
+                      <span className="break-words">{renderedValue}</span>
+                    ) : (
+                      renderedValue
+                    )}
+                    {item.action ? <DetailActionButton action={item.action} /> : null}
+                  </div>
                 )}
               </dd>
             </div>
