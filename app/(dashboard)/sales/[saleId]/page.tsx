@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import type { ReactNode } from "react"
+import SaleDetailsTabs, { type DetailItem, type DetailListItem } from "@/components/sale-details-tabs"
 
 import { formatCurrency, formatDate } from "@/lib/format"
 import { getSaleDetails, type SaleDetailRecord } from "@/lib/queries"
@@ -151,8 +151,6 @@ const SALE_KIND_BADGE: Record<SaleDetailRecord['kind'], { label: string; tone: s
 
 type UnknownPayload = Record<string, unknown>
 
-type DetailItem = { label: string; value: ReactNode | null }
-
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
 
@@ -240,34 +238,6 @@ const formatPaymentMethod = (paymentMethod: string | null | undefined) => {
   return PAYMENT_METHOD_LABELS[lower] ?? paymentMethod.toUpperCase()
 }
 
-const fallbackValue = (value: ReactNode | null | undefined) => {
-  if (value === null || value === undefined) {
-    return <span className="text-muted-foreground/70">—</span>
-  }
-
-  if (typeof value === "string" && value.trim().length === 0) {
-    return <span className="text-muted-foreground/70">—</span>
-  }
-
-  return value
-}
-
-const DetailsSection = ({ title, items }: { title: string; items: DetailItem[] }) => {
-  return (
-    <section className="rounded-3xl border border-surface-accent/40 bg-surface-accent/60 p-6 shadow-soft">
-      <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-muted-foreground">{title}</h3>
-      <dl className="mt-4 space-y-3 text-sm">
-        {items.map((item) => (
-          <div key={item.label} className="flex flex-col gap-1">
-            <dt className="text-muted-foreground/80">{item.label}</dt>
-            <dd className="font-medium text-primary-foreground">{fallbackValue(item.value)}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  )
-}
-
 const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
   const status = pickStringFromEntries(entries, STATUS_PATHS)
   const role = pickStringFromEntries(entries, ROLE_PATHS)
@@ -281,9 +251,9 @@ const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord):
   ])
 
   return [
-    { label: "ID da venda", value: primary.sale_id ?? primary.id },
+    { label: "ID da venda", value: (primary.sale_id ?? primary.id)?.toString() ?? null },
     { label: "Status", value: status },
-    { label: "Categoria", value: SALE_KIND_BADGE[primary.kind]?.label ?? primary.label },
+    { label: "Categoria", value: SALE_KIND_BADGE[primary.kind]?.label ?? primary.label ?? null },
     { label: "Tipo", value: role },
     {
       label: "Produto",
@@ -339,11 +309,15 @@ const buildValueItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord)
     }
   }
 
-  const breakdown = [
+  const breakdownCandidates: { label: string; value: string | null }[] = [
     { label: "Produtor", value: netDisplay },
     { label: "Kiwify", value: kiwifyDisplay },
     { label: "Afiliados", value: affiliateDisplay },
-  ].filter((item) => item.value !== null)
+  ]
+
+  const breakdown: DetailListItem[] = breakdownCandidates
+    .filter((item): item is { label: string; value: string } => item.value !== null)
+    .map((item) => ({ label: item.label, value: item.value }))
 
   return [
     { label: "Valor líquido", value: netDisplay },
@@ -351,16 +325,8 @@ const buildValueItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord)
     { label: "Taxas estimadas", value: feesDisplay },
     {
       label: "Divisão dos valores",
-      value:
-        breakdown.length > 0 ? (
-          <ul className="space-y-1 text-sm text-muted-foreground">
-            {breakdown.map((item) => (
-              <li key={item.label}>
-                <span className="text-muted-foreground/80">{item.label}:</span> {item.value}
-              </li>
-            ))}
-          </ul>
-        ) : null,
+      value: null,
+      list: breakdown.length > 0 ? breakdown : undefined,
     },
     { label: "Situação do recebimento", value: payoutStatus },
     { label: "Data de liberação", value: formatDate(payoutDate) },
@@ -421,6 +387,11 @@ export default async function SaleDetailsPage({
   const saleItems = buildSaleItems(entries, primary)
   const customerItems = buildCustomerItems(entries, primary)
   const valueItems = buildValueItems(entries, primary)
+  const sections = [
+    { id: "sale", label: "Venda", items: saleItems },
+    { id: "customer", label: "Cliente", items: customerItems },
+    { id: "values", label: "Valores", items: valueItems },
+  ]
 
   return (
     <div className="space-y-8">
@@ -439,11 +410,7 @@ export default async function SaleDetailsPage({
         </Link>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <DetailsSection title="Venda" items={saleItems} />
-        <DetailsSection title="Cliente" items={customerItems} />
-        <DetailsSection title="Valores" items={valueItems} />
-      </div>
+      <SaleDetailsTabs sections={sections} />
 
       <Timeline entries={entries} />
 
