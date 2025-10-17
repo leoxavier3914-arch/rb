@@ -39,7 +39,6 @@ alter table public.refunded_sales
   add column utm_medium text,
   add column utm_campaign text;
 
--- Helper expressions for trimming JSON text values
 with approved as (
   select
     id,
@@ -122,8 +121,21 @@ with approved as (
       nullif(btrim(payload#>>'{metadata,utm_campaign}'), '')
     ) as utm_campaign
   from public.approved_sales
-),
-pending as (
+)
+update public.approved_sales a
+set
+  status = coalesce(approved.status, a.status),
+  role = coalesce(approved.role, a.role),
+  customer_phone = coalesce(approved.customer_phone, a.customer_phone),
+  customer_document = coalesce(approved.customer_document, a.customer_document),
+  customer_ip = coalesce(approved.customer_ip, a.customer_ip),
+  utm_source = coalesce(approved.utm_source, a.utm_source),
+  utm_medium = coalesce(approved.utm_medium, a.utm_medium),
+  utm_campaign = coalesce(approved.utm_campaign, a.utm_campaign)
+from approved
+where approved.id = a.id;
+
+with pending as (
   select
     id,
     coalesce(
@@ -205,8 +217,21 @@ pending as (
       nullif(btrim(payload#>>'{metadata,utm_campaign}'), '')
     ) as utm_campaign
   from public.pending_payments
-),
-rejected as (
+)
+update public.pending_payments p
+set
+  status = coalesce(pending.status, p.status),
+  role = coalesce(pending.role, p.role),
+  customer_phone = coalesce(pending.customer_phone, p.customer_phone),
+  customer_document = coalesce(pending.customer_document, p.customer_document),
+  customer_ip = coalesce(pending.customer_ip, p.customer_ip),
+  utm_source = coalesce(pending.utm_source, p.utm_source),
+  utm_medium = coalesce(pending.utm_medium, p.utm_medium),
+  utm_campaign = coalesce(pending.utm_campaign, p.utm_campaign)
+from pending
+where pending.id = p.id;
+
+with rejected as (
   select
     id,
     coalesce(
@@ -288,8 +313,21 @@ rejected as (
       nullif(btrim(payload#>>'{metadata,utm_campaign}'), '')
     ) as utm_campaign
   from public.rejected_payments
-),
-refunded as (
+)
+update public.rejected_payments r
+set
+  status = coalesce(rejected.status, r.status),
+  role = coalesce(rejected.role, r.role),
+  customer_phone = coalesce(rejected.customer_phone, r.customer_phone),
+  customer_document = coalesce(rejected.customer_document, r.customer_document),
+  customer_ip = coalesce(rejected.customer_ip, r.customer_ip),
+  utm_source = coalesce(rejected.utm_source, r.utm_source),
+  utm_medium = coalesce(rejected.utm_medium, r.utm_medium),
+  utm_campaign = coalesce(rejected.utm_campaign, r.utm_campaign)
+from rejected
+where rejected.id = r.id;
+
+with refunded as (
   select
     id,
     coalesce(
@@ -372,45 +410,6 @@ refunded as (
     ) as utm_campaign
   from public.refunded_sales
 )
-update public.approved_sales a
-set
-  status = coalesce(approved.status, a.status),
-  role = coalesce(approved.role, a.role),
-  customer_phone = coalesce(approved.customer_phone, a.customer_phone),
-  customer_document = coalesce(approved.customer_document, a.customer_document),
-  customer_ip = coalesce(approved.customer_ip, a.customer_ip),
-  utm_source = coalesce(approved.utm_source, a.utm_source),
-  utm_medium = coalesce(approved.utm_medium, a.utm_medium),
-  utm_campaign = coalesce(approved.utm_campaign, a.utm_campaign)
-from approved
-where approved.id = a.id;
-
-update public.pending_payments p
-set
-  status = coalesce(pending.status, p.status),
-  role = coalesce(pending.role, p.role),
-  customer_phone = coalesce(pending.customer_phone, p.customer_phone),
-  customer_document = coalesce(pending.customer_document, p.customer_document),
-  customer_ip = coalesce(pending.customer_ip, p.customer_ip),
-  utm_source = coalesce(pending.utm_source, p.utm_source),
-  utm_medium = coalesce(pending.utm_medium, p.utm_medium),
-  utm_campaign = coalesce(pending.utm_campaign, p.utm_campaign)
-from pending
-where pending.id = p.id;
-
-update public.rejected_payments r
-set
-  status = coalesce(rejected.status, r.status),
-  role = coalesce(rejected.role, r.role),
-  customer_phone = coalesce(rejected.customer_phone, r.customer_phone),
-  customer_document = coalesce(rejected.customer_document, r.customer_document),
-  customer_ip = coalesce(rejected.customer_ip, r.customer_ip),
-  utm_source = coalesce(rejected.utm_source, r.utm_source),
-  utm_medium = coalesce(rejected.utm_medium, r.utm_medium),
-  utm_campaign = coalesce(rejected.utm_campaign, r.utm_campaign)
-from rejected
-where rejected.id = r.id;
-
 update public.refunded_sales r
 set
   status = coalesce(refunded.status, r.status),
