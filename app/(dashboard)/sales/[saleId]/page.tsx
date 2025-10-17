@@ -49,25 +49,59 @@ const INSTALLMENT_PATHS = [
 const PHONE_PATHS = [
   "customer.phone",
   "customer.phone_number",
+  "customer.phoneNumber",
   "customer_phone",
   "customer_phone_number",
+  "customerPhone",
+  "customerPhoneNumber",
   "data.customer.phone",
+  "data.customer.phone_number",
+  "data.customer.phoneNumber",
   "data.order.customer.phone",
+  "data.order.customer.phone_number",
+  "data.order.customer.phoneNumber",
   "buyer.phone",
+  "buyer.phoneNumber",
+  "data.buyer.phone",
+  "data.buyer.phone_number",
+  "data.buyer.phoneNumber",
 ]
 
 const DOCUMENT_PATHS = [
   "customer.document",
   "customer.cpf",
   "customer.tax_id",
+  "customer.taxId",
+  "customer.document_number",
+  "customer.documentNumber",
   "customer_document",
   "customer_document_number",
+  "customerDocument",
+  "customerDocumentNumber",
   "data.customer.document",
   "data.customer.cpf",
+  "data.customer.tax_id",
+  "data.customer.taxId",
+  "data.customer.document_number",
+  "data.customer.documentNumber",
   "data.order.customer.document",
   "data.order.customer.cpf",
+  "data.order.customer.tax_id",
+  "data.order.customer.taxId",
+  "data.order.customer.document_number",
+  "data.order.customer.documentNumber",
   "buyer.document",
   "buyer.cpf",
+  "buyer.tax_id",
+  "buyer.taxId",
+  "buyer.document_number",
+  "buyer.documentNumber",
+  "data.buyer.document",
+  "data.buyer.cpf",
+  "data.buyer.tax_id",
+  "data.buyer.taxId",
+  "data.buyer.document_number",
+  "data.buyer.documentNumber",
 ]
 
 const IP_PATHS = [
@@ -81,26 +115,41 @@ const IP_PATHS = [
 
 const UTM_SOURCE_PATHS = [
   "utm_source",
+  "utmSource",
   "data.utm_source",
+  "data.utmSource",
   "data.order.utm_source",
+  "data.order.utmSource",
   "data.order.metadata.utm_source",
+  "data.order.metadata.utmSource",
   "metadata.utm_source",
+  "metadata.utmSource",
 ]
 
 const UTM_MEDIUM_PATHS = [
   "utm_medium",
+  "utmMedium",
   "data.utm_medium",
+  "data.utmMedium",
   "data.order.utm_medium",
+  "data.order.utmMedium",
   "data.order.metadata.utm_medium",
+  "data.order.metadata.utmMedium",
   "metadata.utm_medium",
+  "metadata.utmMedium",
 ]
 
 const UTM_CAMPAIGN_PATHS = [
   "utm_campaign",
+  "utmCampaign",
   "data.utm_campaign",
+  "data.utmCampaign",
   "data.order.utm_campaign",
+  "data.order.utmCampaign",
   "data.order.metadata.utm_campaign",
+  "data.order.metadata.utmCampaign",
   "metadata.utm_campaign",
+  "metadata.utmCampaign",
 ]
 
 const PAYOUT_STATUS_PATHS = [
