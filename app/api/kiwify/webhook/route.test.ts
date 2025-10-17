@@ -154,6 +154,43 @@ describe("/api/kiwify/webhook", () => {
     expect(stored.utm_campaign).toBe("black-friday");
   });
 
+  it("normaliza campos camelCase para telefone, documento e UTMs", async () => {
+    const payload = {
+      id: "evt-sale-camel",
+      event: "order.approved",
+      resource: "order",
+      sent_at: "2025-01-05T12:00:00Z",
+      data: {
+        id: "sale-camel",
+        status: "paid",
+        amount: { value_cents: 5000, currency: "BRL" },
+        payment: { method: "pix", paid_at: "2025-01-05T11:59:00Z" },
+        customer: {
+          name: "Bruno",
+          email: "bruno@example.com",
+          phoneNumber: "+5511912345678",
+          documentNumber: "98765432100",
+        },
+        metadata: {
+          utmSource: "newsletter",
+          utmMedium: "email",
+          utmCampaign: "jan-campaign",
+        },
+        request: { ip: "198.51.100.24" },
+      },
+    } satisfies Record<string, unknown>;
+
+    const response = await callWebhook(payload);
+
+    expect(response.status).toBe(200);
+    const stored = operations.approved_sales?.[0].payload as Record<string, unknown>;
+    expect(stored.customer_phone).toBe("+5511912345678");
+    expect(stored.customer_document).toBe("98765432100");
+    expect(stored.utm_source).toBe("newsletter");
+    expect(stored.utm_medium).toBe("email");
+    expect(stored.utm_campaign).toBe("jan-campaign");
+  });
+
   it("mantém registros distintos para webhooks com mesmo e-mail e IDs diferentes", async () => {
     const firstPayload = {
       id: "evt-sale-duplicate-1",
