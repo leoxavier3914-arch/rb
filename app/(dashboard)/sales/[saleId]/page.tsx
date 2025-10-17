@@ -17,20 +17,17 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 }
 
 const STATUS_PATHS = [
-  "status",
   "data.status",
   "data.order.status",
   "data.order.payment.status",
   "data.payment.status",
-  "sale.status",
   "transaction.status",
 ]
 
 const ROLE_PATHS = [
-  "data.role",
   "role",
+  "data.role",
   "data.order.role",
-  "order.role",
   "metadata.role",
 ]
 
@@ -41,53 +38,35 @@ const INSTALLMENT_PATHS = [
   "payment.parcelas",
   "payment_details.installments",
   "installments",
-  "parcelas",
   "data.payment.number_installments",
 ]
 
 const PHONE_PATHS = [
   "customer.phone",
   "customer.phone_number",
-  "Customer.phone",
-  "Customer.phone_number",
-  "data.customer.phone",
-  "data.customer.phone_number",
-  "data.order.customer.phone",
-  "data.order.customer.phone_number",
-  "buyer.phone",
-  "buyer.phone_number",
   "customer_phone",
   "customer_phone_number",
-  "customer_phone_1",
-  "customer_phone_2",
-  "customer_phone_3",
-  "customer_phone1",
-  "customer_phone2",
-  "customer_phone3",
+  "data.customer.phone",
+  "data.order.customer.phone",
+  "buyer.phone",
 ]
 
 const DOCUMENT_PATHS = [
   "customer.document",
   "customer.cpf",
   "customer.tax_id",
-  "Customer.document",
-  "Customer.cpf",
-  "Customer.tax_id",
+  "customer_document",
+  "customer_document_number",
   "data.customer.document",
   "data.customer.cpf",
   "data.order.customer.document",
   "data.order.customer.cpf",
   "buyer.document",
   "buyer.cpf",
-  "customer_document",
-  "customer_document_number",
-  "customer_cpf_number",
 ]
 
 const IP_PATHS = [
   "customer.ip",
-  "Customer.ip",
-  "buyer.ip",
   "client_ip",
   "data.client_ip",
   "data.customer.ip",
@@ -123,7 +102,6 @@ const PAYOUT_STATUS_PATHS = [
   "payout_status",
   "withdrawal_status",
   "data.payout_status",
-  "data.withdrawal_status",
   "data.order.payout_status",
   "data.order.withdrawal_status",
 ]
@@ -136,9 +114,8 @@ const PAYOUT_DATE_PATHS = [
   "data.expected_release_at",
   "data.expected_release_date",
   "data.payment.expected_release_at",
-  "data.order.expected_release_at",
-  "data.order.release_date",
   "data.payment.release_date",
+  "data.order.release_date",
   "next_withdrawal_at",
 ]
 
@@ -248,8 +225,8 @@ const formatPaymentMethod = (paymentMethod: string | null | undefined) => {
 }
 
 const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
-  const status = pickStringFromEntries(entries, STATUS_PATHS)
-  const role = pickStringFromEntries(entries, ROLE_PATHS)
+  const status = primary.status ?? pickStringFromEntries(entries, STATUS_PATHS)
+  const role = primary.role ?? pickStringFromEntries(entries, ROLE_PATHS)
   const installments = pickNumberFromEntries(entries, INSTALLMENT_PATHS)
   const createdAt = pickStringFromEntries(entries, [
     "created_at",
@@ -277,12 +254,12 @@ const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord):
 }
 
 const buildCustomerItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
-  const phone = pickStringFromEntries(entries, PHONE_PATHS)
-  const document = pickStringFromEntries(entries, DOCUMENT_PATHS)
-  const ip = pickStringFromEntries(entries, IP_PATHS)
-  const utmSource = pickStringFromEntries(entries, UTM_SOURCE_PATHS)
-  const utmMedium = pickStringFromEntries(entries, UTM_MEDIUM_PATHS)
-  const utmCampaign = pickStringFromEntries(entries, UTM_CAMPAIGN_PATHS)
+  const phone = primary.customer_phone ?? pickStringFromEntries(entries, PHONE_PATHS)
+  const document = primary.customer_document ?? pickStringFromEntries(entries, DOCUMENT_PATHS)
+  const ip = primary.customer_ip ?? pickStringFromEntries(entries, IP_PATHS)
+  const utmSource = primary.utm_source ?? pickStringFromEntries(entries, UTM_SOURCE_PATHS)
+  const utmMedium = primary.utm_medium ?? pickStringFromEntries(entries, UTM_MEDIUM_PATHS)
+  const utmCampaign = primary.utm_campaign ?? pickStringFromEntries(entries, UTM_CAMPAIGN_PATHS)
 
   return [
     { label: "Nome", value: primary.customer_name },

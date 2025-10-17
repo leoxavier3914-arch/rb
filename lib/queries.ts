@@ -15,6 +15,14 @@ interface SaleEventBase {
   affiliate_commission_amount: Numeric;
   currency: string | null;
   payment_method: string | null;
+  status: string | null;
+  role: string | null;
+  customer_phone: string | null;
+  customer_document: string | null;
+  customer_ip: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
   occurred_at: string | null;
   payload: Record<string, unknown>;
   created_at: string;
@@ -245,6 +253,32 @@ type SaleDetailRecord =
   | (RejectedPayment & { table: SaleSource["table"]; kind: SaleSource["kind"]; label: string })
   | (RefundedSale & { table: SaleSource["table"]; kind: SaleSource["kind"]; label: string });
 
+const SALE_DETAIL_SELECT_COLUMNS = [
+  "id",
+  "sale_id",
+  "customer_name",
+  "customer_email",
+  "product_name",
+  "amount",
+  "gross_amount",
+  "net_amount",
+  "kiwify_commission_amount",
+  "affiliate_commission_amount",
+  "currency",
+  "payment_method",
+  "status",
+  "role",
+  "customer_phone",
+  "customer_document",
+  "customer_ip",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "occurred_at",
+  "payload",
+  "created_at",
+].join(", ");
+
 interface SaleDetailsResult {
   saleId: string;
   primary: SaleDetailRecord;
@@ -277,7 +311,7 @@ export async function getSaleDetails(saleId: string): Promise<SaleDetailsResult 
     saleSources.map(async (source): Promise<SaleDetailRecord | null> => {
       const { data, error } = await supabase
         .from(source.table)
-        .select("*")
+        .select(SALE_DETAIL_SELECT_COLUMNS)
         .eq("sale_id", saleId)
         .order("occurred_at", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
@@ -288,14 +322,14 @@ export async function getSaleDetails(saleId: string): Promise<SaleDetailsResult 
         throw error;
       }
 
-      const rows = (data ?? []) as SaleEventBase[];
+      const rows = (data ?? []) as unknown as SaleEventBase[];
       const record = rows[0];
       if (!record) {
         return null;
       }
 
       return {
-        ...(record as SaleEventBase),
+        ...record,
         table: source.table,
         kind: source.kind,
         label: source.label,
