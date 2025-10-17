@@ -372,4 +372,4 @@ export async function getSaleDetails(saleId: string): Promise<SaleDetailsResult 
   };
 }
 
-export type { SaleDetailRecord, SaleDetailsResult };
+export type { SaleDetailRecord, SaleDetailsResult, SaleEventBase };
