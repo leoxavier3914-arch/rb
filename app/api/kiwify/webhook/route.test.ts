@@ -422,6 +422,36 @@ describe("/api/kiwify/webhook", () => {
     expect(stored.checkout_url).toBe("https://pay.kiwify.com.br/cart-123");
   });
 
+  it("armazena carrinhos abandonados com payload achatado", async () => {
+    const payload = {
+      id: "evt-cart-flat",
+      event: "checkout.abandoned",
+      status: "abandoned",
+      created_at: "2025-10-17T18:36:08-03:00",
+      name: "Maria Eduarda Padilha da Silva",
+      first_name: "Maria",
+      email: "dudapadilha96@gmail.com",
+      phone: "+5519991340586",
+      product_id: "7b40ab30-9eaa-11f0-8e5b-c13fc613a4f5",
+      product_name: "Catálogo de Cílios - EDITÁVEL",
+      offer_name: "Catálogo de Cílios - EDITÁVEL",
+      checkout_link: "qagRNTM",
+    } satisfies Record<string, unknown>;
+
+    const response = await callWebhook(payload);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.type).toBe("abandoned_cart");
+    expect(operations.abandoned_carts).toHaveLength(1);
+    const stored = operations.abandoned_carts?.[0]
+      .payload as Record<string, unknown>;
+    expect(stored.customer_name).toBe("Maria Eduarda Padilha da Silva");
+    expect(stored.customer_email).toBe("dudapadilha96@gmail.com");
+    expect(stored.product_name).toBe("Catálogo de Cílios - EDITÁVEL");
+    expect(stored.checkout_url).toBe("qagRNTM");
+  });
+
   it("armazena eventos de assinatura em subscription_events", async () => {
     const payload = {
       id: "evt-subscription-canceled",
