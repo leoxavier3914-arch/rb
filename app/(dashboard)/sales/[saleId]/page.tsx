@@ -609,8 +609,10 @@ const Timeline = ({ entries }: { entries: SaleDetailRecord[] }) => {
 
 export default async function SaleDetailsPage({
   params,
+  searchParams,
 }: {
   params: { saleId: string }
+  searchParams?: Record<string, string | string[] | undefined>
 }) {
   const saleId = decodeURIComponent(params.saleId)
   const details = await getSaleDetails(saleId)
@@ -619,7 +621,14 @@ export default async function SaleDetailsPage({
     notFound()
   }
 
-  const { primary, entries } = details
+  const entryParam = searchParams?.entry
+  const entryId = Array.isArray(entryParam) ? entryParam[0] : entryParam
+
+  const { entries } = details
+  const primary = entryId
+    ? entries.find((entry) => entry.id === entryId) ?? details.primary
+    : details.primary
+
   const saleItems = buildSaleItems(entries, primary)
   const customerItems = buildCustomerItems(entries, primary)
   const valueItems = buildValueItems(entries, primary)
