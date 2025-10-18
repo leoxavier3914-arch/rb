@@ -156,6 +156,7 @@ export interface PendingPayment extends SaleEventBase {}
 
 export interface AbandonedCart {
   id: string;
+  event_reference: string;
   cart_id: string | null;
   customer_name: string | null;
   customer_email: string | null;
@@ -205,6 +206,80 @@ export async function getAbandonedCarts(limit = 40) {
     potentialKiwifyCommissionAmount: totals.kiwifyCommissionAmount,
     potentialAffiliateCommissionAmount: totals.affiliateCommissionAmount,
   };
+}
+
+const ABANDONED_CART_DETAIL_COLUMNS = [
+  "id",
+  "event_reference",
+  "cart_id",
+  "customer_name",
+  "customer_email",
+  "product_name",
+  "amount",
+  "gross_amount",
+  "net_amount",
+  "kiwify_commission_amount",
+  "affiliate_commission_amount",
+  "currency",
+  "checkout_url",
+  "status",
+  "occurred_at",
+  "payload",
+  "created_at",
+].join(", ");
+
+export async function getAbandonedCartDetail(
+  reference: string,
+): Promise<AbandonedCart | null> {
+  if (!reference) {
+    return null;
+  }
+
+  if (!hasSupabaseConfig()) {
+    return null;
+  }
+
+  const supabase = getSupabaseAdmin();
+
+  const fetchByColumn = async (column: string) => {
+    const { data, error } = await supabase
+      .from("abandoned_carts")
+      .select(ABANDONED_CART_DETAIL_COLUMNS)
+      .eq(column, reference)
+      .order("occurred_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error(`Erro ao buscar detalhes do carrinho (${column})`, error);
+      throw error;
+    }
+
+    const rows = (data ?? []) as AbandonedCart[];
+    return rows[0] ?? null;
+  };
+
+  const byReference = await fetchByColumn("event_reference");
+  if (byReference) {
+    return byReference;
+  }
+
+  if (isUuid(reference)) {
+    const byId = await fetchByColumn("id");
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const fallbacks = ["cart_id", "checkout_url"];
+  for (const column of fallbacks) {
+    const record = await fetchByColumn(column);
+    if (record) {
+      return record;
+    }
+  }
+
+  return null;
 }
 
 export async function getRefundedSales(limit = 40) {
@@ -264,6 +339,11 @@ const toNumber = (value: Numeric) => {
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
 };
+
+const isUuid = (value: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 
 const saleSources = [
   { table: "approved_sales", kind: "approved" as const, label: "Venda aprovada" },
