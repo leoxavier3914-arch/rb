@@ -21,6 +21,9 @@ export default async function AbandonedCartsPage() {
     const grossDisplay = formatCurrency(cart.gross_amount ?? cart.amount, cart.currency);
     const kiwifyDisplay = formatCurrency(cart.kiwify_commission_amount, cart.currency);
     const affiliateDisplay = formatCurrency(cart.affiliate_commission_amount, cart.currency);
+    const checkoutReference =
+      cart.checkout_url ?? cart.cart_id ?? cart.event_reference ?? undefined;
+    const detailReference = cart.event_reference ?? cart.id;
 
     const statusDisplay = formatSaleStatus(cart.status);
 
@@ -40,7 +43,10 @@ export default async function AbandonedCartsPage() {
       amount: netDisplay ?? undefined,
       badge: cart.status?.toUpperCase() ?? null,
       occurredAt: cart.occurred_at ?? cart.created_at,
-      meta: cart.checkout_url ?? undefined,
+      meta: checkoutReference,
+      href: detailReference
+        ? `/abandoned-carts/${encodeURIComponent(detailReference)}`
+        : undefined,
       details,
     };
   });
