@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { EventCard, type EventCardProps } from "@/components/event-card";
 import { StatCard } from "@/components/stat-card";
 
