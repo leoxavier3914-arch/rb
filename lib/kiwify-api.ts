@@ -249,9 +249,9 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
       params.set("account_id", env.KIWIFY_API_ACCOUNT_ID);
     }
 
-    for (const [key, value] of params.entries()) {
+    params.forEach((value, key) => {
       url.searchParams.set(key, value);
-    }
+    });
 
     const headers = new Headers(init?.headers ?? {});
     if (!headers.has("Authorization")) {
@@ -552,10 +552,8 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
 
   const rawItems = ensureArray(payload);
   const products = rawItems
-    .map((item) => (isRecord(item) ? item : null))
+    .filter((item): item is UnknownRecord => isRecord(item))
     .map((record) => {
-      if (!record) return null;
-
       const id =
         extractString(record, [
           "id",
@@ -655,8 +653,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
         tags,
         raw: record,
       } satisfies KiwifyProductSummary;
-    })
-    .filter((item): item is KiwifyProductSummary => item !== null);
+    });
 
   return { products, raw: payload, error: ok ? undefined : error };
 }

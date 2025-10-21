@@ -71,7 +71,10 @@ const normalizeEnvValue = (value: string | undefined) => {
   return trimmed.replace(/^(["'])(.*)\1$/, "$2");
 };
 
-const createEnvHelper = <T>(schema: ZodType<T>, buildRawEnv: () => unknown): EnvHelper<T> => {
+const createEnvHelper = <T>(
+  schema: ZodType<T, z.ZodTypeDef, unknown>,
+  buildRawEnv: () => unknown,
+): EnvHelper<T> => {
   let cache: T | undefined;
 
   const maybe = (): T | null => {
@@ -136,25 +139,35 @@ const buildRawSupabaseEnv = () => ({
   })(),
 });
 
-const supabaseEnvHelper = createEnvHelper(supabaseEnvSchema, buildRawSupabaseEnv);
+const supabaseEnvHelper = createEnvHelper<SupabaseEnv>(
+  supabaseEnvSchema,
+  buildRawSupabaseEnv,
+);
 
 const buildRawWebhookEnv = () => ({
   ...(supabaseEnvHelper.maybe() ?? buildRawSupabaseEnv()),
   KIWIFY_WEBHOOK_SECRET: normalizeEnvValue(process.env.KIWIFY_WEBHOOK_SECRET),
 });
 
-const kiwifyWebhookEnvHelper = createEnvHelper(webhookEnvSchema, buildRawWebhookEnv);
+const kiwifyWebhookEnvHelper = createEnvHelper<WebhookEnv>(
+  webhookEnvSchema,
+  buildRawWebhookEnv,
+);
 
-const buildRawKiwifyApiEnv = () => ({
-  KIWIFY_API_BASE_URL: (() => {
-    const normalized = normalizeEnvValue(process.env.KIWIFY_API_BASE_URL);
-    return normalized || undefined;
-  })(),
-  KIWIFY_API_TOKEN: normalizeEnvValue(process.env.KIWIFY_API_TOKEN),
-  KIWIFY_API_ACCOUNT_ID: normalizeEnvValue(process.env.KIWIFY_API_ACCOUNT_ID),
-});
+const buildRawKiwifyApiEnv = () => {
+  const baseUrl = normalizeEnvValue(process.env.KIWIFY_API_BASE_URL);
 
-const kiwifyApiEnvHelper = createEnvHelper(kiwifyApiEnvSchema, buildRawKiwifyApiEnv);
+  return {
+    ...(baseUrl ? { KIWIFY_API_BASE_URL: baseUrl } : {}),
+    KIWIFY_API_TOKEN: normalizeEnvValue(process.env.KIWIFY_API_TOKEN),
+    KIWIFY_API_ACCOUNT_ID: normalizeEnvValue(process.env.KIWIFY_API_ACCOUNT_ID),
+  };
+};
+
+const kiwifyApiEnvHelper = createEnvHelper<KiwifyApiEnv>(
+  kiwifyApiEnvSchema,
+  buildRawKiwifyApiEnv,
+);
 
 export const supabaseEnv = {
   get: () => supabaseEnvHelper.get(),
