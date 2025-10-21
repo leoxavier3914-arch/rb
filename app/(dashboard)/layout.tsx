@@ -26,12 +26,12 @@ export default function DashboardLayout({
               <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">Romeike Beauty</h1>
             </div>
           </div>
-          <nav className="flex flex-wrap gap-3">
+          <nav className="flex flex-nowrap gap-3 overflow-x-auto">
             {navigation.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="group relative overflow-hidden rounded-full border border-surface-accent/60 bg-surface-accent px-5 py-2 text-sm font-medium text-muted-foreground shadow-lg shadow-black/20 transition-all hover:border-primary hover:bg-primary hover:text-primary-foreground"
+                className="group relative whitespace-nowrap overflow-hidden rounded-full border border-surface-accent/60 bg-surface-accent px-5 py-2 text-sm font-medium text-muted-foreground shadow-lg shadow-black/20 transition-all hover:border-primary hover:bg-primary hover:text-primary-foreground"
               >
                 <span className="absolute inset-0 translate-y-[110%] bg-primary/20 transition-transform duration-300 ease-out group-hover:translate-y-0" />
                 <span className="relative">{item.name}</span>
