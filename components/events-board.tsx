@@ -207,63 +207,9 @@ export function EventsBoard({
 
   return (
     <div className="space-y-10">
-      {stats.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {stats.map((stat) => (
-            <StatCard key={stat.label} label={stat.label} value={stat.value} helper={stat.helper} />
-          ))}
-        </div>
-      ) : null}
-
-      <div className="space-y-4">
-        <header className="flex flex-col gap-2">
-          <h2 className="text-xl font-semibold text-primary-foreground">{heading}</h2>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </header>
-
-        <form
-          action={filterAction}
-          method="get"
-          className="space-y-5 rounded-3xl border border-surface-accent/40 bg-surface-accent/70 p-6 transition-colors"
-        >
-          {selectedDateValue ? (
-            <>
-              <input type="hidden" name="from" value={selectedDateValue} />
-              <input type="hidden" name="to" value={selectedDateValue} />
-            </>
-          ) : null}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex flex-1 flex-col gap-1">
-              <label htmlFor="q" className="text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                Buscar registros
-              </label>
-              <input
-                id="q"
-                name="q"
-                type="search"
-                placeholder="Nome, produto, e-mail ou telefone"
-                defaultValue={filters.search ?? ""}
-                className="rounded-xl border border-surface-accent/60 bg-surface px-3 py-2 text-sm text-primary-foreground shadow-inner shadow-black/20 outline-none transition-colors focus:border-primary"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="submit"
-                className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-lg shadow-black/30 transition-colors hover:bg-primary/90"
-              >
-                Buscar
-              </button>
-              {hasActiveFilters ? (
-                <a
-                  href={filterAction}
-                  className="rounded-full border border-surface-accent/60 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                >
-                  Limpar
-                </a>
-              ) : null}
-            </div>
-          </div>
-          <div className="space-y-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="sm:col-span-2 lg:col-span-3 xl:col-span-4">
+          <div className="space-y-3 rounded-3xl border border-surface-accent/40 bg-surface-accent/70 p-6 transition-colors">
             <div className="flex items-center justify-center gap-2 text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
               <div className="relative" ref={monthPickerRef}>
                 <button
@@ -347,6 +293,61 @@ export function EventsBoard({
                   );
                 })}
               </div>
+            </div>
+          </div>
+        </div>
+
+        {stats.map((stat) => (
+          <StatCard key={stat.label} label={stat.label} value={stat.value} helper={stat.helper} />
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        <header className="flex flex-col gap-2">
+          <h2 className="text-xl font-semibold text-primary-foreground">{heading}</h2>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </header>
+
+        <form
+          action={filterAction}
+          method="get"
+          className="space-y-5 rounded-3xl border border-surface-accent/40 bg-surface-accent/70 p-6 transition-colors"
+        >
+          {selectedDateValue ? (
+            <>
+              <input type="hidden" name="from" value={selectedDateValue} />
+              <input type="hidden" name="to" value={selectedDateValue} />
+            </>
+          ) : null}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex flex-1 flex-col gap-1">
+              <label htmlFor="q" className="text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                Buscar registros
+              </label>
+              <input
+                id="q"
+                name="q"
+                type="search"
+                placeholder="Nome, produto, e-mail ou telefone"
+                defaultValue={filters.search ?? ""}
+                className="rounded-xl border border-surface-accent/60 bg-surface px-3 py-2 text-sm text-primary-foreground shadow-inner shadow-black/20 outline-none transition-colors focus:border-primary"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-lg shadow-black/30 transition-colors hover:bg-primary/90"
+              >
+                Buscar
+              </button>
+              {hasActiveFilters ? (
+                <a
+                  href={filterAction}
+                  className="rounded-full border border-surface-accent/60 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                >
+                  Limpar
+                </a>
+              ) : null}
             </div>
           </div>
         </form>
