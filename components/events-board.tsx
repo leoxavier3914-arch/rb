@@ -55,7 +55,7 @@ export function EventsBoard({
         <form
           action={filterAction}
           method="get"
-          className="flex flex-col gap-3 rounded-2xl border border-surface-accent/50 bg-surface/60 p-4 shadow-soft sm:flex-row sm:items-end"
+          className="flex flex-col gap-3 rounded-2xl border border-surface-accent/40 bg-surface-accent/60 p-4 shadow-soft sm:flex-row sm:items-end"
         >
           <div className="flex flex-1 flex-col gap-1">
             <label htmlFor="from" className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
@@ -102,12 +102,12 @@ export function EventsBoard({
               Filtrar
             </button>
             {hasActiveFilters ? (
-              <Link
+              <a
                 href={filterAction}
                 className="rounded-full border border-surface-accent/60 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
               >
                 Limpar
-              </Link>
+              </a>
             ) : null}
           </div>
         </form>
