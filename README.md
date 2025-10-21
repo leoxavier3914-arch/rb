@@ -3,10 +3,14 @@
 Novo painel minimalista para acompanhar em tempo real as operações da loja digital na Kiwify.
 
 ## Funcionalidades
-- Painel dark mode com navegação entre **Vendas aprovadas** e **Carrinhos abandonados**.
+- Painel dark mode com navegação entre **Vendas aprovadas**, **Carrinhos abandonados** e os novos módulos de insights.
 - Coleta de webhooks da Kiwify com persistência completa do payload em Supabase.
 - Deduplicação automática via `event_reference` para evitar registros duplicados.
 - Estatísticas instantâneas de volume e valores recentes.
+- **Estatísticas históricas oficiais** usando a API da Kiwify para liberar faturamento consolidado e linha do tempo completa.
+- **Catálogo de produtos enriquecido** com status, tags e ticket médio direto da API.
+- **Gestão de assinaturas e área do aluno** em uma única tela.
+- **Dashboard de marketing e Pixel** cruzando UTMs dos webhooks com os eventos rastreados pela Kiwify.
 
 ## Variáveis de ambiente
 Reutilize as mesmas variáveis já configuradas no Vercel:
@@ -16,6 +20,10 @@ SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 NEXT_PUBLIC_SUPABASE_URL=
 KIWIFY_WEBHOOK_SECRET=
+KIWIFY_API_TOKEN=
+KIWIFY_API_ACCOUNT_ID=
+# opcional, default: https://api.kiwify.com.br/
+KIWIFY_API_BASE_URL=
 ```
 
 `SUPABASE_URL` aceita fallback de `NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` aceita fallback de `SUPABASE_SERVICE_ROLE`.
@@ -29,7 +37,7 @@ npm install
 npm run dev
 ```
 
-O painel principal está em `/approved-sales` e `/abandoned-carts`. A rota de webhook implementa exatamente o fluxo descrito na documentação oficial da Kiwify:
+O painel principal agora inclui `/analytics`, `/products`, `/subscriptions`, `/marketing`, além de `/approved-sales` e `/abandoned-carts`. A rota de webhook implementa exatamente o fluxo descrito na documentação oficial da Kiwify:
 
 - `HEAD /api/kiwify/webhook` responde `200` para testes de conectividade do painel.
 - `POST /api/kiwify/webhook` exige o parâmetro `signature` na query-string, calculado com `HMAC-SHA1(JSON.stringify(body), KIWIFY_WEBHOOK_SECRET)`.

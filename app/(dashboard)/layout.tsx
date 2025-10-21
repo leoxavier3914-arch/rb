@@ -2,6 +2,10 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 const navigation = [
+  { name: "Estatísticas", href: "/analytics" },
+  { name: "Produtos", href: "/products" },
+  { name: "Assinaturas", href: "/subscriptions" },
+  { name: "Marketing & Pixel", href: "/marketing" },
   { name: "Vendas aprovadas", href: "/approved-sales" },
   { name: "Pagamentos pendentes", href: "/pending-payments" },
   { name: "Pagamentos recusados", href: "/rejected-payments" },
