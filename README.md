@@ -22,7 +22,7 @@ NEXT_PUBLIC_SUPABASE_URL=
 KIWIFY_WEBHOOK_SECRET=
 KIWIFY_API_TOKEN=
 KIWIFY_API_ACCOUNT_ID=
-# opcional, default: https://api.kiwify.com.br/
+# opcional, default: https://public-api.kiwify.com/
 KIWIFY_API_BASE_URL=
 ```
 
