@@ -1,11 +1,18 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { parseEventFilters } from "@/lib/event-filters";
 import { formatSaleStatus } from "@/lib/sale-event-metadata";
 import { getRefundedSales } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export default async function RefundedSalesPage() {
+interface RefundedSalesPageProps {
+  searchParams: Record<string, string | string[] | undefined>;
+}
+
+export default async function RefundedSalesPage({ searchParams }: RefundedSalesPageProps) {
+  const { filters, values } = parseEventFilters(searchParams);
+
   const {
     records,
     totalAmount,
@@ -14,7 +21,7 @@ export default async function RefundedSalesPage() {
     totalAffiliateCommissionAmount,
     totalCount,
     lastEvent,
-  } = await getRefundedSales();
+  } = await getRefundedSales({ filters });
 
   const events = records.map((sale) => {
     const netDisplay = formatCurrency(sale.net_amount ?? sale.amount, sale.currency);
@@ -93,6 +100,8 @@ export default async function RefundedSalesPage() {
       description="Listagem limitada aos últimos 40 eventos enviados pela Kiwify."
       emptyState="Nenhum reembolso recebido até o momento. Aguarde o primeiro webhook de reembolso da Kiwify."
       events={events}
+      filterAction="/refunded-sales"
+      filters={values}
     />
   );
 }
