@@ -533,3 +533,111 @@ export async function getSaleDetails(saleId: string): Promise<SaleDetailsResult 
 }
 
 export type { SaleDetailRecord, SaleDetailsResult };
+
+export interface CampaignPerformanceRow {
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  totalOrders: number;
+  grossAmount: number;
+  netAmount: number;
+}
+
+export interface CampaignPerformanceSummary {
+  rows: CampaignPerformanceRow[];
+  totals: {
+    totalOrders: number;
+    grossAmount: number;
+    netAmount: number;
+  };
+}
+
+const emptyCampaignPerformance: CampaignPerformanceSummary = {
+  rows: [],
+  totals: {
+    totalOrders: 0,
+    grossAmount: 0,
+    netAmount: 0,
+  },
+};
+
+type CampaignRow = Pick<
+  ApprovedSale,
+  "utm_source" | "utm_medium" | "utm_campaign" | "amount" | "gross_amount" | "net_amount" | "created_at"
+>;
+
+export async function getCampaignPerformance(
+  filters: EventFilters = {},
+): Promise<CampaignPerformanceSummary> {
+  if (!hasSupabaseConfig()) {
+    return { ...emptyCampaignPerformance };
+  }
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("approved_sales")
+    .select(
+      "utm_source, utm_medium, utm_campaign, amount, gross_amount, net_amount, created_at",
+    )
+    .order("created_at", { ascending: false })
+    .limit(2000);
+
+  if (filters.startDate) {
+    query = query.gte("created_at", filters.startDate);
+  }
+
+  if (filters.endDate) {
+    query = query.lte("created_at", filters.endDate);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Erro ao agrupar desempenho de campanhas", error);
+    throw error;
+  }
+
+  const records = (data ?? []) as CampaignRow[];
+  if (records.length === 0) {
+    return { ...emptyCampaignPerformance };
+  }
+
+  const aggregate = new Map<string, CampaignPerformanceRow>();
+  let grossTotal = 0;
+  let netTotal = 0;
+
+  for (const record of records) {
+    const key = `${record.utm_source ?? ""}|${record.utm_medium ?? ""}|${record.utm_campaign ?? ""}`;
+    const grossAmount = toNumber(record.gross_amount ?? record.amount);
+    const netAmount = toNumber(record.net_amount ?? record.amount);
+
+    grossTotal += grossAmount;
+    netTotal += netAmount;
+
+    const current = aggregate.get(key) ?? {
+      utmSource: record.utm_source ?? null,
+      utmMedium: record.utm_medium ?? null,
+      utmCampaign: record.utm_campaign ?? null,
+      totalOrders: 0,
+      grossAmount: 0,
+      netAmount: 0,
+    };
+
+    current.totalOrders += 1;
+    current.grossAmount += grossAmount;
+    current.netAmount += netAmount;
+
+    aggregate.set(key, current);
+  }
+
+  const rows = Array.from(aggregate.values()).sort((a, b) => b.netAmount - a.netAmount);
+
+  return {
+    rows,
+    totals: {
+      totalOrders: records.length,
+      grossAmount: grossTotal,
+      netAmount: netTotal,
+    },
+  };
+}
