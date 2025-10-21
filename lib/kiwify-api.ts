@@ -275,8 +275,8 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
     if (!headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
-    if (!headers.has("X-Account-Id")) {
-      headers.set("X-Account-Id", env.KIWIFY_API_ACCOUNT_ID);
+    if (!headers.has("x-kiwify-account-id")) {
+      headers.set("x-kiwify-account-id", env.KIWIFY_API_ACCOUNT_ID);
     }
 
     const response = await fetch(url, {
