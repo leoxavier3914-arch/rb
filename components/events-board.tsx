@@ -224,7 +224,7 @@ export function EventsBoard({
         <form
           action={filterAction}
           method="get"
-          className="space-y-5 rounded-3xl border border-surface-accent/40 bg-surface-accent/70 p-6 shadow-soft transition-colors"
+          className="space-y-5 rounded-3xl border border-surface-accent/40 bg-surface-accent/70 p-6 transition-colors"
         >
           {selectedDateValue ? (
             <>
@@ -234,7 +234,7 @@ export function EventsBoard({
           ) : null}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex flex-1 flex-col gap-1">
-              <label htmlFor="q" className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
+              <label htmlFor="q" className="text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
                 Buscar registros
               </label>
               <input
@@ -264,7 +264,7 @@ export function EventsBoard({
             </div>
           </div>
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            <div className="flex items-center justify-center gap-2 text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
               <div className="relative" ref={monthPickerRef}>
                 <button
                   type="button"
@@ -294,7 +294,7 @@ export function EventsBoard({
                       </button>
                     </div>
                     <div className="pt-3">
-                      <label className="flex flex-col gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      <label className="flex flex-col items-center gap-2 text-center text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                         Escolher mês
                         <input
                           type="month"
