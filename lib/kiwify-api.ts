@@ -169,6 +169,20 @@ const coerceBoolean = (value: unknown): boolean | null => {
   return null;
 };
 
+const AUTHORIZATION_SCHEME_REGEX = /^[a-z][a-z0-9+.-]*\s/i;
+
+const formatAuthorizationHeader = (token: string): string => {
+  const normalized = token.trim();
+
+  if (!normalized) {
+    return normalized;
+  }
+
+  return AUTHORIZATION_SCHEME_REGEX.test(normalized)
+    ? normalized
+    : `Bearer ${normalized}`;
+};
+
 const extractString = (value: unknown, paths: StringArray): string | null => {
   for (const path of paths) {
     const extracted = getValueAtPath(value, path);
@@ -255,7 +269,7 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
 
     const headers = new Headers(init?.headers ?? {});
     if (!headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${env.KIWIFY_API_TOKEN}`);
+      headers.set("Authorization", formatAuthorizationHeader(env.KIWIFY_API_TOKEN));
     }
     headers.set("Accept", "application/json");
     if (!headers.has("Content-Type")) {
