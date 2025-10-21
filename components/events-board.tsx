@@ -210,12 +210,12 @@ export function EventsBoard({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <div className="sm:col-span-2 lg:col-span-3 xl:col-span-4">
           <div className="space-y-3 rounded-3xl border border-surface-accent/40 bg-surface-accent/70 p-6 transition-colors">
-            <div className="flex items-center justify-center gap-2 text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            <div className="flex items-center justify-center gap-2 text-center text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground sm:text-base">
               <div className="relative" ref={monthPickerRef}>
                 <button
                   type="button"
                   onClick={() => setIsMonthPickerOpen((open) => !open)}
-                  className="flex items-center gap-2 rounded-full border border-transparent bg-transparent px-3 py-1 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                  className="flex items-center gap-2 rounded-full border border-transparent bg-transparent px-4 py-1.5 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
                   aria-haspopup="dialog"
                   aria-expanded={isMonthPickerOpen}
                 >
@@ -254,7 +254,7 @@ export function EventsBoard({
                 ) : null}
               </div>
             </div>
-            <div className="-mx-6 overflow-x-auto px-6">
+            <div className="-mx-6 overflow-x-auto px-6 pb-4">
               <div className="flex gap-2 pb-1">
                 {dayOptions.map((option) => {
                   const optionValue = toDateInputValue(option);
@@ -303,7 +303,7 @@ export function EventsBoard({
       </div>
 
       <div className="space-y-4">
-        <header className="flex flex-col gap-2">
+        <header className="flex flex-col items-center gap-2 text-center">
           <h2 className="text-xl font-semibold text-primary-foreground">{heading}</h2>
           <p className="text-sm text-muted-foreground">{description}</p>
         </header>
@@ -321,7 +321,10 @@ export function EventsBoard({
           ) : null}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex flex-1 flex-col gap-1">
-              <label htmlFor="q" className="text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
+              <label
+                htmlFor="q"
+                className="self-center text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground"
+              >
                 Buscar registros
               </label>
               <input

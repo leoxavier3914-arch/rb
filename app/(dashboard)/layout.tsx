@@ -23,14 +23,7 @@ export default function DashboardLayout({
               <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
                 Hub de vendas Kiwify
               </p>
-              <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">
-                Operações em tempo real
-              </h1>
-            </div>
-            <div className="flex gap-4 text-xs text-muted-foreground">
-              <div className="rounded-full bg-surface-accent/50 px-4 py-2 uppercase tracking-[0.25em]">
-                Atualizado em segundos
-              </div>
+              <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">Romeike Beauty</h1>
             </div>
           </div>
           <nav className="flex flex-wrap gap-3">
