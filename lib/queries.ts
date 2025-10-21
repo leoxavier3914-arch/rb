@@ -83,26 +83,68 @@ const buildEmptyResult = <T>(): EventQueryResult<T> => ({
   lastEvent: null,
 });
 
+export interface EventFilters {
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+}
+
+interface FetchEventsOptions {
+  table: string;
+  limit?: number;
+  logContext: string;
+  filters?: EventFilters;
+  searchableColumns?: string[];
+}
+
+const DEFAULT_SEARCHABLE_COLUMNS = [
+  "customer_name",
+  "product_name",
+  "customer_email",
+  "customer_phone",
+];
+
+const escapeLikePattern = (value: string) => value.replace(/[%_]/g, (match) => `\\${match}`);
+
 const fetchEvents = async <T extends AmountCarrier>({
   table,
   limit = 40,
   logContext,
-}: {
-  table: string;
-  limit?: number;
-  logContext: string;
-}): Promise<EventQueryResult<T>> => {
+  filters,
+  searchableColumns = DEFAULT_SEARCHABLE_COLUMNS,
+}: FetchEventsOptions): Promise<EventQueryResult<T>> => {
   if (!hasSupabaseConfig()) {
     return buildEmptyResult<T>();
   }
 
   const supabase = getSupabaseAdmin();
-  const { data, error, count } = await supabase
+  let query = supabase
     .from(table)
     .select("*", { count: "exact" })
     .order("occurred_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  if (filters?.startDate) {
+    query = query.gte("created_at", filters.startDate);
+  }
+
+  if (filters?.endDate) {
+    query = query.lte("created_at", filters.endDate);
+  }
+
+  const searchTerm = filters?.search?.trim();
+  if (searchTerm && searchableColumns.length > 0) {
+    const escaped = escapeLikePattern(searchTerm);
+    const ilikePattern = `%${escaped}%`;
+    const conditions = searchableColumns
+      .map((column) => `${column}.ilike.${ilikePattern}`)
+      .join(",");
+
+    query = query.or(conditions);
+  }
+
+  const { data, error, count } = await query;
 
   if (error) {
     console.error(`Erro ao buscar ${logContext}`, error);
@@ -174,11 +216,15 @@ export interface AbandonedCart {
   created_at: string;
 }
 
-export async function getApprovedSales(limit = 40) {
+export async function getApprovedSales({
+  limit = 40,
+  filters,
+}: { limit?: number; filters?: EventFilters } = {}) {
   const { totals, ...result } = await fetchEvents<ApprovedSale>({
     table: "approved_sales",
     limit,
     logContext: "vendas aprovadas",
+    filters,
   });
 
   return {
@@ -191,11 +237,16 @@ export async function getApprovedSales(limit = 40) {
   };
 }
 
-export async function getAbandonedCarts(limit = 40) {
+export async function getAbandonedCarts({
+  limit = 40,
+  filters,
+}: { limit?: number; filters?: EventFilters } = {}) {
   const { totals, ...result } = await fetchEvents<AbandonedCart>({
     table: "abandoned_carts",
     limit,
     logContext: "carrinhos abandonados",
+    filters,
+    searchableColumns: ["customer_name", "product_name", "customer_email"],
   });
 
   return {
@@ -299,11 +350,15 @@ export async function getAbandonedCartDetail(
   return null;
 }
 
-export async function getRefundedSales(limit = 40) {
+export async function getRefundedSales({
+  limit = 40,
+  filters,
+}: { limit?: number; filters?: EventFilters } = {}) {
   const { totals, ...result } = await fetchEvents<RefundedSale>({
     table: "refunded_sales",
     limit,
     logContext: "vendas reembolsadas",
+    filters,
   });
 
   return {
@@ -316,11 +371,15 @@ export async function getRefundedSales(limit = 40) {
   };
 }
 
-export async function getRejectedPayments(limit = 40) {
+export async function getRejectedPayments({
+  limit = 40,
+  filters,
+}: { limit?: number; filters?: EventFilters } = {}) {
   const { totals, ...result } = await fetchEvents<RejectedPayment>({
     table: "rejected_payments",
     limit,
     logContext: "pagamentos recusados",
+    filters,
   });
 
   return {
@@ -333,11 +392,15 @@ export async function getRejectedPayments(limit = 40) {
   };
 }
 
-export async function getPendingPayments(limit = 40) {
+export async function getPendingPayments({
+  limit = 40,
+  filters,
+}: { limit?: number; filters?: EventFilters } = {}) {
   const { totals, ...result } = await fetchEvents<PendingPayment>({
     table: "pending_payments",
     limit,
     logContext: "pagamentos pendentes",
+    filters,
   });
 
   return {

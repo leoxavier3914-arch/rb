@@ -1,11 +1,18 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { parseEventFilters } from "@/lib/event-filters";
 import { formatSaleStatus } from "@/lib/sale-event-metadata";
 import { getAbandonedCarts } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export default async function AbandonedCartsPage() {
+interface AbandonedCartsPageProps {
+  searchParams: Record<string, string | string[] | undefined>;
+}
+
+export default async function AbandonedCartsPage({ searchParams }: AbandonedCartsPageProps) {
+  const { filters, values } = parseEventFilters(searchParams);
+
   const {
     records,
     potentialAmount,
@@ -14,7 +21,7 @@ export default async function AbandonedCartsPage() {
     potentialAffiliateCommissionAmount,
     totalCount,
     lastEvent,
-  } = await getAbandonedCarts();
+  } = await getAbandonedCarts({ filters });
 
   const events = records.map((cart) => {
     const netDisplay = formatCurrency(cart.net_amount ?? cart.amount, cart.currency);
@@ -93,6 +100,8 @@ export default async function AbandonedCartsPage() {
       description="Carrinhos sinalizados pelos webhooks de abandono da Kiwify."
       emptyState="Nenhum abandono registrado até agora. Assim que a Kiwify enviar o webhook, ele aparecerá aqui."
       events={events}
+      filterAction="/abandoned-carts"
+      filters={values}
     />
   );
 }

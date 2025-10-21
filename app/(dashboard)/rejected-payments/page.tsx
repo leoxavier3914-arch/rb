@@ -1,11 +1,18 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { parseEventFilters } from "@/lib/event-filters";
 import { formatSaleStatus } from "@/lib/sale-event-metadata";
 import { getRejectedPayments } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export default async function RejectedPaymentsPage() {
+interface RejectedPaymentsPageProps {
+  searchParams: Record<string, string | string[] | undefined>;
+}
+
+export default async function RejectedPaymentsPage({ searchParams }: RejectedPaymentsPageProps) {
+  const { filters, values } = parseEventFilters(searchParams);
+
   const {
     records,
     totalAmount,
@@ -14,7 +21,7 @@ export default async function RejectedPaymentsPage() {
     totalAffiliateCommissionAmount,
     totalCount,
     lastEvent,
-  } = await getRejectedPayments();
+  } = await getRejectedPayments({ filters });
 
   const events = records.map((sale) => {
     const netDisplay = formatCurrency(sale.net_amount ?? sale.amount, sale.currency);
@@ -93,6 +100,8 @@ export default async function RejectedPaymentsPage() {
       description="Listagem limitada aos últimos 40 eventos de pagamento recusado enviados pela Kiwify."
       emptyState="Nenhum pagamento recusado registrado até agora. Aguarde o primeiro webhook de recusa da Kiwify."
       events={events}
+      filterAction="/rejected-payments"
+      filters={values}
     />
   );
 }
