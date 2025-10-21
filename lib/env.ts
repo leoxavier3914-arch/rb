@@ -46,8 +46,24 @@ type SupabaseEnv = z.infer<typeof supabaseEnvSchema>;
 type WebhookEnv = z.infer<typeof webhookEnvSchema>;
 const defaultKiwifyApiBaseUrl = "https://public-api.kiwify.com/";
 
+const kiwifyApiBaseUrlSchema = httpsUrlSchema.refine((value) => {
+  try {
+    const { hostname } = new URL(value);
+    return (
+      hostname === "public-api.kiwify.com" ||
+      hostname.endsWith(".kiwify.com") ||
+      hostname.endsWith(".kiwify.com.br")
+    );
+  } catch {
+    return false;
+  }
+}, {
+  message:
+    "A URL base da API da Kiwify deve apontar para um domínio kiwify.com ou kiwify.com.br.",
+});
+
 const kiwifyApiEnvSchema = z.object({
-  KIWIFY_API_BASE_URL: httpsUrlSchema.default(defaultKiwifyApiBaseUrl),
+  KIWIFY_API_BASE_URL: kiwifyApiBaseUrlSchema.default(defaultKiwifyApiBaseUrl),
   KIWIFY_API_TOKEN: z.string().min(1),
   KIWIFY_API_ACCOUNT_ID: z.string().min(1),
 });

@@ -30,6 +30,8 @@ KIWIFY_API_BASE_URL=
 
 `KIWIFY_WEBHOOK_SECRET` deve ser o mesmo token exibido no painel da Kiwify na criação do webhook e será utilizado para validar a assinatura `HMAC-SHA1` enviada em cada requisição.
 
+`KIWIFY_API_BASE_URL` só aceita domínios da própria Kiwify (`*.kiwify.com` ou `*.kiwify.com.br`) para evitar configurar por engano o domínio do deploy no Vercel. Caso não informe esse valor, o projeto usa automaticamente `https://public-api.kiwify.com/`.
+
 ## Desenvolvimento
 
 ```bash
