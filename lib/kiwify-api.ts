@@ -288,11 +288,50 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
     }
 
     if (!response.ok) {
+      const messages = new Set<string>();
+
+      const appendMessage = (value: unknown) => {
+        if (!value) {
+          return;
+        }
+
+        if (typeof value === "string") {
+          const normalized = value.trim();
+          if (normalized.length > 0) {
+            messages.add(normalized);
+          }
+          return;
+        }
+
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            appendMessage(item);
+          }
+          return;
+        }
+
+        if (isRecord(value)) {
+          for (const item of Object.values(value)) {
+            appendMessage(item);
+          }
+        }
+      };
+
+      if (isRecord(payload)) {
+        appendMessage(payload.message);
+        appendMessage((payload as { error?: unknown }).error);
+        appendMessage((payload as { error_description?: unknown }).error_description);
+        appendMessage((payload as { errorDescription?: unknown }).errorDescription);
+        if ("errors" in payload) {
+          appendMessage(payload.errors);
+        }
+      } else {
+        appendMessage(payload);
+      }
+
       const message =
-        (isRecord(payload) && typeof payload.message === "string"
-          ? payload.message
-          : undefined) ??
-        `Erro ${status} ao consultar a API da Kiwify.`;
+        messages.size > 0 ? Array.from(messages).join(" ") : `Erro ${status} ao consultar a API da Kiwify.`;
+
       return { ok: false, status, payload, error: message };
     }
 
