@@ -44,7 +44,7 @@ const webhookEnvSchema = supabaseEnvBaseSchema
 
 type SupabaseEnv = z.infer<typeof supabaseEnvSchema>;
 type WebhookEnv = z.infer<typeof webhookEnvSchema>;
-const defaultKiwifyApiBaseUrl = "https://api.kiwify.com.br/";
+const defaultKiwifyApiBaseUrl = "https://public-api.kiwify.com/";
 
 const kiwifyApiEnvSchema = z.object({
   KIWIFY_API_BASE_URL: httpsUrlSchema.default(defaultKiwifyApiBaseUrl),
