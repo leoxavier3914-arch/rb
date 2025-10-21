@@ -1,11 +1,18 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { formatSaleStatus } from "@/lib/sale-event-metadata";
+import { parseEventFilters } from "@/lib/event-filters";
 import { getPendingPayments } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export default async function PendingPaymentsPage() {
+interface PendingPaymentsPageProps {
+  searchParams: Record<string, string | string[] | undefined>;
+}
+
+export default async function PendingPaymentsPage({ searchParams }: PendingPaymentsPageProps) {
+  const { filters, values } = parseEventFilters(searchParams);
+
   const {
     records,
     totalAmount,
@@ -14,7 +21,7 @@ export default async function PendingPaymentsPage() {
     totalAffiliateCommissionAmount,
     totalCount,
     lastEvent,
-  } = await getPendingPayments();
+  } = await getPendingPayments({ filters });
 
   const events = records.map((sale) => {
     const netDisplay = formatCurrency(sale.net_amount ?? sale.amount, sale.currency);
@@ -93,6 +100,8 @@ export default async function PendingPaymentsPage() {
       description="Listagem limitada aos últimos 40 eventos de pagamento pendente enviados pela Kiwify."
       emptyState="Ainda não recebemos webhooks de pagamento pendente. Aguarde novas tentativas da Kiwify."
       events={events}
+      filterAction="/pending-payments"
+      filters={values}
     />
   );
 }

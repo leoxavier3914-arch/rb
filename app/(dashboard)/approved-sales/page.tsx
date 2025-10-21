@@ -1,11 +1,18 @@
 import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { formatSaleStatus } from "@/lib/sale-event-metadata";
+import { parseEventFilters } from "@/lib/event-filters";
 import { getApprovedSales } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export default async function ApprovedSalesPage() {
+interface ApprovedSalesPageProps {
+  searchParams: Record<string, string | string[] | undefined>;
+}
+
+export default async function ApprovedSalesPage({ searchParams }: ApprovedSalesPageProps) {
+  const { filters, values } = parseEventFilters(searchParams);
+
   const {
     records,
     totalAmount,
@@ -14,7 +21,7 @@ export default async function ApprovedSalesPage() {
     totalAffiliateCommissionAmount,
     totalCount,
     lastEvent,
-  } = await getApprovedSales();
+  } = await getApprovedSales({ filters });
 
   const events = records.map((sale) => {
     const netDisplay = formatCurrency(sale.net_amount ?? sale.amount, sale.currency);
@@ -93,6 +100,8 @@ export default async function ApprovedSalesPage() {
       description="Listagem limitada aos últimos 40 eventos confirmados pela Kiwify."
       emptyState="Ainda não recebemos vendas aprovadas. Aguardando o primeiro webhook da Kiwify."
       events={events}
+      filterAction="/approved-sales"
+      filters={values}
     />
   );
 }
