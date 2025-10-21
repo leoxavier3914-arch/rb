@@ -29,19 +29,15 @@ export default async function ApprovedSalesPage({ searchParams }: ApprovedSalesP
     const kiwifyDisplay = formatCurrency(sale.kiwify_commission_amount, sale.currency);
     const affiliateDisplay = formatCurrency(sale.affiliate_commission_amount, sale.currency);
 
-    const monetaryDetails = [
+    const statusDisplay = formatSaleStatus(sale.status);
+    const details = [
+      statusDisplay ? { label: "Status", value: statusDisplay } : null,
       grossDisplay && grossDisplay !== netDisplay
         ? { label: "Valor cheio", value: grossDisplay }
         : null,
       kiwifyDisplay ? { label: "Comissão Kiwify", value: kiwifyDisplay } : null,
       affiliateDisplay ? { label: "Comissão Afiliados", value: affiliateDisplay } : null,
     ].filter((detail): detail is { label: string; value: string } => detail !== null);
-
-    const statusDisplay = formatSaleStatus(sale.status);
-    const details = [
-      ...monetaryDetails,
-      ...(statusDisplay ? [{ label: "Status", value: statusDisplay }] : []),
-    ];
 
     return {
       id: sale.id,
