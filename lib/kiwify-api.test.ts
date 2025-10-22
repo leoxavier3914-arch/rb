@@ -10,7 +10,7 @@ vi.mock("./env", () => ({
   getKiwifyApiEnv: mockGetKiwifyApiEnv,
 }));
 
-import { getSalesStatistics } from "./kiwify-api";
+import { getSalesStatistics, getKiwifyProducts } from "./kiwify-api";
 
 describe("kiwifyRequest authorization header", () => {
   const originalFetch = global.fetch;
@@ -77,6 +77,80 @@ describe("kiwifyRequest authorization header", () => {
       : new Headers(fetchInit?.headers);
 
     expect(headers.get("Authorization")).toBe("secret abc123");
+  });
+});
+
+describe("kiwifyRequest account id handling", () => {
+  const originalFetch = global.fetch;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const buildEnv = () => ({
+    KIWIFY_API_BASE_URL: "https://api.example.com/",
+    KIWIFY_API_TOKEN: "abc123",
+    KIWIFY_API_ACCOUNT_ID: "account-123",
+  });
+
+  const buildStatsResponse = () =>
+    new Response(
+      JSON.stringify({
+        total_sales: 0,
+        total_net_amount: 0,
+        total_gross_amount: 0,
+        total_kiwify_commission: 0,
+        total_affiliate_commission: 0,
+        currency: "BRL",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+  const buildProductsResponse = () =>
+    new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  beforeEach(() => {
+    mockHasKiwifyApiEnv.mockReset();
+    mockGetKiwifyApiEnv.mockReset();
+
+    mockHasKiwifyApiEnv.mockReturnValue(true);
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("omits account_id for public v1 endpoints", async () => {
+    mockFetch.mockResolvedValueOnce(buildStatsResponse());
+
+    await getSalesStatistics();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const requestUrl = mockFetch.mock.calls[0]?.[0];
+    const url = new URL(String(requestUrl));
+
+    expect(url.pathname).toContain("v1/stats");
+    expect(url.searchParams.has("account_id")).toBe(false);
+  });
+
+  it("retains account_id for legacy api/v1 endpoints", async () => {
+    mockFetch.mockResolvedValueOnce(buildProductsResponse());
+
+    await getKiwifyProducts();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const requestUrl = mockFetch.mock.calls[0]?.[0];
+    const url = new URL(String(requestUrl));
+
+    expect(url.pathname).toContain("api/v1/products");
+    expect(url.searchParams.get("account_id")).toBe("account-123");
   });
 });
 
