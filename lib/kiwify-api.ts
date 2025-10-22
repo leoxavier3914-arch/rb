@@ -1251,7 +1251,7 @@ export interface ProductsResult {
 }
 
 export async function getKiwifyProducts(): Promise<ProductsResult> {
-  const { ok, payload, error } = await kiwifyRequest("api/v1/products");
+  const { ok, payload, error } = await kiwifyRequest("v1/products");
 
   const rawItems = ensureArray(payload);
   const products = rawItems
@@ -1277,6 +1277,12 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
           "active",
           "enabled",
           "isActive",
+          "is_public",
+        ]);
+      const isHidden =
+        extractBoolean(record, [
+          "is_hidden",
+          "hidden",
         ]);
       let price = extractNumber(record, [
         "price",
@@ -1345,7 +1351,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
         name,
         description,
         status,
-        isPublished,
+        isPublished: isPublished ?? (isHidden === null ? null : !isHidden),
         price,
         currency,
         averageTicket,
