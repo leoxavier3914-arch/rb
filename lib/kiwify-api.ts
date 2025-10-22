@@ -251,6 +251,7 @@ const OFFER_PRICE_PATHS = [
   "pricing.amount",
   "pricing.value",
   "pricing.total",
+  "price.price",
   "price.amount",
   "price.value",
   "price.total",
@@ -1565,12 +1566,31 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
       let price = extractNumber(record, [
         "price",
         "default_price",
+        "price.price",
         "price.amount",
+        "price.value",
         "pricing.price",
+        "pricing.amount",
+        "pricing.value",
       ]);
 
       if (price === null) {
-        const cents = extractNumber(record, ["price_cents", "priceCents", "pricing.price_cents"]);
+        const cents = extractNumber(record, [
+          "price_cents",
+          "priceCents",
+          "price.price_cents",
+          "price.priceCents",
+          "price.amount_cents",
+          "price.amountCents",
+          "price.value_cents",
+          "price.valueCents",
+          "pricing.price_cents",
+          "pricing.priceCents",
+          "pricing.amount_cents",
+          "pricing.amountCents",
+          "pricing.value_cents",
+          "pricing.valueCents",
+        ]);
         price = normalizeCentsAmount(cents);
       }
 
