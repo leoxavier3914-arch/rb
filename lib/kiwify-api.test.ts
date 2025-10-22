@@ -174,6 +174,26 @@ describe("getSalesStatistics data mapping", () => {
     expect(result.breakdown).toEqual([]);
   });
 
+  it("defaults start and end dates when filters are missing", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-02-15T00:00:00Z"));
+
+    mockFetch.mockResolvedValueOnce(buildStatsResponse());
+
+    try {
+      await getSalesStatistics();
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const requestUrl = mockFetch.mock.calls[0]?.[0];
+      const url = new URL(String(requestUrl));
+
+      expect(url.searchParams.get("start_date")).toBe("2024-01-17");
+      expect(url.searchParams.get("end_date")).toBe("2024-02-15");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("builds a timeline from /v1/sales when grouping by day", async () => {
     mockFetch.mockResolvedValueOnce(buildStatsResponse()).mockResolvedValueOnce(buildSalesResponse());
 
