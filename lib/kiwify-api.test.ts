@@ -15,6 +15,7 @@ import {
   getKiwifyProducts,
   getKiwifySale,
   getKiwifySales,
+  getKiwifySubscriptions,
   refundKiwifySale,
 } from "./kiwify-api";
 
@@ -113,6 +114,12 @@ describe("kiwifyRequest account id handling", () => {
     );
 
   const buildProductsResponse = () =>
+    new Response(JSON.stringify({ data: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  const buildSubscriptionsResponse = () =>
     new Response(JSON.stringify([]), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -147,6 +154,19 @@ describe("kiwifyRequest account id handling", () => {
   });
 
   it("retains account_id for legacy api/v1 endpoints", async () => {
+    mockFetch.mockResolvedValueOnce(buildSubscriptionsResponse());
+
+    await getKiwifySubscriptions();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const requestUrl = mockFetch.mock.calls[0]?.[0];
+    const url = new URL(String(requestUrl));
+
+    expect(url.pathname).toContain("api/v1/subscriptions");
+    expect(url.searchParams.get("account_id")).toBe("account-123");
+  });
+
+  it("uses the products endpoint without account_id query param", async () => {
     mockFetch.mockResolvedValueOnce(buildProductsResponse());
 
     await getKiwifyProducts();
@@ -155,8 +175,8 @@ describe("kiwifyRequest account id handling", () => {
     const requestUrl = mockFetch.mock.calls[0]?.[0];
     const url = new URL(String(requestUrl));
 
-    expect(url.pathname).toContain("api/v1/products");
-    expect(url.searchParams.get("account_id")).toBe("account-123");
+    expect(url.pathname).toContain("v1/products");
+    expect(url.searchParams.has("account_id")).toBe(false);
   });
 });
 
