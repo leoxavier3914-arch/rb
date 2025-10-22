@@ -180,6 +180,145 @@ describe("kiwifyRequest account id handling", () => {
   });
 });
 
+describe("getKiwifyProducts price fallbacks", () => {
+  const originalFetch = global.fetch;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const buildEnv = () => ({
+    KIWIFY_API_BASE_URL: "https://api.example.com/",
+    KIWIFY_API_TOKEN: "abc123",
+    KIWIFY_API_ACCOUNT_ID: "account-123",
+  });
+
+  beforeEach(() => {
+    mockHasKiwifyApiEnv.mockReset();
+    mockGetKiwifyApiEnv.mockReset();
+
+    mockHasKiwifyApiEnv.mockReturnValue(true);
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("derives price information from nested offers when top-level price is missing", async () => {
+    const productsPayload = {
+      data: [
+        {
+          id: "prod-default",
+          name: "Produto Default",
+          price: null,
+          default_offer: {
+            installments: [
+              { price_cents: 6789 },
+              { price: 70 },
+            ],
+          },
+        },
+        {
+          id: "prod-offer",
+          name: "Produto Oferta",
+          price: undefined,
+          offers: [
+            { price_cents: 4321 },
+            {
+              installments: [
+                { price: 55 },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(productsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifyProducts();
+
+    expect(result.products).toHaveLength(2);
+    expect(result.products[0]?.price).toBeCloseTo(67.89, 2);
+    expect(result.products[1]?.price).toBeCloseTo(43.21, 2);
+  });
+
+  it("walks nested offer structures to locate deeply nested pricing fields", async () => {
+    const productsPayload = {
+      data: [
+        {
+          id: "prod-nested-default",
+          name: "Produto Default Aninhado",
+          price: null,
+          default_offer: {
+            data: [
+              {
+                price: {
+                  price_cents: 12900,
+                },
+              },
+            ],
+          },
+        },
+        {
+          id: "prod-plan",
+          name: "Produto Plano",
+          price: undefined,
+          offers: [
+            {
+              plan: {
+                amount_cents: 9900,
+              },
+            },
+          ],
+        },
+        {
+          id: "prod-deep-installment",
+          name: "Produto Parcelado",
+          price: null,
+          offers: {
+            data: [
+              {
+                payment_plans: [
+                  {
+                    installments: [
+                      {
+                        pricing: {
+                          price_cents: 4500,
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(productsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifyProducts();
+
+    expect(result.products).toHaveLength(3);
+    expect(result.products[0]?.price).toBeCloseTo(129, 2);
+    expect(result.products[1]?.price).toBeCloseTo(99, 2);
+    expect(result.products[2]?.price).toBeCloseTo(45, 2);
+  });
+});
+
 describe("getSalesStatistics data mapping", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;

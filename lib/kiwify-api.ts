@@ -231,6 +231,284 @@ const extractStringArray = (value: unknown, paths: StringArray): string[] => {
   return [];
 };
 
+const normalizeCentsAmount = (value: number | null): number | null => {
+  if (value === null) {
+    return null;
+  }
+
+  return value / 100;
+};
+
+const OFFER_PRICE_PATHS = [
+  "price",
+  "amount",
+  "value",
+  "default_price",
+  "defaultPrice",
+  "current_price",
+  "currentPrice",
+  "pricing.price",
+  "pricing.amount",
+  "pricing.value",
+  "pricing.total",
+  "price.amount",
+  "price.value",
+  "price.total",
+  "plan.price",
+  "plan.amount",
+  "plan.value",
+  "plan.total",
+  "plan.price.amount",
+  "plan.price.value",
+  "plan.price.total",
+];
+
+const OFFER_PRICE_CENTS_PATHS = [
+  "price_cents",
+  "priceCents",
+  "amount_cents",
+  "amountCents",
+  "value_cents",
+  "valueCents",
+  "total_cents",
+  "totalCents",
+  "default_price_cents",
+  "defaultPriceCents",
+  "current_price_cents",
+  "currentPriceCents",
+  "pricing.price_cents",
+  "pricing.amount_cents",
+  "pricing.value_cents",
+  "pricing.total_cents",
+  "price.price_cents",
+  "price.priceCents",
+  "price.amount_cents",
+  "price.amountCents",
+  "price.value_cents",
+  "price.valueCents",
+  "price.total_cents",
+  "price.totalCents",
+  "plan.price_cents",
+  "plan.priceCents",
+  "plan.amount_cents",
+  "plan.amountCents",
+  "plan.value_cents",
+  "plan.valueCents",
+  "plan.total_cents",
+  "plan.totalCents",
+  "plan.price.price_cents",
+  "plan.price.priceCents",
+  "plan.price.amount_cents",
+  "plan.price.amountCents",
+  "plan.price.value_cents",
+  "plan.price.valueCents",
+  "plan.price.total_cents",
+  "plan.price.totalCents",
+];
+
+const PRICE_HINTS = [
+  "price",
+  "amount",
+  "value",
+  "payment",
+  "plan",
+  "pricing",
+];
+
+const normalizeKeyForComparison = (key: string) => key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+
+const isPriceHint = (key: string | undefined): key is string => {
+  if (!key) {
+    return false;
+  }
+
+  const normalized = normalizeKeyForComparison(key);
+  return PRICE_HINTS.some((hint) => normalized.includes(hint));
+};
+
+const isCentsHint = (key: string | undefined): key is string => {
+  if (!key) {
+    return false;
+  }
+
+  return normalizeKeyForComparison(key).includes("cent");
+};
+
+const extractPriceFromOfferFields = (
+  value: unknown,
+  keyHint?: string,
+  visited: WeakSet<object> = new WeakSet(),
+): number | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "number") {
+    if (!isPriceHint(keyHint)) {
+      return null;
+    }
+    return isCentsHint(keyHint) ? normalizeCentsAmount(value) : value;
+  }
+
+  if (typeof value === "string") {
+    if (!isPriceHint(keyHint)) {
+      return null;
+    }
+    const numeric = coerceNumber(value);
+    if (numeric === null) {
+      return null;
+    }
+    return isCentsHint(keyHint) ? normalizeCentsAmount(numeric) : numeric;
+  }
+
+  if (typeof value !== "object") {
+    return null;
+  }
+
+  if (visited.has(value as object)) {
+    return null;
+  }
+  visited.add(value as object);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = extractPriceFromOfferFields(item, keyHint, visited);
+      if (nested !== null) {
+        return nested;
+      }
+    }
+    return null;
+  }
+
+  const record = value as UnknownRecord;
+
+  const directPrice = extractNumber(record, OFFER_PRICE_PATHS);
+  if (directPrice !== null) {
+    return directPrice;
+  }
+
+  const centsPrice = extractNumber(record, OFFER_PRICE_CENTS_PATHS);
+  const normalized = normalizeCentsAmount(centsPrice);
+  if (normalized !== null) {
+    return normalized;
+  }
+
+  for (const key of OFFER_INSTALLMENT_KEYS) {
+    const installments = record[key];
+    const priceFromInstallments = extractPriceFromInstallments(installments, visited);
+    if (priceFromInstallments !== null) {
+      return priceFromInstallments;
+    }
+  }
+
+  for (const [key, field] of Object.entries(record)) {
+    if (!isPriceHint(key)) {
+      continue;
+    }
+    const nested = extractPriceFromOfferFields(field, key, visited);
+    if (nested !== null) {
+      return nested;
+    }
+  }
+
+  for (const [key, field] of Object.entries(record)) {
+    if (!field || typeof field !== "object") {
+      continue;
+    }
+    const nested = extractPriceFromOfferFields(field, key, visited);
+    if (nested !== null) {
+      return nested;
+    }
+  }
+
+  return null;
+};
+
+const extractPriceFromInstallments = (
+  installments: unknown,
+  visited?: WeakSet<object>,
+): number | null => {
+  for (const installment of ensureArray(installments)) {
+    if (!isRecord(installment)) {
+      continue;
+    }
+
+    const directPrice = extractNumber(installment, OFFER_PRICE_PATHS);
+    if (directPrice !== null) {
+      return directPrice;
+    }
+
+    const centsPrice = extractNumber(installment, OFFER_PRICE_CENTS_PATHS);
+    const normalized = normalizeCentsAmount(centsPrice);
+    if (normalized !== null) {
+      return normalized;
+    }
+
+    const nestedPrice = extractPriceFromOfferFields(
+      installment,
+      undefined,
+      visited ?? new WeakSet<object>(),
+    );
+    if (nestedPrice !== null) {
+      return nestedPrice;
+    }
+  }
+
+  return null;
+};
+
+const OFFER_INSTALLMENT_KEYS = [
+  "installments",
+  "installment_options",
+  "installmentOptions",
+  "payment_plans",
+  "paymentPlans",
+  "plans",
+] as const;
+
+const extractPriceFromOffer = (offer: unknown): number | null => {
+  if (offer === null || offer === undefined) {
+    return null;
+  }
+
+  if (Array.isArray(offer)) {
+    for (const entry of offer) {
+      const price = extractPriceFromOffer(entry);
+      if (price !== null) {
+        return price;
+      }
+    }
+    return null;
+  }
+
+  if (!isRecord(offer)) {
+    return null;
+  }
+
+  const visited = new WeakSet<object>();
+
+  const directPrice = extractNumber(offer, OFFER_PRICE_PATHS);
+  if (directPrice !== null) {
+    return directPrice;
+  }
+
+  const centsPrice = extractNumber(offer, OFFER_PRICE_CENTS_PATHS);
+  const normalized = normalizeCentsAmount(centsPrice);
+  if (normalized !== null) {
+    return normalized;
+  }
+
+  for (const key of OFFER_INSTALLMENT_KEYS) {
+    const installments = (offer as UnknownRecord)[key];
+    const priceFromInstallments = extractPriceFromInstallments(installments, visited);
+    if (priceFromInstallments !== null) {
+      return priceFromInstallments;
+    }
+  }
+
+  return extractPriceFromOfferFields(offer, undefined, visited);
+};
+
 const kiwifyRequest = async (path: string, { searchParams, init }: RequestOptions = {}): Promise<RequestResult> => {
   if (!hasKiwifyApiEnv()) {
     return {
@@ -1293,8 +1571,33 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
 
       if (price === null) {
         const cents = extractNumber(record, ["price_cents", "priceCents", "pricing.price_cents"]);
-        if (cents !== null) {
-          price = cents / 100;
+        price = normalizeCentsAmount(cents);
+      }
+
+      if (price === null) {
+        const defaultOffer =
+          record.default_offer ??
+          record.defaultOffer ??
+          record.default_offering ??
+          record.defaultOffering ??
+          null;
+        price = extractPriceFromOffer(defaultOffer);
+      }
+
+      if (price === null) {
+        const offersSource =
+          record.offers ??
+          record.available_offers ??
+          record.availableOffers ??
+          record.offer_options ??
+          record.offerOptions ??
+          null;
+        for (const offer of ensureArray(offersSource)) {
+          const offerPrice = extractPriceFromOffer(offer);
+          if (offerPrice !== null) {
+            price = offerPrice;
+            break;
+          }
         }
       }
 
