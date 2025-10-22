@@ -205,6 +205,35 @@ describe("getKiwifyProducts price fallbacks", () => {
     global.fetch = originalFetch;
   });
 
+  it("reads price and currency from the official product payload shape", async () => {
+    const productsPayload = {
+      data: [
+        {
+          id: "prod-official",
+          name: "Produto Oficial",
+          price: {
+            price: "147.00",
+            price_cents: 14700,
+            currency: "BRL",
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(productsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifyProducts();
+
+    expect(result.products).toHaveLength(1);
+    expect(result.products[0]?.price).toBeCloseTo(147, 2);
+    expect(result.products[0]?.currency).toBe("BRL");
+  });
+
   it("derives price information from nested offers when top-level price is missing", async () => {
     const productsPayload = {
       data: [
