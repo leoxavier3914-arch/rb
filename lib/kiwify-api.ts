@@ -407,33 +407,182 @@ const SALES_SUMMARY_PATHS: StringArray[] = [
   [],
 ];
 
-const BREAKDOWN_PATHS: StringArray[] = [
-  ["series"],
-  ["breakdown"],
-  ["grouped"],
-  ["groups"],
-  ["data"],
-  ["items"],
-  [],
-];
-
 export interface SalesStatisticsFilters {
   startDate?: string;
   endDate?: string;
   groupBy?: "day" | "month" | "product" | "source";
 }
 
+const formatPeriodLabel = (date: Date, groupBy: "day" | "month"): string => {
+  const [year, month, day] = date.toISOString().split("T")[0]?.split("-") ?? [];
+
+  if (groupBy === "month") {
+    return month && year ? `${month}/${year}` : date.toISOString();
+  }
+
+  return day && month && year ? `${day}/${month}/${year}` : date.toISOString();
+};
+
+const buildTimelineFromSales = (
+  salesPayload: unknown,
+  groupBy: "day" | "month",
+  fallbackCurrency: string | null,
+): SalesStatisticsBreakdownItem[] => {
+  const sales = ensureArray(salesPayload)
+    .map((entry) => (isRecord(entry) ? entry : null))
+    .filter((entry): entry is UnknownRecord => entry !== null);
+
+  if (sales.length === 0) {
+    return [];
+  }
+
+  const groups = new Map<
+    string,
+    {
+      label: string;
+      grossAmount: number;
+      netAmount: number;
+      orders: number;
+      currency: string | null;
+    }
+  >();
+
+  for (const sale of sales) {
+    const dateString =
+      extractString(sale, [
+        "period",
+        "date",
+        "paid_at",
+        "paidAt",
+        "created_at",
+        "createdAt",
+        "updated_at",
+        "order_date",
+      ]) ?? null;
+
+    if (!dateString) {
+      continue;
+    }
+
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      continue;
+    }
+
+    const key =
+      groupBy === "month"
+        ? date.toISOString().slice(0, 7)
+        : date.toISOString().slice(0, 10);
+
+    const label = formatPeriodLabel(date, groupBy);
+
+    let grossAmount =
+      extractNumber(sale, [
+        "gross_amount",
+        "grossAmount",
+        "gross",
+        "amount",
+        "total_amount",
+        "total",
+        "amount.gross",
+      ]) ?? 0;
+
+    if (grossAmount === 0) {
+      const grossCents = extractNumber(sale, [
+        "gross_amount_cents",
+        "grossAmountCents",
+        "gross_cents",
+        "amount_cents",
+        "total_amount_cents",
+      ]);
+      if (grossCents !== null) {
+        grossAmount = grossCents / 100;
+      }
+    }
+
+    let netAmount =
+      extractNumber(sale, [
+        "net_amount",
+        "netAmount",
+        "net",
+        "amount.net",
+        "total_net",
+      ]) ?? 0;
+
+    if (netAmount === 0) {
+      const netCents = extractNumber(sale, [
+        "net_amount_cents",
+        "netAmountCents",
+        "net_cents",
+      ]);
+      if (netCents !== null) {
+        netAmount = netCents / 100;
+      }
+    }
+
+    const quantity =
+      extractNumber(sale, [
+        "quantity",
+        "items_count",
+        "total_items",
+        "total_sales",
+        "orders",
+      ]) ?? 1;
+
+    const currency =
+      extractString(sale, [
+        "currency",
+        "currency_code",
+        "currencyCode",
+        "amount.currency",
+        "order.currency",
+      ]) ?? fallbackCurrency;
+
+    const current = groups.get(key);
+
+    if (current) {
+      current.grossAmount += grossAmount;
+      current.netAmount += netAmount;
+      current.orders += quantity;
+      if (!current.currency && currency) {
+        current.currency = currency;
+      }
+    } else {
+      groups.set(key, {
+        label,
+        grossAmount,
+        netAmount,
+        orders: quantity,
+        currency,
+      });
+    }
+  }
+
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([, value]) => ({
+      label: value.label,
+      grossAmount: value.grossAmount,
+      netAmount: value.netAmount,
+      orders: value.orders,
+      currency: value.currency,
+    }));
+};
+
 export async function getSalesStatistics(
   filters: SalesStatisticsFilters = {},
 ): Promise<SalesStatisticsResult> {
   const { startDate, endDate, groupBy } = filters;
-  const { ok, payload, error } = await kiwifyRequest("api/v1/statistics/my-sales", {
-    searchParams: {
-      start_date: startDate,
-      end_date: endDate,
-      group_by: groupBy,
-    },
+  const baseSearchParams = {
+    start_date: startDate,
+    end_date: endDate,
+  } as Record<string, string | undefined>;
+
+  const statsResult = await kiwifyRequest("v1/stats", {
+    searchParams: baseSearchParams,
   });
+
+  const { ok, payload, error } = statsResult;
 
   const summary = SALES_SUMMARY_PATHS.map((paths) => getValueAtPath(payload, paths.join(".")))
     .map((candidate) => (isRecord(candidate) ? candidate : null))
@@ -446,6 +595,7 @@ export async function getSalesStatistics(
     "grossAmount",
     "gross",
     "total_gross",
+    "total_gross_amount",
     "totals.gross_amount",
     "totals.gross",
   ]) ?? 0;
@@ -455,6 +605,7 @@ export async function getSalesStatistics(
     "netAmount",
     "net",
     "total_net",
+    "total_net_amount",
     "totals.net_amount",
     "totals.net",
   ]) ?? totals.netAmount;
@@ -468,11 +619,13 @@ export async function getSalesStatistics(
       "count",
       "quantity",
       "metrics.total_orders",
+      "totals.total_sales",
     ])?.valueOf() ?? totals.totalOrders;
 
   totals.kiwifyCommission =
     extractNumber(summary ?? payload, [
       "kiwify_commission",
+      "total_kiwify_commission",
       "commissions.kiwify",
       "commission.kiwify",
       "commission.kiwify_total",
@@ -481,6 +634,7 @@ export async function getSalesStatistics(
   totals.affiliateCommission =
     extractNumber(summary ?? payload, [
       "affiliate_commission",
+      "total_affiliate_commission",
       "commissions.affiliate",
       "commission.affiliate",
       "commission.affiliate_total",
@@ -491,6 +645,7 @@ export async function getSalesStatistics(
       "currency",
       "currency_code",
       "currencyCode",
+      "default_currency",
       "totals.currency",
       "summary.currency",
     ]) ?? totals.currency;
@@ -499,81 +654,29 @@ export async function getSalesStatistics(
     totals.averageTicket = totals.netAmount / totals.totalOrders;
   }
 
-  const breakdownSource = BREAKDOWN_PATHS.map((paths) => getValueAtPath(payload, paths.join(".")))
-    .map((candidate) => ensureArray(candidate))
-    .find((candidate) => candidate.length > 0);
+  let breakdown: SalesStatisticsBreakdownItem[] = [];
+  let salesPayload: unknown;
+  let combinedError = ok ? undefined : error;
 
-  const breakdown = (breakdownSource ?? [])
-    .map((entry) => {
-      if (!isRecord(entry)) {
-        return null;
-      }
+  if (groupBy === "day" || groupBy === "month") {
+    const salesResult = await kiwifyRequest("v1/sales", {
+      searchParams: baseSearchParams,
+    });
 
-      const currency =
-        extractString(entry, ["currency", "currency_code", "currencyCode"]) ?? totals.currency;
-      let grossAmount = extractNumber(entry, [
-        "gross_amount",
-        "grossAmount",
-        "gross",
-        "totals.gross",
-        "amount.gross",
-      ]);
+    salesPayload = salesResult.payload;
 
-      if (grossAmount === null) {
-        const cents = extractNumber(entry, ["gross_cents", "grossAmountCents", "gross.amount"]);
-        if (cents !== null) {
-          grossAmount = cents / 100;
-        }
-      }
-
-      let netAmount = extractNumber(entry, [
-        "net_amount",
-        "netAmount",
-        "net",
-        "totals.net",
-        "amount.net",
-      ]);
-
-      if (netAmount === null) {
-        const cents = extractNumber(entry, ["net_cents", "netAmountCents", "net.amount"]);
-        if (cents !== null) {
-          netAmount = cents / 100;
-        }
-      }
-
-      const orders = extractNumber(entry, [
-        "orders",
-        "count",
-        "sales",
-        "quantity",
-        "total_sales",
-      ]);
-
-      const label =
-        extractString(entry, [
-          "label",
-          "date",
-          "period",
-          "name",
-          "group",
-          "product",
-        ]) ?? "—";
-
-      return {
-        label,
-        grossAmount,
-        netAmount,
-        orders,
-        currency,
-      } satisfies SalesStatisticsBreakdownItem;
-    })
-    .filter((item): item is SalesStatisticsBreakdownItem => item !== null);
+    if (salesResult.ok) {
+      breakdown = buildTimelineFromSales(salesResult.payload, groupBy, totals.currency);
+    } else if (!combinedError) {
+      combinedError = salesResult.error;
+    }
+  }
 
   return {
     totals,
     breakdown,
-    raw: payload,
-    error,
+    raw: { stats: payload, sales: salesPayload },
+    error: combinedError,
   };
 }
 

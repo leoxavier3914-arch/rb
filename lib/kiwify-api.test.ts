@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockHasKiwifyApiEnv, mockGetKiwifyApiEnv } = vi.hoisted(() => ({
   mockHasKiwifyApiEnv: vi.fn(),
@@ -22,19 +22,15 @@ describe("kiwifyRequest authorization header", () => {
     KIWIFY_API_ACCOUNT_ID: "account-123",
   });
 
-  const buildResponse = () =>
+  const buildStatsResponse = () =>
     new Response(
       JSON.stringify({
-        totals: {
-          gross_amount: 0,
-          net_amount: 0,
-          total_orders: 0,
-          kiwify_commission: 0,
-          affiliate_commission: 0,
-          currency: "BRL",
-          average_ticket: null,
-        },
-        breakdown: [],
+        total_sales: 0,
+        total_net_amount: 0,
+        total_gross_amount: 0,
+        total_kiwify_commission: 0,
+        total_affiliate_commission: 0,
+        currency: "BRL",
       }),
       {
         status: 200,
@@ -47,7 +43,7 @@ describe("kiwifyRequest authorization header", () => {
     mockGetKiwifyApiEnv.mockReset();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
-    mockFetch = vi.fn().mockResolvedValue(buildResponse());
+    mockFetch = vi.fn().mockResolvedValue(buildStatsResponse());
     global.fetch = mockFetch;
   });
 
@@ -81,5 +77,131 @@ describe("kiwifyRequest authorization header", () => {
       : new Headers(fetchInit?.headers);
 
     expect(headers.get("Authorization")).toBe("secret abc123");
+  });
+});
+
+describe("getSalesStatistics data mapping", () => {
+  const originalFetch = global.fetch;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const buildEnv = () => ({
+    KIWIFY_API_BASE_URL: "https://api.example.com/",
+    KIWIFY_API_TOKEN: "abc123",
+    KIWIFY_API_ACCOUNT_ID: "account-123",
+  });
+
+  const buildStatsResponse = () =>
+    new Response(
+      JSON.stringify({
+        total_sales: 3,
+        total_net_amount: 450,
+        total_gross_amount: 600,
+        total_kiwify_commission: 90,
+        total_affiliate_commission: 60,
+        currency: "BRL",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+  const buildSalesResponse = () =>
+    new Response(
+      JSON.stringify([
+        {
+          id: "sale-1",
+          paid_at: "2024-01-01T12:00:00Z",
+          gross_amount: 200,
+          net_amount: 150,
+          currency: "BRL",
+        },
+        {
+          id: "sale-2",
+          paid_at: "2024-01-01T15:00:00Z",
+          gross_amount: 100,
+          net_amount: 80,
+          currency: "BRL",
+        },
+        {
+          id: "sale-3",
+          paid_at: "2024-01-02T10:00:00Z",
+          gross_amount: 300,
+          net_amount: 220,
+          currency: "BRL",
+        },
+      ]),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+  beforeEach(() => {
+    mockHasKiwifyApiEnv.mockReset();
+    mockGetKiwifyApiEnv.mockReset();
+
+    mockHasKiwifyApiEnv.mockReturnValue(true);
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("maps totals from /v1/stats", async () => {
+    mockFetch.mockResolvedValueOnce(buildStatsResponse());
+
+    const result = await getSalesStatistics();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const requestUrl = mockFetch.mock.calls[0]?.[0];
+    expect(String(requestUrl)).toContain("v1/stats");
+
+    expect(result.totals).toEqual(
+      expect.objectContaining({
+        totalOrders: 3,
+        netAmount: 450,
+        grossAmount: 600,
+        kiwifyCommission: 90,
+        affiliateCommission: 60,
+        currency: "BRL",
+      }),
+    );
+    expect(result.totals.averageTicket).toBeCloseTo(150);
+    expect(result.breakdown).toEqual([]);
+  });
+
+  it("builds a timeline from /v1/sales when grouping by day", async () => {
+    mockFetch.mockResolvedValueOnce(buildStatsResponse()).mockResolvedValueOnce(buildSalesResponse());
+
+    const result = await getSalesStatistics({
+      groupBy: "day",
+      startDate: "2024-01-01",
+      endDate: "2024-01-31",
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(String(mockFetch.mock.calls[0]?.[0])).toContain("v1/stats");
+    expect(String(mockFetch.mock.calls[1]?.[0])).toContain("v1/sales");
+
+    expect(result.breakdown).toEqual([
+      {
+        label: "01/01/2024",
+        grossAmount: 300,
+        netAmount: 230,
+        orders: 2,
+        currency: "BRL",
+      },
+      {
+        label: "02/01/2024",
+        grossAmount: 300,
+        netAmount: 220,
+        orders: 1,
+        currency: "BRL",
+      },
+    ]);
   });
 });
