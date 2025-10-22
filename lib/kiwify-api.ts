@@ -231,6 +231,94 @@ const extractStringArray = (value: unknown, paths: StringArray): string[] => {
   return [];
 };
 
+const normalizeCentsAmount = (value: number | null): number | null => {
+  if (value === null) {
+    return null;
+  }
+
+  return value / 100;
+};
+
+const extractPriceFromInstallments = (installments: unknown): number | null => {
+  for (const installment of ensureArray(installments)) {
+    if (!isRecord(installment)) {
+      continue;
+    }
+
+    const directPrice = extractNumber(installment, [
+      "price",
+      "amount",
+      "value",
+      "pricing.price",
+    ]);
+    if (directPrice !== null) {
+      return directPrice;
+    }
+
+    const centsPrice = extractNumber(installment, [
+      "price_cents",
+      "priceCents",
+      "pricing.price_cents",
+      "amount_cents",
+      "value_cents",
+    ]);
+    const normalized = normalizeCentsAmount(centsPrice);
+    if (normalized !== null) {
+      return normalized;
+    }
+  }
+
+  return null;
+};
+
+const OFFER_INSTALLMENT_KEYS = [
+  "installments",
+  "installment_options",
+  "installmentOptions",
+  "payment_plans",
+  "paymentPlans",
+  "plans",
+] as const;
+
+const extractPriceFromOffer = (offer: unknown): number | null => {
+  if (!isRecord(offer)) {
+    return null;
+  }
+
+  const directPrice = extractNumber(offer, [
+    "price",
+    "amount",
+    "value",
+    "pricing.price",
+    "price.amount",
+  ]);
+  if (directPrice !== null) {
+    return directPrice;
+  }
+
+  const centsPrice = extractNumber(offer, [
+    "price_cents",
+    "priceCents",
+    "pricing.price_cents",
+    "amount_cents",
+    "value_cents",
+  ]);
+  const normalized = normalizeCentsAmount(centsPrice);
+  if (normalized !== null) {
+    return normalized;
+  }
+
+  for (const key of OFFER_INSTALLMENT_KEYS) {
+    const installments = (offer as UnknownRecord)[key];
+    const priceFromInstallments = extractPriceFromInstallments(installments);
+    if (priceFromInstallments !== null) {
+      return priceFromInstallments;
+    }
+  }
+
+  return null;
+};
+
 const kiwifyRequest = async (path: string, { searchParams, init }: RequestOptions = {}): Promise<RequestResult> => {
   if (!hasKiwifyApiEnv()) {
     return {
@@ -1293,8 +1381,33 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
 
       if (price === null) {
         const cents = extractNumber(record, ["price_cents", "priceCents", "pricing.price_cents"]);
-        if (cents !== null) {
-          price = cents / 100;
+        price = normalizeCentsAmount(cents);
+      }
+
+      if (price === null) {
+        const defaultOffer =
+          record.default_offer ??
+          record.defaultOffer ??
+          record.default_offering ??
+          record.defaultOffering ??
+          null;
+        price = extractPriceFromOffer(defaultOffer);
+      }
+
+      if (price === null) {
+        const offersSource =
+          record.offers ??
+          record.available_offers ??
+          record.availableOffers ??
+          record.offer_options ??
+          record.offerOptions ??
+          null;
+        for (const offer of ensureArray(offersSource)) {
+          const offerPrice = extractPriceFromOffer(offer);
+          if (offerPrice !== null) {
+            price = offerPrice;
+            break;
+          }
         }
       }
 
