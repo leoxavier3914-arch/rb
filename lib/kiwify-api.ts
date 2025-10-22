@@ -413,6 +413,17 @@ export interface SalesStatisticsFilters {
   groupBy?: "day" | "month" | "product" | "source";
 }
 
+const parseDateInput = (value?: string): Date | null => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatAsDateParam = (date: Date): string => date.toISOString().slice(0, 10);
+
 const formatPeriodLabel = (date: Date, groupBy: "day" | "month"): string => {
   const [year, month, day] = date.toISOString().split("T")[0]?.split("-") ?? [];
 
@@ -573,10 +584,21 @@ export async function getSalesStatistics(
   filters: SalesStatisticsFilters = {},
 ): Promise<SalesStatisticsResult> {
   const { startDate, endDate, groupBy } = filters;
+
+  const parsedEndDate = parseDateInput(endDate);
+  const resolvedEndDate = parsedEndDate ?? new Date();
+
+  const parsedStartDate = parseDateInput(startDate);
+  const resolvedStartDate = parsedStartDate ?? new Date(resolvedEndDate);
+
+  if (!parsedStartDate) {
+    resolvedStartDate.setDate(resolvedStartDate.getDate() - 29);
+  }
+
   const baseSearchParams = {
-    start_date: startDate,
-    end_date: endDate,
-  } as Record<string, string | undefined>;
+    start_date: formatAsDateParam(resolvedStartDate),
+    end_date: formatAsDateParam(resolvedEndDate),
+  };
 
   const statsResult = await kiwifyRequest("v1/stats", {
     searchParams: baseSearchParams,
