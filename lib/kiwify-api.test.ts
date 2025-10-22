@@ -248,6 +248,75 @@ describe("getKiwifyProducts price fallbacks", () => {
     expect(result.products[0]?.price).toBeCloseTo(67.89, 2);
     expect(result.products[1]?.price).toBeCloseTo(43.21, 2);
   });
+
+  it("walks nested offer structures to locate deeply nested pricing fields", async () => {
+    const productsPayload = {
+      data: [
+        {
+          id: "prod-nested-default",
+          name: "Produto Default Aninhado",
+          price: null,
+          default_offer: {
+            data: [
+              {
+                price: {
+                  price_cents: 12900,
+                },
+              },
+            ],
+          },
+        },
+        {
+          id: "prod-plan",
+          name: "Produto Plano",
+          price: undefined,
+          offers: [
+            {
+              plan: {
+                amount_cents: 9900,
+              },
+            },
+          ],
+        },
+        {
+          id: "prod-deep-installment",
+          name: "Produto Parcelado",
+          price: null,
+          offers: {
+            data: [
+              {
+                payment_plans: [
+                  {
+                    installments: [
+                      {
+                        pricing: {
+                          price_cents: 4500,
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(productsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifyProducts();
+
+    expect(result.products).toHaveLength(3);
+    expect(result.products[0]?.price).toBeCloseTo(129, 2);
+    expect(result.products[1]?.price).toBeCloseTo(99, 2);
+    expect(result.products[2]?.price).toBeCloseTo(45, 2);
+  });
 });
 
 describe("getSalesStatistics data mapping", () => {
