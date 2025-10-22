@@ -582,6 +582,529 @@ const buildTimelineFromSales = (
     }));
 };
 
+export interface KiwifySalesFilters {
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  updatedAtStartDate?: string;
+  updatedAtEndDate?: string;
+  productId?: string;
+  affiliateId?: string;
+  page?: number;
+  perPage?: number;
+  viewFullSaleDetails?: boolean;
+}
+
+export interface KiwifySalesPagination {
+  pageNumber: number | null;
+  pageSize: number | null;
+  totalCount: number | null;
+  totalPages: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  updatedAtStartDate: string | null;
+  updatedAtEndDate: string | null;
+}
+
+export interface KiwifySaleParty {
+  id: string | null;
+  name: string | null;
+  email: string | null;
+  document: string | null;
+  phone: string | null;
+}
+
+export interface KiwifySaleProductSummary {
+  id: string | null;
+  name: string | null;
+}
+
+export interface KiwifySaleSummary {
+  id: string | null;
+  orderId: string | null;
+  reference: string | null;
+  status: string | null;
+  paymentMethod: string | null;
+  installments: number | null;
+  grossAmount: number | null;
+  netAmount: number | null;
+  currency: string | null;
+  kiwifyCommission: number | null;
+  affiliateCommission: number | null;
+  approvedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  customer: KiwifySaleParty;
+  product: KiwifySaleProductSummary;
+  raw: UnknownRecord | null;
+}
+
+export interface KiwifyRevenuePartner {
+  accountId: string | null;
+  legalName: string | null;
+  documentId: string | null;
+  percentage: number | null;
+  amount: number | null;
+  role: string | null;
+}
+
+export interface KiwifySaleDetail extends KiwifySaleSummary {
+  totalAmount: number | null;
+  boletoUrl: string | null;
+  pixKey: string | null;
+  pixQrCode: string | null;
+  cardLastDigits: string | null;
+  cardBrand: string | null;
+  affiliate: {
+    id: string | null;
+    name: string | null;
+    email: string | null;
+  };
+  shipping: {
+    id: string | null;
+    name: string | null;
+    price: number | null;
+  };
+  revenuePartners: KiwifyRevenuePartner[];
+}
+
+export interface KiwifySalesResult {
+  sales: KiwifySaleSummary[];
+  pagination: KiwifySalesPagination | null;
+  raw: unknown;
+  error?: string;
+}
+
+export interface KiwifySaleDetailResult {
+  sale: KiwifySaleDetail | null;
+  raw: unknown;
+  error?: string;
+}
+
+const normalizeInstallments = (value: number | null): number | null => {
+  if (value === null) {
+    return null;
+  }
+
+  const rounded = Math.round(value);
+  return Number.isNaN(rounded) ? null : rounded;
+};
+
+const mapSaleSummary = (record: UnknownRecord): KiwifySaleSummary => {
+  const customerPayload = getValueAtPath(record, "customer");
+  const productPayload = getValueAtPath(record, "product");
+
+  const customer: KiwifySaleParty = {
+    id:
+      extractString(customerPayload, [
+        "id",
+        "customer_id",
+        "buyer_id",
+        "customer.id",
+      ]) ?? null,
+    name:
+      extractString(customerPayload, [
+        "name",
+        "full_name",
+        "display_name",
+        "customer_name",
+      ]) ?? null,
+    email:
+      extractString(customerPayload, [
+        "email",
+        "mail",
+        "customer_email",
+        "buyer_email",
+      ]) ?? null,
+    document:
+      extractString(customerPayload, [
+        "document",
+        "document_id",
+        "cpf",
+        "cnpj",
+        "tax_id",
+      ]) ?? null,
+    phone:
+      extractString(customerPayload, [
+        "mobile",
+        "phone",
+        "phone_number",
+        "phoneNumber",
+        "customer_phone",
+      ]) ?? null,
+  };
+
+  const product: KiwifySaleProductSummary = {
+    id:
+      extractString(productPayload, [
+        "id",
+        "product_id",
+        "uuid",
+        "product.id",
+      ]) ?? null,
+    name:
+      extractString(productPayload, [
+        "name",
+        "title",
+        "product_name",
+        "display_name",
+      ]) ?? null,
+  };
+
+  const orderId =
+    extractString(record, ["order_id", "orderId", "sale_id", "saleId"]) ?? null;
+  const saleId = extractString(record, ["id", "sale_id", "order_id"]) ?? orderId;
+
+  const grossAmount =
+    extractNumber(record, [
+      "gross_amount",
+      "amount_gross",
+      "totals.gross",
+      "payment.gross_amount",
+      "summary.gross",
+    ]) ?? null;
+
+  const netAmountBase =
+    extractNumber(record, [
+      "net_amount",
+      "amount",
+      "totals.net",
+      "payment.net_amount",
+      "summary.net",
+    ]) ?? null;
+
+  const kiwifyCommission =
+    extractNumber(record, [
+      "kiwify_commission",
+      "commission.kiwify",
+      "commissions.kiwify",
+      "kiwify_commission_amount",
+    ]) ?? null;
+
+  const affiliateCommission =
+    extractNumber(record, [
+      "affiliate_commission",
+      "commission.affiliate",
+      "commissions.affiliate",
+      "affiliate_commission_amount",
+    ]) ?? null;
+
+  return {
+    id: saleId ?? null,
+    orderId,
+    reference:
+      extractString(record, ["reference", "order_reference", "sale_reference"]) ??
+      null,
+    status: extractString(record, ["status", "state", "sale_status"]) ?? null,
+    paymentMethod:
+      extractString(record, [
+        "payment_method",
+        "payment.method",
+        "payment_method_name",
+        "payment.method_name",
+      ]) ?? null,
+    installments: normalizeInstallments(
+      extractNumber(record, [
+        "installments",
+        "payment.installments",
+        "payment.number_installments",
+      ]) ?? null,
+    ),
+    grossAmount,
+    netAmount: netAmountBase,
+    currency:
+      extractString(record, [
+        "currency",
+        "currency_code",
+        "payment.currency",
+        "summary.currency",
+      ]) ?? null,
+    kiwifyCommission,
+    affiliateCommission,
+    approvedAt:
+      extractString(record, [
+        "approved_date",
+        "approved_at",
+        "paid_at",
+        "payment.approved_date",
+        "payment.paid_at",
+      ]) ?? null,
+    createdAt:
+      extractString(record, ["created_at", "createdAt", "timestamps.created_at"]) ??
+      null,
+    updatedAt:
+      extractString(record, ["updated_at", "updatedAt", "timestamps.updated_at"]) ??
+      null,
+    customer,
+    product,
+    raw: record,
+  } satisfies KiwifySaleSummary;
+};
+
+const mapSalesPagination = (value: unknown): KiwifySalesPagination | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    pageNumber:
+      extractNumber(value, ["page_number", "pageNumber", "current_page"]) ?? null,
+    pageSize:
+      extractNumber(value, ["page_size", "pageSize", "limit", "per_page"]) ??
+      null,
+    totalCount:
+      extractNumber(value, [
+        "count",
+        "total_count",
+        "total_items",
+        "total",
+      ]) ?? null,
+    totalPages:
+      extractNumber(value, ["total_pages", "page_count", "pages"]) ?? null,
+    startDate:
+      extractString(value, ["start_date", "startDate", "from_date"]) ?? null,
+    endDate:
+      extractString(value, ["end_date", "endDate", "to_date"]) ?? null,
+    updatedAtStartDate:
+      extractString(value, [
+        "updated_at_start_date",
+        "updatedAtStartDate",
+        "updated_start",
+      ]) ?? null,
+    updatedAtEndDate:
+      extractString(value, [
+        "updated_at_end_date",
+        "updatedAtEndDate",
+        "updated_end",
+      ]) ?? null,
+  } satisfies KiwifySalesPagination;
+};
+
+export async function getKiwifySales(
+  filters: KiwifySalesFilters = {},
+): Promise<KiwifySalesResult> {
+  const searchParams: Record<string, string | number | null | undefined> = {
+    status: filters.status,
+    start_date: filters.startDate,
+    end_date: filters.endDate,
+    updated_at_start_date: filters.updatedAtStartDate,
+    updated_at_end_date: filters.updatedAtEndDate,
+    product_id: filters.productId,
+    affiliate_id: filters.affiliateId,
+    page_number: filters.page,
+    page_size: filters.perPage,
+    view_full_sale_details:
+      filters.viewFullSaleDetails === undefined
+        ? undefined
+        : filters.viewFullSaleDetails
+          ? "true"
+          : "false",
+  };
+
+  const { ok, payload, error } = await kiwifyRequest("v1/sales", {
+    searchParams,
+  });
+
+  const listPayload = isRecord(payload)
+    ? payload.data ??
+      payload.items ??
+      payload.results ??
+      payload.records ??
+      payload.sales ??
+      payload.entries
+    : payload;
+
+  const sales = ensureArray(listPayload)
+    .map((entry) => (isRecord(entry) ? entry : null))
+    .filter((entry): entry is UnknownRecord => entry !== null)
+    .map((record) => mapSaleSummary(record));
+
+  const pagination = mapSalesPagination(
+    isRecord(payload) ? payload.pagination ?? payload.meta ?? null : null,
+  );
+
+  return {
+    sales,
+    pagination,
+    raw: payload,
+    error: ok ? undefined : error,
+  };
+}
+
+export async function getKiwifySale(
+  id: string,
+): Promise<KiwifySaleDetailResult> {
+  if (!id) {
+    return {
+      sale: null,
+      raw: null,
+      error: "O identificador da venda é obrigatório.",
+    };
+  }
+
+  const { ok, payload, error } = await kiwifyRequest(
+    `v1/sales/${encodeURIComponent(id)}`,
+  );
+
+  if (!isRecord(payload)) {
+    return { sale: null, raw: payload, error: ok ? undefined : error };
+  }
+
+  const summary = mapSaleSummary(payload);
+
+  const shippingPayload = getValueAtPath(payload, "shipping");
+  const revenuePartnerPayload = ensureArray(
+    getValueAtPath(payload, "revenue_partners"),
+  );
+
+  const sale: KiwifySaleDetail = {
+    ...summary,
+    totalAmount:
+      extractNumber(payload, [
+        "total_amount",
+        "amount",
+        "totals.total",
+        "summary.total",
+      ]) ?? summary.grossAmount ?? summary.netAmount,
+    boletoUrl:
+      extractString(payload, ["boleto_url", "payment.boleto_url"]) ?? null,
+    pixKey:
+      extractString(payload, [
+        "pix_key",
+        "pixKey",
+        "payment.pix_key",
+        "payment.pixKey",
+      ]) ?? null,
+    pixQrCode:
+      extractString(payload, [
+        "pix_qr_code",
+        "pixQrCode",
+        "payment.pix_qr_code",
+        "payment.pixQrCode",
+      ]) ?? null,
+    cardLastDigits:
+      extractString(payload, [
+        "card_last_digits",
+        "payment.card_last_digits",
+      ]) ?? null,
+    cardBrand:
+      extractString(payload, ["card_brand", "payment.card_brand"]) ?? null,
+    affiliate: {
+      id:
+        extractString(payload, [
+          "affiliate_id",
+          "affiliate.id",
+          "affiliateId",
+        ]) ?? null,
+      name:
+        extractString(payload, [
+          "affiliate.name",
+          "affiliate_name",
+          "affiliateName",
+        ]) ?? null,
+      email:
+        extractString(payload, [
+          "affiliate.email",
+          "affiliate_email",
+          "affiliateEmail",
+        ]) ?? null,
+    },
+    shipping: {
+      id: extractString(shippingPayload, ["id", "shipping_id"]) ?? null,
+      name:
+        extractString(shippingPayload, [
+          "name",
+          "title",
+          "shipping_name",
+        ]) ?? null,
+      price: extractNumber(shippingPayload, ["price", "amount"]) ?? null,
+    },
+    revenuePartners: revenuePartnerPayload
+      .map((partner) =>
+        isRecord(partner)
+          ? {
+              accountId:
+                extractString(partner, [
+                  "account_id",
+                  "accountId",
+                  "id",
+                ]) ?? null,
+              legalName:
+                extractString(partner, [
+                  "legal_name",
+                  "name",
+                  "display_name",
+                ]) ?? null,
+              documentId:
+                extractString(partner, [
+                  "document_id",
+                  "document",
+                  "tax_id",
+                ]) ?? null,
+              percentage:
+                extractNumber(partner, ["percentage", "percent"]) ?? null,
+              amount: extractNumber(partner, ["amount", "value"]) ?? null,
+              role: extractString(partner, ["role", "type"]) ?? null,
+            }
+          : null,
+      )
+      .filter((partner): partner is KiwifyRevenuePartner => partner !== null),
+  } satisfies KiwifySaleDetail;
+
+  return { sale, raw: payload, error: ok ? undefined : error };
+}
+
+export interface KiwifyRefundOptions {
+  pixKey?: string | null;
+}
+
+export interface KiwifyRefundResult {
+  refunded: boolean;
+  raw: unknown;
+  status: number;
+  error?: string;
+}
+
+export async function refundKiwifySale(
+  id: string,
+  options: KiwifyRefundOptions = {},
+): Promise<KiwifyRefundResult> {
+  if (!id) {
+    return {
+      refunded: false,
+      raw: null,
+      status: 0,
+      error: "O identificador da venda é obrigatório.",
+    };
+  }
+
+  const body: Record<string, unknown> = {};
+  if (options.pixKey) {
+    body.pixKey = options.pixKey;
+  }
+
+  const { ok, payload, status, error } = await kiwifyRequest(
+    `v1/sales/${encodeURIComponent(id)}/refund`,
+    {
+      init: {
+        method: "POST",
+        body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
+      },
+    },
+  );
+
+  const refunded = ok
+    ? coerceBoolean(getValueAtPath(payload, "refunded")) ?? false
+    : false;
+
+  return {
+    refunded,
+    raw: payload,
+    status,
+    error: ok ? undefined : error,
+  };
+}
+
 export async function getSalesStatistics(
   filters: SalesStatisticsFilters = {},
 ): Promise<SalesStatisticsResult> {

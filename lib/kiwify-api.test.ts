@@ -10,7 +10,13 @@ vi.mock("./env", () => ({
   getKiwifyApiEnv: mockGetKiwifyApiEnv,
 }));
 
-import { getSalesStatistics, getKiwifyProducts } from "./kiwify-api";
+import {
+  getSalesStatistics,
+  getKiwifyProducts,
+  getKiwifySale,
+  getKiwifySales,
+  refundKiwifySale,
+} from "./kiwify-api";
 
 describe("kiwifyRequest authorization header", () => {
   const originalFetch = global.fetch;
@@ -297,5 +303,342 @@ describe("getSalesStatistics data mapping", () => {
         currency: "BRL",
       },
     ]);
+  });
+});
+
+describe("getKiwifySales", () => {
+  const originalFetch = global.fetch;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const buildEnv = () => ({
+    KIWIFY_API_BASE_URL: "https://api.example.com/",
+    KIWIFY_API_TOKEN: "abc123",
+    KIWIFY_API_ACCOUNT_ID: "account-123",
+  });
+
+  const buildListResponse = () =>
+    new Response(
+      JSON.stringify({
+        pagination: {
+          page_number: 2,
+          page_size: 50,
+          count: 120,
+          total_pages: 3,
+          start_date: "2024-01-01",
+          end_date: "2024-01-31",
+          updated_at_start_date: "2024-01-05T00:00:00Z",
+          updated_at_end_date: "2024-01-30T23:59:59Z",
+        },
+        data: [
+          {
+            id: "order-1",
+            order_id: "order-1",
+            reference: "REF-1",
+            status: "paid",
+            payment_method: "credit_card",
+            installments: 3,
+            gross_amount: 200,
+            net_amount: 150,
+            kiwify_commission: 20,
+            affiliate_commission: 10,
+            currency: "BRL",
+            approved_date: "2024-01-10T10:00:00Z",
+            created_at: "2024-01-09T08:00:00Z",
+            updated_at: "2024-01-10T10:05:00Z",
+            customer: {
+              id: "cust-1",
+              name: "Cliente Um",
+              email: "cliente@example.com",
+              cpf: "12345678900",
+              mobile: "+551199999999",
+            },
+            product: {
+              id: "prod-1",
+              name: "Produto A",
+            },
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+  beforeEach(() => {
+    mockHasKiwifyApiEnv.mockReset();
+    mockGetKiwifyApiEnv.mockReset();
+
+    mockHasKiwifyApiEnv.mockReturnValue(true);
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("applies filters to the query string and maps the payload", async () => {
+    mockFetch.mockResolvedValueOnce(buildListResponse());
+
+    const result = await getKiwifySales({
+      status: "paid",
+      startDate: "2024-01-01",
+      endDate: "2024-01-31",
+      updatedAtStartDate: "2024-01-05T00:00:00Z",
+      updatedAtEndDate: "2024-01-30T23:59:59Z",
+      productId: "prod-1",
+      affiliateId: "aff-1",
+      page: 2,
+      perPage: 50,
+      viewFullSaleDetails: true,
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const requestUrl = mockFetch.mock.calls[0]?.[0];
+    const url = new URL(String(requestUrl));
+
+    expect(url.pathname).toContain("v1/sales");
+    expect(url.searchParams.get("status")).toBe("paid");
+    expect(url.searchParams.get("start_date")).toBe("2024-01-01");
+    expect(url.searchParams.get("end_date")).toBe("2024-01-31");
+    expect(url.searchParams.get("updated_at_start_date")).toBe(
+      "2024-01-05T00:00:00Z",
+    );
+    expect(url.searchParams.get("updated_at_end_date")).toBe(
+      "2024-01-30T23:59:59Z",
+    );
+    expect(url.searchParams.get("product_id")).toBe("prod-1");
+    expect(url.searchParams.get("affiliate_id")).toBe("aff-1");
+    expect(url.searchParams.get("page_number")).toBe("2");
+    expect(url.searchParams.get("page_size")).toBe("50");
+    expect(url.searchParams.get("view_full_sale_details")).toBe("true");
+
+    expect(result.error).toBeUndefined();
+    expect(result.sales).toHaveLength(1);
+
+    const sale = result.sales[0];
+    expect(sale).toEqual(
+      expect.objectContaining({
+        id: "order-1",
+        orderId: "order-1",
+        reference: "REF-1",
+        status: "paid",
+        paymentMethod: "credit_card",
+        installments: 3,
+        grossAmount: 200,
+        netAmount: 150,
+        currency: "BRL",
+        approvedAt: "2024-01-10T10:00:00Z",
+      }),
+    );
+    expect(sale.customer).toEqual(
+      expect.objectContaining({
+        id: "cust-1",
+        name: "Cliente Um",
+        email: "cliente@example.com",
+        document: "12345678900",
+        phone: "+551199999999",
+      }),
+    );
+    expect(sale.product).toEqual(
+      expect.objectContaining({ id: "prod-1", name: "Produto A" }),
+    );
+
+    expect(result.pagination).toEqual(
+      expect.objectContaining({
+        pageNumber: 2,
+        pageSize: 50,
+        totalCount: 120,
+        totalPages: 3,
+        startDate: "2024-01-01",
+        endDate: "2024-01-31",
+      }),
+    );
+  });
+});
+
+describe("getKiwifySale", () => {
+  const originalFetch = global.fetch;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const buildEnv = () => ({
+    KIWIFY_API_BASE_URL: "https://api.example.com/",
+    KIWIFY_API_TOKEN: "abc123",
+    KIWIFY_API_ACCOUNT_ID: "account-123",
+  });
+
+  const buildDetailResponse = () =>
+    new Response(
+      JSON.stringify({
+        id: "order-1",
+        order_id: "order-1",
+        reference: "REF-1",
+        status: "paid",
+        payment_method: "credit_card",
+        installments: 6,
+        gross_amount: 200,
+        net_amount: 150,
+        total_amount: 210,
+        kiwify_commission: 20,
+        affiliate_commission: 10,
+        currency: "BRL",
+        approved_date: "2024-01-10T10:00:00Z",
+        created_at: "2024-01-09T08:00:00Z",
+        updated_at: "2024-01-10T10:05:00Z",
+        boleto_url: "https://boleto.example.com",
+        pix_key: "123456789",
+        pix_qr_code: "qr-code-data",
+        card_last_digits: "4242",
+        card_brand: "visa",
+        customer: {
+          id: "cust-1",
+          name: "Cliente Um",
+          email: "cliente@example.com",
+          cpf: "12345678900",
+          mobile: "+551199999999",
+        },
+        product: {
+          id: "prod-1",
+          name: "Produto A",
+        },
+        affiliate: {
+          id: "aff-1",
+          name: "Afiliado",
+          email: "afiliado@example.com",
+        },
+        shipping: {
+          id: "ship-1",
+          name: "Entrega",
+          price: 10,
+        },
+        revenue_partners: [
+          {
+            account_id: "partner-1",
+            legal_name: "Coprodutor",
+            document_id: "99999999999",
+            percentage: 30,
+            amount: 5,
+            role: "coproducer",
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+  beforeEach(() => {
+    mockHasKiwifyApiEnv.mockReset();
+    mockGetKiwifyApiEnv.mockReset();
+
+    mockHasKiwifyApiEnv.mockReturnValue(true);
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("maps the sale detail payload", async () => {
+    mockFetch.mockResolvedValueOnce(buildDetailResponse());
+
+    const result = await getKiwifySale("order-1");
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const requestUrl = mockFetch.mock.calls[0]?.[0];
+    expect(String(requestUrl)).toContain("v1/sales/order-1");
+
+    expect(result.error).toBeUndefined();
+    expect(result.sale).not.toBeNull();
+
+    const sale = result.sale!;
+    expect(sale).toEqual(
+      expect.objectContaining({
+        id: "order-1",
+        orderId: "order-1",
+        reference: "REF-1",
+        status: "paid",
+        paymentMethod: "credit_card",
+        installments: 6,
+        grossAmount: 200,
+        netAmount: 150,
+        totalAmount: 210,
+        boletoUrl: "https://boleto.example.com",
+        pixKey: "123456789",
+        pixQrCode: "qr-code-data",
+        cardLastDigits: "4242",
+        cardBrand: "visa",
+      }),
+    );
+    expect(sale.affiliate).toEqual(
+      expect.objectContaining({ id: "aff-1", email: "afiliado@example.com" }),
+    );
+    expect(sale.shipping).toEqual(
+      expect.objectContaining({ id: "ship-1", name: "Entrega", price: 10 }),
+    );
+    expect(sale.revenuePartners).toEqual([
+      expect.objectContaining({
+        accountId: "partner-1",
+        legalName: "Coprodutor",
+        documentId: "99999999999",
+        percentage: 30,
+        amount: 5,
+        role: "coproducer",
+      }),
+    ]);
+  });
+});
+
+describe("refundKiwifySale", () => {
+  const originalFetch = global.fetch;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const buildEnv = () => ({
+    KIWIFY_API_BASE_URL: "https://api.example.com/",
+    KIWIFY_API_TOKEN: "abc123",
+    KIWIFY_API_ACCOUNT_ID: "account-123",
+  });
+
+  beforeEach(() => {
+    mockHasKiwifyApiEnv.mockReset();
+    mockGetKiwifyApiEnv.mockReset();
+
+    mockHasKiwifyApiEnv.mockReturnValue(true);
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("sends a POST request and returns the refund status", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ refunded: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await refundKiwifySale("order-1", { pixKey: "123" });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [requestUrl, init] = mockFetch.mock.calls[0] ?? [];
+    expect(String(requestUrl)).toContain("v1/sales/order-1/refund");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeDefined();
+
+    const parsedBody = JSON.parse(String(init?.body));
+    expect(parsedBody).toEqual({ pixKey: "123" });
+
+    expect(result.refunded).toBe(true);
+    expect(result.status).toBe(200);
+    expect(result.error).toBeUndefined();
   });
 });
