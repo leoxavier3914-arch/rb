@@ -246,7 +246,8 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
     const base = env.KIWIFY_API_BASE_URL.endsWith("/")
       ? env.KIWIFY_API_BASE_URL
       : `${env.KIWIFY_API_BASE_URL}/`;
-    const url = new URL(path.replace(/^\//, ""), base);
+    const normalizedPath = path.replace(/^\/+/, "");
+    const url = new URL(normalizedPath, base);
 
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(searchParams ?? {})) {
@@ -259,7 +260,8 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
       }
     }
 
-    if (!params.has("account_id")) {
+    const shouldIncludeAccountId = normalizedPath.startsWith("api/v1/");
+    if (shouldIncludeAccountId && !params.has("account_id")) {
       params.set("account_id", env.KIWIFY_API_ACCOUNT_ID);
     }
 
