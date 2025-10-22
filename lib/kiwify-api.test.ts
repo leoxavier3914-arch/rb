@@ -234,6 +234,44 @@ describe("getKiwifyProducts price fallbacks", () => {
     expect(result.products[0]?.currency).toBe("BRL");
   });
 
+  it("uses default_price fields when top-level price is null", async () => {
+    const productsPayload = {
+      data: [
+        {
+          id: "prod-default-price",
+          name: "Produto com Default Price",
+          price: null,
+          default_price: {
+            price: "199.90",
+            price_cents: 19990,
+            amount: "199.90",
+            amount_cents: 19990,
+            currency: "BRL",
+          },
+          offers: [
+            {
+              price: 1,
+              currency: "USD",
+            },
+          ],
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(productsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifyProducts();
+
+    expect(result.products).toHaveLength(1);
+    expect(result.products[0]?.price).toBeCloseTo(199.9, 2);
+    expect(result.products[0]?.currency).toBe("BRL");
+  });
+
   it("derives price information from nested offers when top-level price is missing", async () => {
     const productsPayload = {
       data: [
