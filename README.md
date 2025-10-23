@@ -25,7 +25,7 @@ KIWIFY_API_CLIENT_SECRET=
 KIWIFY_API_ACCOUNT_ID=
 # opcional, limite de escopos ao solicitar o token OAuth
 KIWIFY_API_SCOPE=
-# opcional, apenas para compatibilidade com endpoints legados
+# obrigatório para acessar endpoints legacy api/v1 até a liberação oficial das rotas OAuth
 KIWIFY_API_TOKEN=
 # opcional, default: https://public-api.kiwify.com/
 KIWIFY_API_BASE_URL=
@@ -39,7 +39,7 @@ KIWIFY_API_BASE_URL=
 
 `KIWIFY_API_BASE_URL` só aceita domínios da própria Kiwify (`*.kiwify.com` ou `*.kiwify.com.br`) para evitar configurar por engano o domínio do deploy no Vercel. Caso não informe esse valor, o projeto usa automaticamente `https://public-api.kiwify.com/`.
 
-`KIWIFY_API_TOKEN` permanece disponível apenas para compatibilidade com domínios legados que ainda exigem o parâmetro `token` ao usar o fallback da API antiga.
+`KIWIFY_API_TOKEN` continua obrigatório para qualquer requisição aos endpoints `api/v1` enquanto as versões com OAuth não estiverem disponíveis, garantindo que o fallback para os domínios legados funcione corretamente.
 
 ## Desenvolvimento
 
