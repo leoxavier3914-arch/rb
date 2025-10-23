@@ -262,6 +262,55 @@ describe("kiwifyFetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("prefers the JWT payload account id over top-level fields", async () => {
+    const jwt = createJwt({
+      account_id: "acc-from-jwt",
+    });
+
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockImplementationOnce(async () =>
+        new Response(
+          JSON.stringify({
+            access_token: jwt,
+            token_type: "Bearer",
+            expires_in: 3600,
+            account_id: "acc-from-response",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-jwt");
+        expect(headers.get("authorization")).toBe(`Bearer ${jwt}`);
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      })
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-jwt");
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await kiwifyFetch("products");
+    await kiwifyFetch("products");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("refreshes cached account metadata when the token is reissued", async () => {
     const fetchMock = vi
       .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
