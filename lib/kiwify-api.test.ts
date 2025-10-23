@@ -5,10 +5,49 @@ const { mockHasKiwifyApiEnv, mockGetKiwifyApiEnv } = vi.hoisted(() => ({
   mockGetKiwifyApiEnv: vi.fn(),
 }));
 
+const { mockGetKiwifyAccessToken, mockInvalidateKiwifyAccessToken } = vi.hoisted(() => ({
+  mockGetKiwifyAccessToken: vi.fn(),
+  mockInvalidateKiwifyAccessToken: vi.fn(),
+}));
+
 vi.mock("./env", () => ({
   hasKiwifyApiEnv: mockHasKiwifyApiEnv,
   getKiwifyApiEnv: mockGetKiwifyApiEnv,
 }));
+
+vi.mock("./kiwify-oauth", () => ({
+  getKiwifyAccessToken: mockGetKiwifyAccessToken,
+  invalidateKiwifyAccessToken: mockInvalidateKiwifyAccessToken,
+}));
+
+type MockKiwifyApiEnv = {
+  KIWIFY_API_BASE_URL: string;
+  KIWIFY_API_ACCOUNT_ID: string;
+  KIWIFY_API_CLIENT_ID: string;
+  KIWIFY_API_CLIENT_SECRET: string;
+  KIWIFY_API_SCOPE?: string;
+  KIWIFY_API_TOKEN?: string;
+};
+
+const createMockEnv = (overrides: Partial<MockKiwifyApiEnv> = {}): MockKiwifyApiEnv => ({
+  KIWIFY_API_BASE_URL: "https://api.example.com/",
+  KIWIFY_API_ACCOUNT_ID: "account-123",
+  KIWIFY_API_CLIENT_ID: "client-id",
+  KIWIFY_API_CLIENT_SECRET: "client-secret",
+  ...("KIWIFY_API_TOKEN" in overrides ? {} : { KIWIFY_API_TOKEN: "abc123" }),
+  ...overrides,
+});
+
+const buildToken = (authorization = "Bearer manager-token") => ({
+  authorization,
+  expiresAt: Date.now() + 60_000,
+});
+
+const resetTokenMocks = () => {
+  mockGetKiwifyAccessToken.mockReset();
+  mockInvalidateKiwifyAccessToken.mockReset();
+  mockGetKiwifyAccessToken.mockResolvedValue(buildToken());
+};
 
 import {
   getSalesStatistics,
@@ -25,11 +64,8 @@ describe("kiwifyRequest authorization header", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = (token: string) => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: token,
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = (overrides: Partial<MockKiwifyApiEnv> = {}) =>
+    createMockEnv({ KIWIFY_API_TOKEN: undefined, ...overrides });
 
   const buildStatsResponse = () =>
     new Response(
@@ -50,6 +86,7 @@ describe("kiwifyRequest authorization header", () => {
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
+    resetTokenMocks();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
     mockFetch = vi.fn().mockResolvedValue(buildStatsResponse());
@@ -60,8 +97,8 @@ describe("kiwifyRequest authorization header", () => {
     global.fetch = originalFetch;
   });
 
-  it("prefixes bare tokens with Bearer", async () => {
-    mockGetKiwifyApiEnv.mockReturnValue(buildEnv("abc123"));
+  it("uses the authorization token from the token manager", async () => {
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
 
     await getSalesStatistics();
 
@@ -71,11 +108,13 @@ describe("kiwifyRequest authorization header", () => {
       ? fetchInit.headers
       : new Headers(fetchInit?.headers);
 
-    expect(headers.get("Authorization")).toBe("Bearer abc123");
+    expect(headers.get("Authorization")).toBe("Bearer manager-token");
+    expect(mockGetKiwifyAccessToken).toHaveBeenCalledTimes(1);
   });
 
-  it("uses tokens with existing scheme as-is", async () => {
-    mockGetKiwifyApiEnv.mockReturnValue(buildEnv("secret abc123"));
+  it("uses tokens with existing schemes as-is", async () => {
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+    mockGetKiwifyAccessToken.mockResolvedValueOnce(buildToken("Custom abc"));
 
     await getSalesStatistics();
 
@@ -85,7 +124,8 @@ describe("kiwifyRequest authorization header", () => {
       ? fetchInit.headers
       : new Headers(fetchInit?.headers);
 
-    expect(headers.get("Authorization")).toBe("secret abc123");
+    expect(headers.get("Authorization")).toBe("Custom abc");
+    expect(mockGetKiwifyAccessToken).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -93,11 +133,7 @@ describe("kiwifyRequest account id handling", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = () => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: "abc123",
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = () => createMockEnv();
 
   const buildStatsResponse = () =>
     new Response(
@@ -136,6 +172,7 @@ describe("kiwifyRequest account id handling", () => {
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
+    resetTokenMocks();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
     mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
@@ -238,6 +275,32 @@ describe("kiwifyRequest account id handling", () => {
     expect(fallbackHeaders.get("x-kiwify-account-id")).toBe("account-123");
   });
 
+  it("refreshes the token when the API responds with 401", async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(buildStatsResponse());
+
+    mockGetKiwifyAccessToken
+      .mockResolvedValueOnce(buildToken("Bearer expired"))
+      .mockResolvedValueOnce(buildToken("Bearer refreshed"));
+
+    await getSalesStatistics();
+
+    expect(mockInvalidateKiwifyAccessToken).toHaveBeenCalledTimes(1);
+    expect(mockGetKiwifyAccessToken).toHaveBeenCalledTimes(2);
+
+    const firstHeaders = new Headers((mockFetch.mock.calls[0]?.[1] as RequestInit | undefined)?.headers);
+    const secondHeaders = new Headers((mockFetch.mock.calls[1]?.[1] as RequestInit | undefined)?.headers);
+
+    expect(firstHeaders.get("Authorization")).toBe("Bearer expired");
+    expect(secondHeaders.get("Authorization")).toBe("Bearer refreshed");
+  });
+
   it("falls back to the app.br domain for enrollments when public-api returns 404", async () => {
     mockGetKiwifyApiEnv.mockReturnValue({
       ...buildEnv(),
@@ -306,15 +369,12 @@ describe("getSalesStatistics JSON:API handling", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = () => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: "abc123",
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = () => createMockEnv();
 
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
+    resetTokenMocks();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
     mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
@@ -425,15 +485,12 @@ describe("getKiwifyProducts price fallbacks", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = () => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: "abc123",
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = () => createMockEnv();
 
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
+    resetTokenMocks();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
     mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
@@ -718,15 +775,12 @@ describe("getKiwifySubscriptions JSON:API handling", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = () => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: "abc123",
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = () => createMockEnv();
 
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
+    resetTokenMocks();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
     mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
@@ -813,15 +867,12 @@ describe("getPixelEvents JSON:API handling", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = () => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: "abc123",
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = () => createMockEnv();
 
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
+    resetTokenMocks();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
     mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
@@ -883,11 +934,7 @@ describe("getSalesStatistics data mapping", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = () => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: "abc123",
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = () => createMockEnv();
 
   const buildStatsResponse = () =>
     new Response(
@@ -939,6 +986,7 @@ describe("getSalesStatistics data mapping", () => {
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
+    resetTokenMocks();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
     mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
@@ -1029,11 +1077,7 @@ describe("getKiwifySales", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = () => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: "abc123",
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = () => createMockEnv();
 
   const buildListResponse = () =>
     new Response(
@@ -1087,6 +1131,7 @@ describe("getKiwifySales", () => {
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
+    resetTokenMocks();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
     mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
@@ -1182,11 +1227,7 @@ describe("getKiwifySale", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = () => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: "abc123",
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = () => createMockEnv();
 
   const buildDetailResponse = () =>
     new Response(
@@ -1252,6 +1293,7 @@ describe("getKiwifySale", () => {
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
+    resetTokenMocks();
 
     mockHasKiwifyApiEnv.mockReturnValue(true);
     mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
@@ -1317,11 +1359,7 @@ describe("refundKiwifySale", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
 
-  const buildEnv = () => ({
-    KIWIFY_API_BASE_URL: "https://api.example.com/",
-    KIWIFY_API_TOKEN: "abc123",
-    KIWIFY_API_ACCOUNT_ID: "account-123",
-  });
+  const buildEnv = () => createMockEnv();
 
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();

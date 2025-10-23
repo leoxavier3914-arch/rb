@@ -1,4 +1,5 @@
 import { getKiwifyApiEnv, hasKiwifyApiEnv } from "./env";
+import { getKiwifyAccessToken, invalidateKiwifyAccessToken } from "./kiwify-oauth";
 
 interface RequestOptions {
   searchParams?: Record<string, string | number | null | undefined>;
@@ -167,20 +168,6 @@ const coerceBoolean = (value: unknown): boolean | null => {
   }
 
   return null;
-};
-
-const AUTHORIZATION_SCHEME_REGEX = /^[a-z][a-z0-9+.-]*\s/i;
-
-const formatAuthorizationHeader = (token: string): string => {
-  const normalized = token.trim();
-
-  if (!normalized) {
-    return normalized;
-  }
-
-  return AUTHORIZATION_SCHEME_REGEX.test(normalized)
-    ? normalized
-    : `Bearer ${normalized}`;
 };
 
 const extractString = (value: unknown, paths: StringArray): string | null => {
@@ -704,6 +691,10 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
     }
 
     const shouldInjectLegacyToken = (baseUrl: string) => {
+      if (!env.KIWIFY_API_TOKEN) {
+        return false;
+      }
+
       if (!normalizedPath.startsWith("api/v1/")) {
         return false;
       }
@@ -716,11 +707,11 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
       }
     };
 
-    const buildUrl = (baseUrl: string) => {
+    const buildUrl = (baseUrl: string, injectLegacyToken: boolean) => {
       const url = new URL(normalizedPath, normalizeBaseUrl(baseUrl));
       const requestParams = new URLSearchParams(params);
 
-      if (shouldInjectLegacyToken(baseUrl)) {
+      if (injectLegacyToken && env.KIWIFY_API_TOKEN) {
         requestParams.set("token", env.KIWIFY_API_TOKEN);
       }
 
@@ -731,11 +722,13 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
       return url;
     };
 
-    const executeFetch = async (baseUrl: string) => {
-      const url = buildUrl(baseUrl);
+    let currentToken = await getKiwifyAccessToken();
+
+    const executeFetch = async (baseUrl: string, injectLegacyToken: boolean, authorization: string) => {
+      const url = buildUrl(baseUrl, injectLegacyToken);
       const headers = new Headers(init?.headers ?? {});
       if (!headers.has("Authorization")) {
-        headers.set("Authorization", formatAuthorizationHeader(env.KIWIFY_API_TOKEN));
+        headers.set("Authorization", authorization);
       }
       headers.set("Accept", "application/json");
       if (!headers.has("Content-Type")) {
@@ -757,8 +750,16 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
     const fallbackBaseUrl = resolveFallbackBaseUrl(env.KIWIFY_API_BASE_URL, normalizedPath);
 
     const attemptFetch = async (baseUrl: string) => {
+      const injectLegacyToken = shouldInjectLegacyToken(baseUrl);
       try {
-        return await executeFetch(baseUrl);
+        const response = await executeFetch(baseUrl, injectLegacyToken, currentToken.authorization);
+        if (response.status !== 401) {
+          return response;
+        }
+
+        invalidateKiwifyAccessToken();
+        currentToken = await getKiwifyAccessToken();
+        return await executeFetch(baseUrl, injectLegacyToken, currentToken.authorization);
       } catch (error) {
         if (error instanceof Error) {
           throw error;

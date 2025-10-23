@@ -52,7 +52,8 @@ export default async function MarketingPage() {
 
       {!hasApiConfig ? (
         <p className="rounded-2xl border border-dashed border-primary/40 bg-surface/60 p-6 text-sm text-muted-foreground">
-          Configure <code className="rounded bg-black/20 px-1 py-0.5 text-xs">KIWIFY_API_TOKEN</code> e
+          Configure <code className="rounded bg-black/20 px-1 py-0.5 text-xs">KIWIFY_API_CLIENT_ID</code>,
+          <code className="ml-1 rounded bg-black/20 px-1 py-0.5 text-xs">KIWIFY_API_CLIENT_SECRET</code> e
           <code className="ml-1 rounded bg-black/20 px-1 py-0.5 text-xs">KIWIFY_API_ACCOUNT_ID</code> para habilitar os eventos do
           Pixel diretamente no hub.
         </p>
