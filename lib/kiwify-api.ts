@@ -731,13 +731,35 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
       return response;
     };
 
-    let response = await executeFetch(env.KIWIFY_API_BASE_URL);
+    const fallbackBaseUrl = resolveFallbackBaseUrl(env.KIWIFY_API_BASE_URL, normalizedPath);
 
-    if (response.status === 404) {
-      const fallbackBaseUrl = resolveFallbackBaseUrl(env.KIWIFY_API_BASE_URL, normalizedPath);
-      if (fallbackBaseUrl) {
-        response = await executeFetch(fallbackBaseUrl);
+    const attemptFetch = async (baseUrl: string) => {
+      try {
+        return await executeFetch(baseUrl);
+      } catch (error) {
+        if (error instanceof Error) {
+          throw error;
+        }
+        throw new Error(String(error));
       }
+    };
+
+    let usedFallback = false;
+    let response: Response;
+
+    try {
+      response = await attemptFetch(env.KIWIFY_API_BASE_URL);
+    } catch (error) {
+      if (!fallbackBaseUrl) {
+        throw error;
+      }
+      response = await attemptFetch(fallbackBaseUrl);
+      usedFallback = true;
+    }
+
+    if (!usedFallback && response.status === 404 && fallbackBaseUrl) {
+      response = await attemptFetch(fallbackBaseUrl);
+      usedFallback = true;
     }
 
     const { status } = response;
