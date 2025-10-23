@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { __resetEnvForTesting } from "@/lib/env";
@@ -9,6 +11,15 @@ import {
 } from "@/lib/kiwify/client";
 
 const ORIGINAL_FETCH = global.fetch;
+
+const encodeBase64Url = (input: string) =>
+  Buffer.from(input).toString("base64").replace(/=+$/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+
+const createJwt = (payload: Record<string, unknown>) => {
+  const header = encodeBase64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const body = encodeBase64Url(JSON.stringify(payload));
+  return `${header}.${body}.signature`;
+};
 
 const clearKiwifyEnv = () => {
   delete process.env.KIWIFY_API_BASE_URL;
@@ -188,6 +199,54 @@ describe("kiwifyFetch", () => {
       .mockImplementationOnce(async (_input, init) => {
         const headers = new Headers(init?.headers as HeadersInit | undefined);
         expect(headers.get("x-kiwify-account-id")).toBe("acc-from-account");
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await kiwifyFetch("products");
+    await kiwifyFetch("products");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("resolves the account identifier from the JWT payload when not present elsewhere", async () => {
+    const jwt = createJwt({
+      account_id: "acc-from-jwt",
+    });
+
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockImplementationOnce(async () =>
+        new Response(
+          JSON.stringify({
+            access_token: jwt,
+            token_type: "Bearer",
+            expires_in: 3600,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-jwt");
+        expect(headers.get("authorization")).toBe(`Bearer ${jwt}`);
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      })
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-jwt");
 
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,

@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import { getKiwifyApiEnv, hasKiwifyApiEnv } from "@/lib/env";
 
 const ABSOLUTE_URL_PATTERN = /^https?:\/\//i;
@@ -228,13 +230,52 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     return undefined;
   };
 
+  const decodeJwtPayload = (token: unknown): unknown => {
+    if (typeof token !== "string" || token.length === 0) {
+      return undefined;
+    }
+
+    const [, payload] = token.split(".");
+
+    if (!payload) {
+      return undefined;
+    }
+
+    try {
+      const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+      const decoded = Buffer.from(padded, "base64").toString("utf8");
+      return JSON.parse(decoded);
+    } catch (error) {
+      console.warn("Não foi possível interpretar o payload do token JWT da Kiwify", error);
+      return undefined;
+    }
+  };
+
+  const resolveAccountIdFromJwt = (token: unknown): string | undefined => {
+    const payload = decodeJwtPayload(token);
+
+    if (!payload || typeof payload !== "object") {
+      return undefined;
+    }
+
+    const candidate =
+      (payload as { account_id?: unknown }).account_id ??
+      (payload as { account?: unknown }).account ??
+      (payload as { user?: { account_id?: unknown; account?: unknown } }).user?.account_id ??
+      (payload as { user?: { account_id?: unknown; account?: unknown } }).user?.account;
+
+    return resolveAccountId(candidate);
+  };
+
   const resolvedAccountId =
     resolveAccountId(tokenResponse.account_id) ??
     // Fallbacks observed in the live OAuth token payload: a nested "account" object
     // as well as the legacy "user.account_id" field exposed for backwards compatibility.
     resolveAccountId(tokenResponse.account) ??
     resolveAccountId(tokenResponse.user?.account_id) ??
-    resolveAccountId(tokenResponse.user?.account);
+    resolveAccountId(tokenResponse.user?.account) ??
+    resolveAccountIdFromJwt(tokenResponse.access_token);
 
   const now = Date.now();
   const expiresAt = now + Math.max(0, (tokenResponse.expires_in - 60) * 1000);
