@@ -64,8 +64,11 @@ const kiwifyApiBaseUrlSchema = httpsUrlSchema.refine((value) => {
 
 const kiwifyApiEnvSchema = z.object({
   KIWIFY_API_BASE_URL: kiwifyApiBaseUrlSchema.default(defaultKiwifyApiBaseUrl),
-  KIWIFY_API_TOKEN: z.string().min(1),
   KIWIFY_API_ACCOUNT_ID: z.string().min(1),
+  KIWIFY_API_CLIENT_ID: z.string().min(1),
+  KIWIFY_API_CLIENT_SECRET: z.string().min(1),
+  KIWIFY_API_SCOPE: z.string().min(1).optional(),
+  KIWIFY_API_TOKEN: z.string().min(1).optional(),
 });
 
 type KiwifyApiEnv = z.infer<typeof kiwifyApiEnvSchema>;
@@ -175,8 +178,15 @@ const buildRawKiwifyApiEnv = () => {
 
   return {
     ...(baseUrl ? { KIWIFY_API_BASE_URL: baseUrl } : {}),
-    KIWIFY_API_TOKEN: normalizeEnvValue(process.env.KIWIFY_API_TOKEN),
     KIWIFY_API_ACCOUNT_ID: normalizeEnvValue(process.env.KIWIFY_API_ACCOUNT_ID),
+    KIWIFY_API_CLIENT_ID: normalizeEnvValue(process.env.KIWIFY_API_CLIENT_ID),
+    KIWIFY_API_CLIENT_SECRET: normalizeEnvValue(process.env.KIWIFY_API_CLIENT_SECRET),
+    ...(process.env.KIWIFY_API_SCOPE
+      ? { KIWIFY_API_SCOPE: normalizeEnvValue(process.env.KIWIFY_API_SCOPE) }
+      : {}),
+    ...(process.env.KIWIFY_API_TOKEN
+      ? { KIWIFY_API_TOKEN: normalizeEnvValue(process.env.KIWIFY_API_TOKEN) }
+      : {}),
   };
 };
 

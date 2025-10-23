@@ -20,8 +20,13 @@ SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 NEXT_PUBLIC_SUPABASE_URL=
 KIWIFY_WEBHOOK_SECRET=
-KIWIFY_API_TOKEN=
+KIWIFY_API_CLIENT_ID=
+KIWIFY_API_CLIENT_SECRET=
 KIWIFY_API_ACCOUNT_ID=
+# opcional, limite de escopos ao solicitar o token OAuth
+KIWIFY_API_SCOPE=
+# opcional, apenas para compatibilidade com endpoints legados
+KIWIFY_API_TOKEN=
 # opcional, default: https://public-api.kiwify.com/
 KIWIFY_API_BASE_URL=
 ```
@@ -30,7 +35,11 @@ KIWIFY_API_BASE_URL=
 
 `KIWIFY_WEBHOOK_SECRET` deve ser o mesmo token exibido no painel da Kiwify na criação do webhook e será utilizado para validar a assinatura `HMAC-SHA1` enviada em cada requisição.
 
+`KIWIFY_API_CLIENT_ID` e `KIWIFY_API_CLIENT_SECRET` vêm do painel de integrações da Kiwify e são utilizados para obter tokens OAuth automaticamente. Opcionalmente defina `KIWIFY_API_SCOPE` para restringir os escopos solicitados ao endpoint `/v1/oauth/token`.
+
 `KIWIFY_API_BASE_URL` só aceita domínios da própria Kiwify (`*.kiwify.com` ou `*.kiwify.com.br`) para evitar configurar por engano o domínio do deploy no Vercel. Caso não informe esse valor, o projeto usa automaticamente `https://public-api.kiwify.com/`.
+
+`KIWIFY_API_TOKEN` permanece disponível apenas para compatibilidade com domínios legados que ainda exigem o parâmetro `token` ao usar o fallback da API antiga.
 
 ## Desenvolvimento
 

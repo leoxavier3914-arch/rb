@@ -68,7 +68,8 @@ export default async function AnalyticsPage() {
 
       {!hasApiConfig ? (
         <div className="rounded-2xl border border-dashed border-primary/40 bg-surface/60 p-6 text-sm text-muted-foreground">
-          Informe <code className="rounded bg-black/20 px-1 py-0.5 text-xs">KIWIFY_API_TOKEN</code> e
+          Informe <code className="rounded bg-black/20 px-1 py-0.5 text-xs">KIWIFY_API_CLIENT_ID</code>,
+          <code className="ml-1 rounded bg-black/20 px-1 py-0.5 text-xs">KIWIFY_API_CLIENT_SECRET</code> e
           <code className="ml-1 rounded bg-black/20 px-1 py-0.5 text-xs">KIWIFY_API_ACCOUNT_ID</code> nas variáveis de
           ambiente para habilitar as estatísticas oficiais da Kiwify.
         </div>
