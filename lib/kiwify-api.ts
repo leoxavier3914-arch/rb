@@ -231,6 +231,48 @@ const extractStringArray = (value: unknown, paths: StringArray): string[] => {
   return [];
 };
 
+const flattenJsonApi = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => flattenJsonApi(item));
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const flattened: UnknownRecord = {};
+
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "attributes" && isRecord(child)) {
+      const flattenedAttributes = flattenJsonApi(child);
+      if (isRecord(flattenedAttributes)) {
+        Object.assign(flattened, flattenedAttributes);
+      } else {
+        flattened.attributes = flattenedAttributes as unknown;
+      }
+      continue;
+    }
+
+    if (key === "data") {
+      if (Array.isArray(child)) {
+        flattened.data = child.map((item) => flattenJsonApi(item));
+      } else {
+        const flattenedData = flattenJsonApi(child);
+        if (isRecord(flattenedData)) {
+          Object.assign(flattened, flattenedData);
+        } else {
+          flattened.data = flattenedData as unknown;
+        }
+      }
+      continue;
+    }
+
+    flattened[key] = flattenJsonApi(child);
+  }
+
+  return flattened;
+};
+
 const normalizeCentsAmount = (value: number | null): number | null => {
   if (value === null) {
     return null;
@@ -1554,8 +1596,9 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
   const products = rawItems
     .filter((item): item is UnknownRecord => isRecord(item))
     .map((record) => {
-      const source: UnknownRecord = isRecord(record.attributes)
-        ? { ...record, ...(record.attributes as UnknownRecord) }
+      const flattened = flattenJsonApi(record);
+      const source: UnknownRecord = isRecord(flattened)
+        ? { ...record, ...flattened }
         : record;
 
       const id =
@@ -1633,7 +1676,13 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
           source.default_offering ??
           source.defaultOffering ??
           null;
-        price = extractPriceFromOffer(defaultOffer);
+        const normalizedDefaultOffer =
+          defaultOffer !== null && defaultOffer !== undefined
+            ? flattenJsonApi(defaultOffer)
+            : defaultOffer;
+        price = extractPriceFromOffer(
+          normalizedDefaultOffer ?? defaultOffer ?? undefined,
+        );
       }
 
       if (price === null) {
@@ -1644,7 +1693,11 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
           source.offer_options ??
           source.offerOptions ??
           null;
-        for (const offer of ensureArray(offersSource)) {
+        const normalizedOffers =
+          offersSource !== null && offersSource !== undefined
+            ? flattenJsonApi(offersSource)
+            : offersSource;
+        for (const offer of ensureArray(normalizedOffers ?? offersSource)) {
           const offerPrice = extractPriceFromOffer(offer);
           if (offerPrice !== null) {
             price = offerPrice;
