@@ -201,7 +201,7 @@ describe("kiwifyRequest account id handling", () => {
     const secondRequestUrl = new URL(String(mockFetch.mock.calls[1]?.[0]));
 
     expect(firstRequestUrl.origin).toBe("https://public-api.kiwify.com");
-    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com.br");
+    expect(secondRequestUrl.origin).toBe("https://api.kiwify.com.br");
     expect(secondRequestUrl.pathname).toContain("api/v1/subscriptions");
     expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
 
@@ -226,7 +226,7 @@ describe("kiwifyRequest account id handling", () => {
     const secondRequestUrl = new URL(String(mockFetch.mock.calls[1]?.[0]));
 
     expect(firstRequestUrl.origin).toBe("https://public-api.kiwify.com");
-    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com.br");
+    expect(secondRequestUrl.origin).toBe("https://api.kiwify.com.br");
     expect(secondRequestUrl.pathname).toContain("api/v1/subscriptions");
     expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
 
@@ -256,7 +256,7 @@ describe("kiwifyRequest account id handling", () => {
     const secondRequestUrl = new URL(String(mockFetch.mock.calls[1]?.[0]));
 
     expect(firstRequestUrl.origin).toBe("https://public-api.kiwify.com");
-    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com.br");
+    expect(secondRequestUrl.origin).toBe("https://api.kiwify.com.br");
     expect(secondRequestUrl.pathname).toContain("api/v1/enrollments");
     expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
 

@@ -648,7 +648,7 @@ const extractPriceFromOffer = (offer: unknown): number | null => {
 const normalizeBaseUrl = (baseUrl: string) => (baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
 
 const FALLBACK_HOST_OVERRIDES: Record<string, string> = {
-  "public-api.kiwify.com": "app.kiwify.com.br",
+  "public-api.kiwify.com": "api.kiwify.com.br",
 };
 
 const resolveFallbackBaseUrl = (baseUrl: string, path: string): string | null => {
