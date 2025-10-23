@@ -2,6 +2,8 @@ import { hasKiwifyApiEnv } from "@/lib/env";
 
 import { ParticipantsForm } from "./form";
 
+export const dynamic = "force-dynamic";
+
 export default function ParticipantsPage() {
   if (!hasKiwifyApiEnv()) {
     return (

@@ -4,6 +4,8 @@ import { getAccessTokenMetadata } from "@/lib/kiwify/client";
 
 import { TokenRefreshForm } from "./token-refresh-form";
 
+export const dynamic = "force-dynamic";
+
 export default async function AuthenticationPage() {
   const env = kiwifyApiEnv.maybe();
   const ready = hasKiwifyApiEnv();

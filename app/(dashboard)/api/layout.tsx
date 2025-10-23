@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+export const dynamic = "force-dynamic";
+
 const navigation = [
   { name: "Visão geral", href: "/api" },
   { name: "Autenticação", href: "/api/authentication" },

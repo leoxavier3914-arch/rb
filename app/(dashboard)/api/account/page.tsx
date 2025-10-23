@@ -2,6 +2,8 @@ import { JsonPreview } from "@/components/json-preview";
 import { hasKiwifyApiEnv } from "@/lib/env";
 import { fetchAccountOverview } from "@/lib/kiwify/resources";
 
+export const dynamic = "force-dynamic";
+
 export default async function AccountPage() {
   if (!hasKiwifyApiEnv()) {
     return (
