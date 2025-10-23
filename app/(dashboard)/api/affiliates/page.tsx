@@ -2,6 +2,8 @@ import { JsonPreview } from "@/components/json-preview";
 import { hasKiwifyApiEnv } from "@/lib/env";
 import { listAffiliates } from "@/lib/kiwify/resources";
 
+export const dynamic = "force-dynamic";
+
 export default async function AffiliatesPage() {
   if (!hasKiwifyApiEnv()) {
     return (

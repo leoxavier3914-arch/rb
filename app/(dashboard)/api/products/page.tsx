@@ -4,6 +4,8 @@ import { listProducts } from "@/lib/kiwify/resources";
 
 import { CreateProductForm, UpdateProductForm } from "./forms";
 
+export const dynamic = "force-dynamic";
+
 export default async function ProductsPage() {
   if (!hasKiwifyApiEnv()) {
     return (

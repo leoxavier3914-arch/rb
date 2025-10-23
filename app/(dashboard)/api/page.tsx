@@ -3,6 +3,8 @@ import { StatCard } from "@/components/stat-card";
 import { kiwifyApiEnv } from "@/lib/env";
 import { getPartnerIdFromEnv } from "@/lib/kiwify/client";
 
+export const dynamic = "force-dynamic";
+
 export default function ApiOverviewPage() {
   const env = kiwifyApiEnv.maybe();
   const partnerId = getPartnerIdFromEnv();
