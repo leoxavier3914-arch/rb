@@ -1,5 +1,6 @@
 import { JsonPreview } from "@/components/json-preview";
 import { hasKiwifyApiEnv } from "@/lib/env";
+import { formatKiwifyApiPath } from "@/lib/kiwify/client";
 import { listProducts } from "@/lib/kiwify/resources";
 
 import { CreateProductForm, UpdateProductForm } from "./forms";
@@ -25,25 +26,27 @@ export default async function ProductsPage() {
     error = "Não foi possível listar os produtos. Verifique o token e as permissões.";
   }
 
+  const productsPath = formatKiwifyApiPath("products");
+
   return (
     <div className="flex flex-col gap-6">
       <section className="grid gap-4 rounded-2xl border border-surface-accent/40 bg-surface-accent/60 p-6 shadow-soft">
         <h3 className="text-lg font-semibold text-white">Catálogo oficial</h3>
         <p className="text-sm text-muted-foreground">
           Consulte o catálogo completo, cadastre novos produtos e atualize os existentes com os mesmos parâmetros da
-          documentação oficial (/v1/products). Utilize os formulários abaixo para enviar o payload que a Kiwify espera.
+          documentação oficial ({productsPath}). Utilize os formulários abaixo para enviar o payload que a Kiwify espera.
         </p>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <CreateProductForm />
-        <UpdateProductForm />
+        <CreateProductForm endpointPlaceholder={productsPath} />
+        <UpdateProductForm endpointPlaceholder={productsPath} />
       </div>
 
       {error ? (
         <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-6 text-sm text-red-100">{error}</div>
       ) : (
-        <JsonPreview title="Lista de produtos (GET /v1/products)" data={products} />
+        <JsonPreview title={`Lista de produtos (GET ${productsPath})`} data={products} />
       )}
     </div>
   );

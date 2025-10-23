@@ -30,7 +30,7 @@ function ParticipantsFeedback({ state }: { state: ParticipantsActionState }) {
   );
 }
 
-export function ParticipantsForm() {
+export function ParticipantsForm({ endpointPlaceholder }: { endpointPlaceholder: string }) {
   const [state, formAction] = useFormState(loadParticipantsAction, participantsActionInitialState);
 
   return (
@@ -78,7 +78,7 @@ export function ParticipantsForm() {
           <input
             name="resourcePath"
             type="text"
-            placeholder="/v1/products"
+            placeholder={endpointPlaceholder}
             className="w-full rounded-xl border border-surface-accent/40 bg-surface px-4 py-2 text-sm text-muted-foreground shadow-inner focus:border-primary focus:outline-none"
           />
         </label>

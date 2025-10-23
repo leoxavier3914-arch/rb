@@ -43,6 +43,7 @@ O cliente Supabase é inicializado em `lib/supabase.ts` com `fetch` forçando `n
   KIWIFY_API_CLIENT_SECRET="<client_secret gerado no painel da Kiwify>"
   KIWIFY_API_SCOPE="<escopo opcional fornecido pela Kiwify>"
   KIWIFY_API_AUDIENCE="<audience opcional, quando aplicável>"
+  KIWIFY_API_PATH_PREFIX="/v1"
   KIWIFY_PARTNER_ID="<id do parceiro/afiliado opcional>"
   ```
   `SUPABASE_URL` aceita fallback de `NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` aceita fallback de `SUPABASE_SERVICE_ROLE`, permitindo usar as mesmas variáveis do ambiente de produção.
@@ -57,7 +58,8 @@ O painel principal concentra-se na rota `/webhooks`, que agrupa as subseções `
 ## API oficial da Kiwify
 - A navegação inclui uma nova seção **API** com subpáginas para Autenticação, Conta, Produtos, Vendas, Financeiro, Afiliados, Webhooks e Participantes.
 - O fluxo de autenticação realiza o grant `client_credentials` usando `KIWIFY_API_CLIENT_ID` e `KIWIFY_API_CLIENT_SECRET`, exibindo validade e preview do token.
-- Os formulários de Produtos permitem criar (`POST /v1/products`) e atualizar (`PATCH /v1/products/:id`) itens enviando o JSON esperado pela documentação.
+- O prefixo configurável (`KIWIFY_API_PATH_PREFIX`, padrão `/v1`) é aplicado automaticamente em todas as chamadas; informe `"/"` para desativá-lo e apontar para caminhos sem versão.
+- Os formulários de Produtos permitem criar (`POST {prefix}/products`) e atualizar (`PATCH {prefix}/products/:id`) itens enviando o JSON esperado pela documentação, onde `{prefix}` corresponde ao valor efetivo de `KIWIFY_API_PATH_PREFIX`.
 - Listagens de vendas, finanças, afiliados, webhooks e participantes usam a mesma estrutura de filtros (`page`, `per_page`, `status`, etc.) adotada pela API da Kiwify.
 - Todos os painéis expõem o payload bruto via `JsonPreview`, facilitando auditoria e comparações com os dados persistidos via webhooks.
 

@@ -1,6 +1,12 @@
 import { getKiwifyApiEnv, hasKiwifyApiEnv } from "@/lib/env";
 
+const ABSOLUTE_URL_PATTERN = /^https?:\/\//i;
+const DEFAULT_API_PATH_PREFIX = "/v1";
+
 const TOKEN_CACHE_KEY = "__kiwifyApiTokenCache";
+
+type KiwifyApiEnvValues = ReturnType<typeof getKiwifyApiEnv>;
+type KiwifyApiConfig = Pick<KiwifyApiEnvValues, "KIWIFY_API_BASE_URL" | "KIWIFY_API_PATH_PREFIX">;
 
 type NextFetchRequestConfig = {
   revalidate?: number | false;
@@ -73,6 +79,68 @@ const buildTokenPreview = (token: string) => {
   return `${token.slice(0, 6)}…${token.slice(-4)}`;
 };
 
+const splitPathSegments = (value: string | undefined) => {
+  if (!value) {
+    return [] as string[];
+  }
+
+  return value
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+};
+
+const joinPathSegments = (segments: string[]) => {
+  if (segments.length === 0) {
+    return "/";
+  }
+
+  return `/${segments.join("/")}`;
+};
+
+const normalizeApiPathPrefix = (prefix?: string) => {
+  if (prefix === undefined) {
+    return DEFAULT_API_PATH_PREFIX;
+  }
+
+  const trimmed = prefix.trim();
+
+  if (!trimmed || trimmed === "/") {
+    return "";
+  }
+
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.replace(/\/+$/, "");
+};
+
+const buildKiwifyApiUrl = (path: string, env?: KiwifyApiConfig) => {
+  const config = env ?? getKiwifyApiEnv();
+  const trimmedPath = path.trim();
+
+  if (ABSOLUTE_URL_PATTERN.test(trimmedPath)) {
+    return new URL(trimmedPath);
+  }
+
+  const baseUrl = new URL(config.KIWIFY_API_BASE_URL);
+  baseUrl.search = "";
+  baseUrl.hash = "";
+
+  if (trimmedPath.startsWith("/")) {
+    const segments = splitPathSegments(trimmedPath);
+    baseUrl.pathname = joinPathSegments(segments);
+    return baseUrl;
+  }
+
+  const prefix = normalizeApiPathPrefix(config.KIWIFY_API_PATH_PREFIX);
+  const segments = [
+    ...splitPathSegments(prefix),
+    ...splitPathSegments(trimmedPath),
+  ];
+
+  baseUrl.pathname = joinPathSegments(segments);
+  return baseUrl;
+};
+
 async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry> {
   if (!hasKiwifyApiEnv()) {
     throw new Error("As variáveis de ambiente da API da Kiwify não estão configuradas.");
@@ -84,15 +152,16 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     return cached;
   }
 
+  const env = getKiwifyApiEnv();
+
   const {
-    KIWIFY_API_BASE_URL,
     KIWIFY_API_CLIENT_ID,
     KIWIFY_API_CLIENT_SECRET,
     KIWIFY_API_SCOPE,
     KIWIFY_API_AUDIENCE,
-  } = getKiwifyApiEnv();
+  } = env;
 
-  const tokenUrl = new URL("oauth/token", KIWIFY_API_BASE_URL);
+  const tokenUrl = buildKiwifyApiUrl("oauth/token", env);
   const payload = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: KIWIFY_API_CLIENT_ID,
@@ -231,8 +300,8 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
     skipAuth = false,
   } = options;
 
-  const { KIWIFY_API_BASE_URL } = getKiwifyApiEnv();
-  const url = new URL(path, KIWIFY_API_BASE_URL);
+  const env = getKiwifyApiEnv();
+  const url = buildKiwifyApiUrl(path, env);
 
   if (searchParams) {
     for (const [key, value] of Object.entries(searchParams)) {
@@ -323,4 +392,23 @@ export function getPartnerIdFromEnv() {
 
   const { KIWIFY_PARTNER_ID } = getKiwifyApiEnv();
   return KIWIFY_PARTNER_ID ?? null;
+}
+
+export function getKiwifyApiPathPrefix() {
+  if (!hasKiwifyApiEnv()) {
+    return DEFAULT_API_PATH_PREFIX;
+  }
+
+  const { KIWIFY_API_PATH_PREFIX } = getKiwifyApiEnv();
+  return normalizeApiPathPrefix(KIWIFY_API_PATH_PREFIX);
+}
+
+export function formatKiwifyApiPath(resource: string) {
+  const prefix = getKiwifyApiPathPrefix();
+  const segments = [
+    ...splitPathSegments(prefix),
+    ...splitPathSegments(resource),
+  ];
+
+  return joinPathSegments(segments);
 }

@@ -1,13 +1,14 @@
 import { JsonPreview } from "@/components/json-preview";
 import { StatCard } from "@/components/stat-card";
 import { kiwifyApiEnv } from "@/lib/env";
-import { getPartnerIdFromEnv } from "@/lib/kiwify/client";
+import { getKiwifyApiPathPrefix, getPartnerIdFromEnv } from "@/lib/kiwify/client";
 
 export const dynamic = "force-dynamic";
 
 export default function ApiOverviewPage() {
   const env = kiwifyApiEnv.maybe();
   const partnerId = getPartnerIdFromEnv();
+  const pathPrefix = getKiwifyApiPathPrefix();
   const envConfigured = Boolean(env);
 
   return (
@@ -21,7 +22,11 @@ export default function ApiOverviewPage() {
         <StatCard
           label="Endpoint base"
           value={env?.KIWIFY_API_BASE_URL ?? "—"}
-          helper="Utilizado para construir todas as requisições."
+          helper={
+            envConfigured
+              ? `Prefixo aplicado: ${pathPrefix || "/"}`
+              : "Utilizado para construir todas as requisições."
+          }
         />
         <StatCard
           label="Partner ID"
@@ -53,6 +58,7 @@ export default function ApiOverviewPage() {
           client_id: env?.KIWIFY_API_CLIENT_ID ? `${env.KIWIFY_API_CLIENT_ID.slice(0, 6)}…` : null,
           scope: env?.KIWIFY_API_SCOPE ?? null,
           audience: env?.KIWIFY_API_AUDIENCE ?? null,
+          path_prefix: envConfigured ? pathPrefix || "/" : null,
           partner_id: env?.KIWIFY_PARTNER_ID ?? null,
         }}
         emptyState="Nenhuma variável carregada. Configure as chaves no projeto do Vercel."

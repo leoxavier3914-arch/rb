@@ -1,5 +1,6 @@
 import { JsonPreview } from "@/components/json-preview";
 import { hasKiwifyApiEnv } from "@/lib/env";
+import { formatKiwifyApiPath } from "@/lib/kiwify/client";
 import { fetchAccountOverview } from "@/lib/kiwify/resources";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ export default async function AccountPage() {
     error = "Não foi possível carregar os dados da conta. Verifique as credenciais e permissões.";
   }
 
+  const accountPath = formatKiwifyApiPath("account");
+
   return (
     <div className="flex flex-col gap-6">
       <section className="grid gap-4 rounded-2xl border border-surface-accent/40 bg-surface-accent/60 p-6 shadow-soft">
@@ -37,7 +40,7 @@ export default async function AccountPage() {
       {error ? (
         <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-6 text-sm text-red-100">{error}</div>
       ) : (
-        <JsonPreview title="Resposta de /v1/account" data={account} />
+        <JsonPreview title={`Resposta de ${accountPath}`} data={account} />
       )}
     </div>
   );

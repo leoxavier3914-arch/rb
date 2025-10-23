@@ -48,6 +48,7 @@ const kiwifyApiEnvSchema = z.object({
   KIWIFY_API_CLIENT_SECRET: z.string().min(1),
   KIWIFY_API_SCOPE: z.string().optional(),
   KIWIFY_API_AUDIENCE: z.string().optional(),
+  KIWIFY_API_PATH_PREFIX: z.string().optional(),
   KIWIFY_PARTNER_ID: z.string().optional(),
 });
 
@@ -165,6 +166,10 @@ const buildRawKiwifyApiEnv = () => ({
   })(),
   KIWIFY_API_AUDIENCE: (() => {
     const normalized = normalizeEnvValue(process.env.KIWIFY_API_AUDIENCE);
+    return normalized || undefined;
+  })(),
+  KIWIFY_API_PATH_PREFIX: (() => {
+    const normalized = normalizeEnvValue(process.env.KIWIFY_API_PATH_PREFIX);
     return normalized || undefined;
   })(),
   KIWIFY_PARTNER_ID: (() => {
