@@ -204,6 +204,8 @@ describe("kiwifyRequest account id handling", () => {
     expect(secondRequestUrl.origin).toBe("https://api.kiwify.com.br");
     expect(secondRequestUrl.pathname).toContain("api/v1/subscriptions");
     expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
+    expect(firstRequestUrl.searchParams.has("token")).toBe(false);
+    expect(secondRequestUrl.searchParams.get("token")).toBe("abc123");
 
     const fallbackHeaders = expectFallbackRequest(mockFetch.mock.calls[1] ?? []);
     expect(fallbackHeaders.get("x-kiwify-account-id")).toBe("account-123");
@@ -229,6 +231,8 @@ describe("kiwifyRequest account id handling", () => {
     expect(secondRequestUrl.origin).toBe("https://api.kiwify.com.br");
     expect(secondRequestUrl.pathname).toContain("api/v1/subscriptions");
     expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
+    expect(firstRequestUrl.searchParams.has("token")).toBe(false);
+    expect(secondRequestUrl.searchParams.get("token")).toBe("abc123");
 
     const fallbackHeaders = expectFallbackRequest(mockFetch.mock.calls[1] ?? []);
     expect(fallbackHeaders.get("x-kiwify-account-id")).toBe("account-123");
@@ -259,9 +263,29 @@ describe("kiwifyRequest account id handling", () => {
     expect(secondRequestUrl.origin).toBe("https://api.kiwify.com.br");
     expect(secondRequestUrl.pathname).toContain("api/v1/enrollments");
     expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
+    expect(firstRequestUrl.searchParams.has("token")).toBe(false);
+    expect(secondRequestUrl.searchParams.get("token")).toBe("abc123");
 
     const fallbackHeaders = expectFallbackRequest(mockFetch.mock.calls[1] ?? []);
     expect(fallbackHeaders.get("x-kiwify-account-id")).toBe("account-123");
+  });
+
+  it("includes the legacy token when using the legacy base url", async () => {
+    mockGetKiwifyApiEnv.mockReturnValue({
+      ...buildEnv(),
+      KIWIFY_API_BASE_URL: "https://api.kiwify.com.br/",
+    });
+
+    mockFetch.mockResolvedValueOnce(buildSubscriptionsResponse());
+
+    await getKiwifySubscriptions();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const requestUrl = new URL(String(mockFetch.mock.calls[0]?.[0]));
+
+    expect(requestUrl.origin).toBe("https://api.kiwify.com.br");
+    expect(requestUrl.searchParams.get("token")).toBe("abc123");
+    expect(requestUrl.searchParams.get("account_id")).toBe("account-123");
   });
 
   it("uses the products endpoint without account_id query param", async () => {
