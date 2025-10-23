@@ -43,7 +43,7 @@ O cliente Supabase é inicializado em `lib/supabase.ts` com `fetch` forçando `n
 ```bash
 npm run dev
 ```
-O painel principal expõe as rotas `/approved-sales`, `/pending-payments`, `/rejected-payments`, `/refunded-sales` e `/abandoned-carts`.
+O painel principal concentra-se na rota `/webhooks`, que agrupa as subseções `/webhooks/approved-sales`, `/webhooks/pending-payments`, `/webhooks/rejected-payments`, `/webhooks/refunded-sales` e `/webhooks/abandoned-carts`.
 
 ### Testes
 ```bash

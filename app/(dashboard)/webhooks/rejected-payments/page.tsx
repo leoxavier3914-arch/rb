@@ -2,15 +2,15 @@ import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { parseEventFilters } from "@/lib/event-filters";
 import { formatSaleStatus } from "@/lib/sale-event-metadata";
-import { getRefundedSales } from "@/lib/queries";
+import { getRejectedPayments } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-interface RefundedSalesPageProps {
+interface RejectedPaymentsPageProps {
   searchParams: Record<string, string | string[] | undefined>;
 }
 
-export default async function RefundedSalesPage({ searchParams }: RefundedSalesPageProps) {
+export default async function RejectedPaymentsPage({ searchParams }: RejectedPaymentsPageProps) {
   const { filters, values } = parseEventFilters(searchParams);
 
   const {
@@ -21,7 +21,7 @@ export default async function RefundedSalesPage({ searchParams }: RefundedSalesP
     totalAffiliateCommissionAmount,
     totalCount,
     lastEvent,
-  } = await getRefundedSales({ filters });
+  } = await getRejectedPayments({ filters });
 
   const events = records.map((sale) => {
     const netDisplay = formatCurrency(sale.net_amount ?? sale.amount, sale.currency);
@@ -61,21 +61,21 @@ export default async function RefundedSalesPage({ searchParams }: RefundedSalesP
   const currency = records[0]?.currency;
 
   const stats = [
-    { label: "Total de reembolsos", value: totalCount.toString() },
+    { label: "Pagamentos recusados", value: totalCount.toString() },
     {
-      label: "Valor líquido devolvido",
+      label: "Valor líquido perdido",
       value: formatCurrency(totalAmount, currency) ?? "—",
-      helper: "Somatório das últimas devoluções que impactaram sua receita",
+      helper: "Estimativa do que deixou de entrar",
     },
     {
-      label: "Valor cheio reembolsado",
+      label: "Valor cheio recusado",
       value: formatCurrency(totalGrossAmount, currency) ?? "—",
-      helper: "Preço integral original das vendas reembolsadas",
+      helper: "Preço integral das tentativas rejeitadas",
     },
     {
-      label: "Comissão Kiwify estornada",
+      label: "Comissão Kiwify envolvida",
       value: formatCurrency(totalKiwifyCommissionAmount, currency) ?? "—",
-      helper: "Taxas associadas às vendas reembolsadas",
+      helper: "Taxas associadas às recusas registradas",
     },
   ];
 
@@ -83,24 +83,24 @@ export default async function RefundedSalesPage({ searchParams }: RefundedSalesP
     stats.push({
       label: "Comissão de afiliados",
       value: formatCurrency(totalAffiliateCommissionAmount, currency) ?? "—",
-      helper: "Valores repassados a parceiros nessas devoluções",
+      helper: "Repasse que seria destinado aos parceiros",
     });
   }
 
   stats.push({
-    label: "Último reembolso",
+    label: "Última recusa",
     value: lastEvent ? formatDate(lastEvent) ?? "—" : "—",
-    helper: "Atualize a página para sincronizar novos eventos",
+    helper: "Atualize para verificar novos webhooks",
   });
 
   return (
     <EventsBoard
       stats={stats}
-      heading="Reembolsos mais recentes"
-      description="Listagem limitada aos últimos 40 eventos enviados pela Kiwify."
-      emptyState="Nenhum reembolso recebido até o momento. Aguarde o primeiro webhook de reembolso da Kiwify."
+      heading="Recusas mais recentes"
+      description="Listagem limitada aos últimos 40 eventos de pagamento recusado enviados pela Kiwify."
+      emptyState="Nenhum pagamento recusado registrado até agora. Aguarde o primeiro webhook de recusa da Kiwify."
       events={events}
-      filterAction="/refunded-sales"
+      filterAction="/webhooks/rejected-payments"
       filters={values}
     />
   );

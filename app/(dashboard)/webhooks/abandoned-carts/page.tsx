@@ -100,7 +100,7 @@ export default async function AbandonedCartsPage({ searchParams }: AbandonedCart
       description="Carrinhos sinalizados pelos webhooks de abandono da Kiwify."
       emptyState="Nenhum abandono registrado até agora. Assim que a Kiwify enviar o webhook, ele aparecerá aqui."
       events={events}
-      filterAction="/abandoned-carts"
+      filterAction="/webhooks/abandoned-carts"
       filters={values}
     />
   );
