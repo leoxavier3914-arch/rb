@@ -205,6 +205,82 @@ describe("getKiwifyProducts price fallbacks", () => {
     global.fetch = originalFetch;
   });
 
+  it("handles JSON:API style payloads with attributes", async () => {
+    const productsPayload = {
+      data: [
+        {
+          id: "prod-jsonapi",
+          attributes: {
+            name: "Produto JSON API",
+            default_price: {
+              price_cents: 12345,
+              currency: "USD",
+            },
+            image_url: "https://example.com/image.jpg",
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(productsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifyProducts();
+
+    expect(result.products).toHaveLength(1);
+    expect(result.products[0]?.name).toBe("Produto JSON API");
+    expect(result.products[0]?.price).toBeCloseTo(123.45, 2);
+    expect(result.products[0]?.currency).toBe("USD");
+    expect(result.products[0]?.imageUrl).toBe("https://example.com/image.jpg");
+  });
+
+  it("extracts price from JSON:API relationship data objects", async () => {
+    const productsPayload = {
+      data: [
+        {
+          id: "prod-jsonapi-rel",
+          attributes: {
+            name: "Produto JSON API Relationship",
+            default_price: {
+              data: {
+                id: "price-jsonapi",
+                attributes: {
+                  price_cents: 54321,
+                  currency: "BRL",
+                },
+              },
+            },
+            default_offer: {
+              data: {
+                attributes: {
+                  price_cents: 9876,
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(productsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifyProducts();
+
+    expect(result.products).toHaveLength(1);
+    expect(result.products[0]?.name).toBe("Produto JSON API Relationship");
+    expect(result.products[0]?.price).toBeCloseTo(543.21, 2);
+    expect(result.products[0]?.currency).toBe("BRL");
+  });
+
   it("reads price and currency from the official product payload shape", async () => {
     const productsPayload = {
       data: [
