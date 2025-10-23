@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
-const navigation = [{ name: "Webhooks", href: "/webhooks" }];
+const navigation = [
+  { name: "API", href: "/api" },
+  { name: "Webhooks", href: "/webhooks" },
+];
 
 export default function DashboardLayout({
   children,

@@ -7,6 +7,7 @@ Painel em Next.js para acompanhar em tempo real as operações de uma loja digit
 - Ingestão de webhooks oficiais da Kiwify com deduplicação via `event_reference` e armazenamento do payload completo para auditoria.
 - Estatísticas instantâneas (volume, valores, comissões) e filtros por período ou busca textual diretamente na dashboard.
 - Normalização de datas e valores para fuso horário de São Paulo e padronização de payloads heterogêneos.
+- Hub completo para consumir a API oficial da Kiwify diretamente no painel (produtos, vendas, financeiro, afiliados, participantes e webhooks), com formulários prontos para criação/edição de catálogo.
 
 ## Arquitetura do projeto
 ```
@@ -30,13 +31,21 @@ O cliente Supabase é inicializado em `lib/supabase.ts` com `fetch` forçando `n
    npm install
    ```
 2. Copie suas credenciais para um arquivo `.env.local` (ou defina as variáveis no ambiente):
-   ```bash
-   SUPABASE_URL="https://<sua-instancia>.supabase.co"
-   SUPABASE_SERVICE_ROLE_KEY="<chave-service-role>"
-   NEXT_PUBLIC_SUPABASE_URL="https://<sua-instancia>.supabase.co"
-   KIWIFY_WEBHOOK_SECRET="<token exibido na Kiwify>"
-   ```
-   `SUPABASE_URL` aceita fallback de `NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` aceita fallback de `SUPABASE_SERVICE_ROLE`, permitindo usar as mesmas variáveis do ambiente de produção.
+-  ```bash
+  SUPABASE_URL="https://<sua-instancia>.supabase.co"
+  SUPABASE_SERVICE_ROLE_KEY="<chave-service-role>"
+  NEXT_PUBLIC_SUPABASE_URL="https://<sua-instancia>.supabase.co"
+  KIWIFY_WEBHOOK_SECRET="<token exibido na Kiwify>"
+
+  # Credenciais da API oficial
+  KIWIFY_API_BASE_URL="https://api.kiwify.com.br"
+  KIWIFY_API_CLIENT_ID="<client_id gerado no painel da Kiwify>"
+  KIWIFY_API_CLIENT_SECRET="<client_secret gerado no painel da Kiwify>"
+  KIWIFY_API_SCOPE="<escopo opcional fornecido pela Kiwify>"
+  KIWIFY_API_AUDIENCE="<audience opcional, quando aplicável>"
+  KIWIFY_PARTNER_ID="<id do parceiro/afiliado opcional>"
+  ```
+  `SUPABASE_URL` aceita fallback de `NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` aceita fallback de `SUPABASE_SERVICE_ROLE`, permitindo usar as mesmas variáveis do ambiente de produção.
 3. Rode as migrações no Supabase (via CLI `supabase db push` ou pipeline CI/CD).
 
 ## Desenvolvimento
@@ -44,6 +53,13 @@ O cliente Supabase é inicializado em `lib/supabase.ts` com `fetch` forçando `n
 npm run dev
 ```
 O painel principal concentra-se na rota `/webhooks`, que agrupa as subseções `/webhooks/approved-sales`, `/webhooks/pending-payments`, `/webhooks/rejected-payments`, `/webhooks/refunded-sales` e `/webhooks/abandoned-carts`.
+
+## API oficial da Kiwify
+- A navegação inclui uma nova seção **API** com subpáginas para Autenticação, Conta, Produtos, Vendas, Financeiro, Afiliados, Webhooks e Participantes.
+- O fluxo de autenticação realiza o grant `client_credentials` usando `KIWIFY_API_CLIENT_ID` e `KIWIFY_API_CLIENT_SECRET`, exibindo validade e preview do token.
+- Os formulários de Produtos permitem criar (`POST /v1/products`) e atualizar (`PATCH /v1/products/:id`) itens enviando o JSON esperado pela documentação.
+- Listagens de vendas, finanças, afiliados, webhooks e participantes usam a mesma estrutura de filtros (`page`, `per_page`, `status`, etc.) adotada pela API da Kiwify.
+- Todos os painéis expõem o payload bruto via `JsonPreview`, facilitando auditoria e comparações com os dados persistidos via webhooks.
 
 ### Testes
 ```bash
