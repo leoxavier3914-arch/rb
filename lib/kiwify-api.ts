@@ -231,6 +231,123 @@ const extractStringArray = (value: unknown, paths: StringArray): string[] => {
   return [];
 };
 
+const flattenJsonApi = (
+  value: unknown,
+  includedIndex?: Map<string, UnknownRecord>,
+  visited: Set<string> = new Set(),
+): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => flattenJsonApi(item, includedIndex, new Set(visited)));
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const flattened: UnknownRecord = {};
+
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "attributes" && isRecord(child)) {
+      const flattenedAttributes = flattenJsonApi(child, includedIndex, visited);
+      if (isRecord(flattenedAttributes)) {
+        Object.assign(flattened, flattenedAttributes);
+      } else {
+        flattened.attributes = flattenedAttributes as unknown;
+      }
+      continue;
+    }
+
+    if (key === "relationships" && isRecord(child)) {
+      const flattenedRelationships = flattenJsonApi(child, includedIndex, visited);
+      if (isRecord(flattenedRelationships)) {
+        flattened.relationships = flattenedRelationships;
+        for (const [relationKey, relationValue] of Object.entries(flattenedRelationships)) {
+          if (flattened[relationKey] === undefined) {
+            flattened[relationKey] = relationValue;
+          }
+        }
+      } else {
+        flattened.relationships = flattenedRelationships as unknown;
+      }
+      continue;
+    }
+
+    if (key === "data") {
+      if (Array.isArray(child)) {
+        flattened.data = child.map((item) => flattenJsonApi(item, includedIndex, new Set(visited)));
+      } else {
+        const flattenedData = flattenJsonApi(child, includedIndex, visited);
+        if (isRecord(flattenedData)) {
+          Object.assign(flattened, flattenedData);
+        } else {
+          flattened.data = flattenedData as unknown;
+        }
+      }
+      continue;
+    }
+
+    flattened[key] = flattenJsonApi(child, includedIndex, visited);
+  }
+
+  const resourceType = typeof value.type === "string" ? value.type : null;
+  const resourceId =
+    typeof value.id === "string" || typeof value.id === "number"
+      ? String(value.id)
+      : null;
+  const resourceKey = resourceType && resourceId ? `${resourceType}:${resourceId}` : null;
+
+  if (resourceKey && includedIndex?.has(resourceKey) && !visited.has(resourceKey)) {
+    visited.add(resourceKey);
+    const includedResource = includedIndex.get(resourceKey);
+    if (includedResource) {
+      const flattenedIncluded = flattenJsonApi(includedResource, includedIndex, visited);
+      if (isRecord(flattenedIncluded)) {
+        for (const [key, includedValue] of Object.entries(flattenedIncluded)) {
+          if (flattened[key] === undefined) {
+            flattened[key] = includedValue;
+          }
+        }
+      }
+    }
+  }
+
+  return flattened;
+};
+
+const buildJsonApiIncludedIndex = (value: unknown): Map<string, UnknownRecord> => {
+  const index = new Map<string, UnknownRecord>();
+
+  if (!isRecord(value)) {
+    return index;
+  }
+
+  const included = value.included;
+  for (const resource of ensureArray(included)) {
+    if (!isRecord(resource)) {
+      continue;
+    }
+
+    const type = typeof resource.type === "string" ? resource.type : null;
+    const idValue = resource.id;
+
+    if (!type || (typeof idValue !== "string" && typeof idValue !== "number")) {
+      continue;
+    }
+
+    index.set(`${type}:${String(idValue)}`, resource);
+  }
+
+  return index;
+};
+
+const toFlattenedSource = (
+  record: UnknownRecord,
+  includedIndex?: Map<string, UnknownRecord>,
+): UnknownRecord => {
+  const flattened = flattenJsonApi(record, includedIndex);
+  return isRecord(flattened) ? { ...record, ...flattened } : { ...record };
+};
+
 const normalizeCentsAmount = (value: number | null): number | null => {
   if (value === null) {
     return null;
@@ -738,8 +855,9 @@ const buildTimelineFromSales = (
   groupBy: "day" | "month",
   fallbackCurrency: string | null,
 ): SalesStatisticsBreakdownItem[] => {
+  const includedIndex = buildJsonApiIncludedIndex(salesPayload);
   const sales = ensureArray(salesPayload)
-    .map((entry) => (isRecord(entry) ? entry : null))
+    .map((entry) => (isRecord(entry) ? toFlattenedSource(entry, includedIndex) : null))
     .filter((entry): entry is UnknownRecord => entry !== null);
 
   if (sales.length === 0) {
@@ -1428,13 +1546,18 @@ export async function getSalesStatistics(
 
   const { ok, payload, error } = statsResult;
 
-  const summary = SALES_SUMMARY_PATHS.map((paths) => getValueAtPath(payload, paths.join(".")))
-    .map((candidate) => (isRecord(candidate) ? candidate : null))
-    .find((candidate) => candidate);
+  const statsIncludedIndex = buildJsonApiIncludedIndex(payload);
+  const statsSource = isRecord(payload) ? toFlattenedSource(payload, statsIncludedIndex) : payload;
+
+  const summary = SALES_SUMMARY_PATHS.map((paths) => getValueAtPath(statsSource, paths.join(".")))
+    .map((candidate) => (isRecord(candidate) ? toFlattenedSource(candidate, statsIncludedIndex) : null))
+    .find((candidate): candidate is UnknownRecord => Boolean(candidate));
 
   const totals: SalesStatisticsTotals = { ...DEFAULT_SALES_TOTALS };
 
-  totals.grossAmount = extractNumber(summary ?? payload, [
+  const statsExtractionSource = summary ?? statsSource;
+
+  totals.grossAmount = extractNumber(statsExtractionSource, [
     "gross_amount",
     "grossAmount",
     "gross",
@@ -1444,7 +1567,7 @@ export async function getSalesStatistics(
     "totals.gross",
   ]) ?? 0;
 
-  totals.netAmount = extractNumber(summary ?? payload, [
+  totals.netAmount = extractNumber(statsExtractionSource, [
     "net_amount",
     "netAmount",
     "net",
@@ -1455,7 +1578,7 @@ export async function getSalesStatistics(
   ]) ?? totals.netAmount;
 
   totals.totalOrders =
-    extractNumber(summary ?? payload, [
+    extractNumber(statsExtractionSource, [
       "total_orders",
       "total_sales",
       "salesCount",
@@ -1467,7 +1590,7 @@ export async function getSalesStatistics(
     ])?.valueOf() ?? totals.totalOrders;
 
   totals.kiwifyCommission =
-    extractNumber(summary ?? payload, [
+    extractNumber(statsExtractionSource, [
       "kiwify_commission",
       "total_kiwify_commission",
       "commissions.kiwify",
@@ -1476,7 +1599,7 @@ export async function getSalesStatistics(
     ]) ?? totals.kiwifyCommission;
 
   totals.affiliateCommission =
-    extractNumber(summary ?? payload, [
+    extractNumber(statsExtractionSource, [
       "affiliate_commission",
       "total_affiliate_commission",
       "commissions.affiliate",
@@ -1485,7 +1608,7 @@ export async function getSalesStatistics(
     ]) ?? totals.affiliateCommission;
 
   totals.currency =
-    extractString(summary ?? payload, [
+    extractString(statsExtractionSource, [
       "currency",
       "currency_code",
       "currencyCode",
@@ -1550,25 +1673,28 @@ export interface ProductsResult {
 export async function getKiwifyProducts(): Promise<ProductsResult> {
   const { ok, payload, error } = await kiwifyRequest("v1/products");
 
+  const includedIndex = buildJsonApiIncludedIndex(payload);
   const rawItems = ensureArray(payload);
   const products = rawItems
     .filter((item): item is UnknownRecord => isRecord(item))
     .map((record) => {
+      const source = toFlattenedSource(record, includedIndex);
+
       const id =
-        extractString(record, [
+        extractString(source, [
           "id",
           "uuid",
           "product_id",
           "external_id",
         ]) ?? null;
       const name =
-        extractString(record, ["name", "title", "product_name", "display_name"]) ?? null;
+        extractString(source, ["name", "title", "product_name", "display_name"]) ?? null;
       const description =
-        extractString(record, ["description", "summary", "about", "details"]) ?? null;
+        extractString(source, ["description", "summary", "about", "details"]) ?? null;
       const status =
-        extractString(record, ["status", "state", "availability", "lifecycle_state"]) ?? null;
+        extractString(source, ["status", "state", "availability", "lifecycle_state"]) ?? null;
       const isPublished =
-        extractBoolean(record, [
+        extractBoolean(source, [
           "is_published",
           "published",
           "active",
@@ -1577,11 +1703,11 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
           "is_public",
         ]);
       const isHidden =
-        extractBoolean(record, [
+        extractBoolean(source, [
           "is_hidden",
           "hidden",
         ]);
-      let price = extractNumber(record, [
+      let price = extractNumber(source, [
         "price",
         "default_price",
         "default_price.price",
@@ -1596,7 +1722,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
       ]);
 
       if (price === null) {
-        const cents = extractNumber(record, [
+        const cents = extractNumber(source, [
           "price_cents",
           "priceCents",
           "default_price_cents",
@@ -1624,23 +1750,33 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
 
       if (price === null) {
         const defaultOffer =
-          record.default_offer ??
-          record.defaultOffer ??
-          record.default_offering ??
-          record.defaultOffering ??
+          source.default_offer ??
+          source.defaultOffer ??
+          source.default_offering ??
+          source.defaultOffering ??
           null;
-        price = extractPriceFromOffer(defaultOffer);
+        const normalizedDefaultOffer =
+          defaultOffer !== null && defaultOffer !== undefined
+            ? flattenJsonApi(defaultOffer, includedIndex)
+            : defaultOffer;
+        price = extractPriceFromOffer(
+          normalizedDefaultOffer ?? defaultOffer ?? undefined,
+        );
       }
 
       if (price === null) {
         const offersSource =
-          record.offers ??
-          record.available_offers ??
-          record.availableOffers ??
-          record.offer_options ??
-          record.offerOptions ??
+          source.offers ??
+          source.available_offers ??
+          source.availableOffers ??
+          source.offer_options ??
+          source.offerOptions ??
           null;
-        for (const offer of ensureArray(offersSource)) {
+        const normalizedOffers =
+          offersSource !== null && offersSource !== undefined
+            ? flattenJsonApi(offersSource, includedIndex)
+            : offersSource;
+        for (const offer of ensureArray(normalizedOffers ?? offersSource)) {
           const offerPrice = extractPriceFromOffer(offer);
           if (offerPrice !== null) {
             price = offerPrice;
@@ -1650,7 +1786,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
       }
 
       const currency =
-        extractString(record, [
+        extractString(source, [
           "currency",
           "currency_code",
           "default_price.currency",
@@ -1659,13 +1795,13 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
           "pricing.currency",
         ]) ?? null;
 
-      let averageTicket = extractNumber(record, [
+      let averageTicket = extractNumber(source, [
         "average_ticket",
         "metrics.average_ticket",
         "analytics.average_ticket",
       ]);
       if (averageTicket === null) {
-        const cents = extractNumber(record, [
+        const cents = extractNumber(source, [
           "average_ticket_cents",
           "metrics.average_ticket_cents",
         ]);
@@ -1674,7 +1810,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
         }
       }
 
-      const totalSales = extractNumber(record, [
+      const totalSales = extractNumber(source, [
         "total_sales",
         "metrics.total_sales",
         "analytics.total_sales",
@@ -1683,7 +1819,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
       ]);
 
       const imageUrl =
-        extractString(record, [
+        extractString(source, [
           "image",
           "image_url",
           "thumbnail",
@@ -1692,12 +1828,12 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
         ]) ?? null;
 
       const updatedAt =
-        extractString(record, ["updated_at", "updatedAt", "updated_at_iso", "modified_at"]) ??
+        extractString(source, ["updated_at", "updatedAt", "updated_at_iso", "modified_at"]) ??
         null;
       const createdAt =
-        extractString(record, ["created_at", "createdAt", "created_at_iso"]) ?? null;
+        extractString(source, ["created_at", "createdAt", "created_at_iso"]) ?? null;
 
-      const tags = extractStringArray(record, ["tags", "categories", "labels"]);
+      const tags = extractStringArray(source, ["tags", "categories", "labels"]);
 
       return {
         id,
@@ -1744,28 +1880,35 @@ export interface SubscriptionsResult {
 export async function getKiwifySubscriptions(): Promise<SubscriptionsResult> {
   const { ok, payload, error } = await kiwifyRequest("api/v1/subscriptions");
 
+  const includedIndex = buildJsonApiIncludedIndex(payload);
   const items = ensureArray(payload)
-    .map((item) => (isRecord(item) ? item : null))
-    .filter((item): item is UnknownRecord => item !== null)
-    .map((record) => {
+    .map((item) =>
+      isRecord(item)
+        ? { record: item, source: toFlattenedSource(item, includedIndex) }
+        : null,
+    )
+    .filter(
+      (item): item is { record: UnknownRecord; source: UnknownRecord } => item !== null,
+    )
+    .map(({ record, source }) => {
       const id =
-        extractString(record, ["id", "subscription_id", "uuid", "external_id"]) ?? null;
+        extractString(source, ["id", "subscription_id", "uuid", "external_id"]) ?? null;
       const status =
-        extractString(record, ["status", "state", "subscription_status", "lifecycle_state"]) ??
+        extractString(source, ["status", "state", "subscription_status", "lifecycle_state"]) ??
         null;
       const productName =
-        extractString(record, [
+        extractString(source, [
           "product_name",
           "product.name",
           "plan.product_name",
           "plan.product.name",
         ]) ?? null;
       const planName =
-        extractString(record, ["plan_name", "plan.name", "offer", "offer_name"]) ?? null;
+        extractString(source, ["plan_name", "plan.name", "offer", "offer_name"]) ?? null;
       const customerName =
-        extractString(record, ["customer_name", "customer.name", "buyer_name"]) ?? null;
+        extractString(source, ["customer_name", "customer.name", "buyer_name"]) ?? null;
       const customerEmail =
-        extractString(record, ["customer_email", "customer.email", "buyer_email"]) ?? null;
+        extractString(source, ["customer_email", "customer.email", "buyer_email"]) ?? null;
 
       let amount = extractNumber(record, [
         "price",
@@ -1775,14 +1918,28 @@ export async function getKiwifySubscriptions(): Promise<SubscriptionsResult> {
         "billing_amount",
       ]);
       if (amount === null) {
-        const cents = extractNumber(record, ["price_cents", "amount_cents", "plan.price_cents"]);
+        amount = extractNumber(source, [
+          "price",
+          "amount",
+          "plan.price",
+          "billing.price",
+          "billing_amount",
+        ]);
+      }
+      if (amount === null) {
+        const cents = extractNumber(source, [
+          "price_cents",
+          "amount_cents",
+          "plan.price_cents",
+          "billing.price_cents",
+        ]);
         if (cents !== null) {
           amount = cents / 100;
         }
       }
 
       const currency =
-        extractString(record, [
+        extractString(source, [
           "currency",
           "currency_code",
           "plan.currency",
@@ -1790,7 +1947,7 @@ export async function getKiwifySubscriptions(): Promise<SubscriptionsResult> {
         ]) ?? null;
 
       const nextChargeAt =
-        extractString(record, [
+        extractString(source, [
           "next_charge_at",
           "next_charge_date",
           "next_billing_at",
@@ -1798,7 +1955,7 @@ export async function getKiwifySubscriptions(): Promise<SubscriptionsResult> {
         ]) ?? null;
 
       const lastChargeAt =
-        extractString(record, [
+        extractString(source, [
           "last_charge_at",
           "last_charge_date",
           "last_payment_at",
@@ -1806,7 +1963,7 @@ export async function getKiwifySubscriptions(): Promise<SubscriptionsResult> {
         ]) ?? null;
 
       const createdAt =
-        extractString(record, ["created_at", "createdAt", "created_at_iso", "started_at"]) ??
+        extractString(source, ["created_at", "createdAt", "created_at_iso", "started_at"]) ??
         null;
 
       return {
@@ -1848,29 +2005,39 @@ export interface EnrollmentsResult {
 export async function getKiwifyEnrollments(): Promise<EnrollmentsResult> {
   const { ok, payload, error } = await kiwifyRequest("api/v1/enrollments");
 
+  const includedIndex = buildJsonApiIncludedIndex(payload);
   const items = ensureArray(payload)
-    .map((item) => (isRecord(item) ? item : null))
-    .filter((item): item is UnknownRecord => item !== null)
-    .map((record) => {
-      const id = extractString(record, ["id", "enrollment_id", "uuid", "external_id"]) ?? null;
+    .map((item) =>
+      isRecord(item)
+        ? { record: item, source: toFlattenedSource(item, includedIndex) }
+        : null,
+    )
+    .filter(
+      (item): item is { record: UnknownRecord; source: UnknownRecord } => item !== null,
+    )
+    .map(({ record, source }) => {
+      const id = extractString(source, ["id", "enrollment_id", "uuid", "external_id"]) ?? null;
       const courseName =
-        extractString(record, ["course_name", "course.name", "product_name", "course"]) ?? null;
+        extractString(source, ["course_name", "course.name", "product_name", "course"]) ?? null;
       const studentName =
-        extractString(record, ["student_name", "student.name", "customer_name", "buyer_name"]) ??
+        extractString(source, ["student_name", "student.name", "customer_name", "buyer_name"]) ??
         null;
       const studentEmail =
-        extractString(record, ["student_email", "student.email", "customer_email", "buyer_email"]) ??
+        extractString(source, ["student_email", "student.email", "customer_email", "buyer_email"]) ??
         null;
 
       let progress = extractNumber(record, ["progress", "percentage", "progress_percent"]);
+      if (progress === null) {
+        progress = extractNumber(source, ["progress", "percentage", "progress_percent"]);
+      }
       if (progress !== null && progress > 1 && progress <= 100) {
         progress = Math.round(progress);
       }
 
       const lastActivityAt =
-        extractString(record, ["last_activity_at", "last_access_at", "last_seen_at"]) ?? null;
+        extractString(source, ["last_activity_at", "last_access_at", "last_seen_at"]) ?? null;
       const createdAt =
-        extractString(record, ["created_at", "createdAt", "created_at_iso", "started_at"]) ??
+        extractString(source, ["created_at", "createdAt", "created_at_iso", "started_at"]) ??
         null;
 
       return {
@@ -1915,10 +2082,15 @@ export interface PixelEventsResult {
 export async function getPixelEvents(): Promise<PixelEventsResult> {
   const { ok, payload, error } = await kiwifyRequest("api/v1/pixel/events");
 
+  const includedIndex = buildJsonApiIncludedIndex(payload);
   const events = ensureArray(payload)
-    .map((item) => (isRecord(item) ? item : null))
-    .filter((item): item is UnknownRecord => item !== null)
-    .map((record) => {
+    .map((item) =>
+      isRecord(item)
+        ? { record: item, source: toFlattenedSource(item, includedIndex) }
+        : null,
+    )
+    .filter((item): item is { record: UnknownRecord; source: UnknownRecord } => item !== null)
+    .map(({ record, source }) => {
       let amount = extractNumber(record, [
         "amount",
         "value",
@@ -1927,40 +2099,49 @@ export async function getPixelEvents(): Promise<PixelEventsResult> {
         "purchase_value",
       ]);
       if (amount === null) {
-        const cents = extractNumber(record, ["amount_cents", "value_cents"]);
+        amount = extractNumber(source, [
+          "amount",
+          "value",
+          "revenue",
+          "event_value",
+          "purchase_value",
+        ]);
+      }
+      if (amount === null) {
+        const cents = extractNumber(source, ["amount_cents", "value_cents"]);
         if (cents !== null) {
           amount = cents / 100;
         }
       }
 
       const currency =
-        extractString(record, ["currency", "currency_code", "currencyCode"]) ?? null;
+        extractString(source, ["currency", "currency_code", "currencyCode"]) ?? null;
 
       return {
-        id: extractString(record, ["id", "event_id", "uuid"]) ?? null,
+        id: extractString(source, ["id", "event_id", "uuid"]) ?? null,
         eventName:
-          extractString(record, [
+          extractString(source, [
             "event_name",
             "name",
             "type",
             "pixel_event",
           ]) ?? null,
-        pixelId: extractString(record, ["pixel_id", "pixelId"]) ?? null,
+        pixelId: extractString(source, ["pixel_id", "pixelId"]) ?? null,
         occurredAt:
-          extractString(record, ["occurred_at", "created_at", "event_time", "timestamp"]) ??
+          extractString(source, ["occurred_at", "created_at", "event_time", "timestamp"]) ??
           null,
         amount,
         currency,
         utmSource:
-          extractString(record, ["utm_source", "utmSource", "traffic.utm_source"]) ?? null,
+          extractString(source, ["utm_source", "utmSource", "traffic.utm_source"]) ?? null,
         utmMedium:
-          extractString(record, ["utm_medium", "utmMedium", "traffic.utm_medium"]) ?? null,
+          extractString(source, ["utm_medium", "utmMedium", "traffic.utm_medium"]) ?? null,
         utmCampaign:
-          extractString(record, ["utm_campaign", "utmCampaign", "traffic.utm_campaign"]) ??
+          extractString(source, ["utm_campaign", "utmCampaign", "traffic.utm_campaign"]) ??
           null,
-        source: extractString(record, ["source", "traffic.source"]) ?? null,
-        medium: extractString(record, ["medium", "traffic.medium"]) ?? null,
-        campaign: extractString(record, ["campaign", "traffic.campaign"]) ?? null,
+        source: extractString(source, ["source", "traffic.source"]) ?? null,
+        medium: extractString(source, ["medium", "traffic.medium"]) ?? null,
+        campaign: extractString(source, ["campaign", "traffic.campaign"]) ?? null,
         raw: record,
       } satisfies PixelEventSummary;
     })

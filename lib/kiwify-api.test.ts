@@ -16,6 +16,7 @@ import {
   getKiwifySale,
   getKiwifySales,
   getKiwifySubscriptions,
+  getPixelEvents,
   refundKiwifySale,
 } from "./kiwify-api";
 
@@ -180,6 +181,125 @@ describe("kiwifyRequest account id handling", () => {
   });
 });
 
+describe("getSalesStatistics JSON:API handling", () => {
+  const originalFetch = global.fetch;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const buildEnv = () => ({
+    KIWIFY_API_BASE_URL: "https://api.example.com/",
+    KIWIFY_API_TOKEN: "abc123",
+    KIWIFY_API_ACCOUNT_ID: "account-123",
+  });
+
+  beforeEach(() => {
+    mockHasKiwifyApiEnv.mockReset();
+    mockGetKiwifyApiEnv.mockReset();
+
+    mockHasKiwifyApiEnv.mockReturnValue(true);
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("reads totals and timeline from JSON:API payloads", async () => {
+    const statsPayload = {
+      data: {
+        type: "stats",
+        id: "stats-1",
+        attributes: {
+          summary: {
+            data: {
+              type: "stats-summary",
+              id: "summary-1",
+              attributes: {
+                gross_amount: 200,
+                net_amount: 150,
+                total_orders: 3,
+                currency: "USD",
+              },
+            },
+          },
+        },
+      },
+      included: [
+        {
+          type: "stats-summary",
+          id: "summary-1",
+          attributes: {
+            kiwify_commission: 25,
+            affiliate_commission: 15,
+          },
+        },
+      ],
+    };
+
+    const salesPayload = {
+      data: [
+        {
+          type: "sale",
+          id: "sale-1",
+          attributes: {
+            paid_at: "2024-01-01T12:00:00Z",
+            gross_amount_cents: 6000,
+            net_amount_cents: 5000,
+            quantity: 1,
+            currency: "USD",
+          },
+        },
+        {
+          type: "sale",
+          id: "sale-2",
+          attributes: {
+            paid_at: "2024-01-02T12:00:00Z",
+            gross_amount_cents: 14000,
+            net_amount_cents: 10000,
+            quantity: 2,
+            currency: "USD",
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(statsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(salesPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getSalesStatistics({ groupBy: "day" });
+
+    expect(result.totals.grossAmount).toBeCloseTo(200);
+    expect(result.totals.netAmount).toBeCloseTo(150);
+    expect(result.totals.totalOrders).toBe(3);
+    expect(result.totals.currency).toBe("USD");
+    expect(result.totals.kiwifyCommission).toBeCloseTo(25);
+    expect(result.totals.affiliateCommission).toBeCloseTo(15);
+
+    expect(result.breakdown).toHaveLength(2);
+    expect(result.breakdown[0]).toMatchObject({
+      orders: 1,
+      currency: "USD",
+    });
+    expect(result.breakdown[1]).toMatchObject({
+      orders: 2,
+      currency: "USD",
+    });
+  });
+});
+
 describe("getKiwifyProducts price fallbacks", () => {
   const originalFetch = global.fetch;
   let mockFetch: ReturnType<typeof vi.fn>;
@@ -203,6 +323,93 @@ describe("getKiwifyProducts price fallbacks", () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+  });
+
+  it("handles JSON:API style payloads with attributes", async () => {
+    const productsPayload = {
+      data: [
+        {
+          id: "prod-jsonapi",
+          attributes: {
+            name: "Produto JSON API",
+            default_price: {
+              price_cents: 12345,
+              currency: "USD",
+            },
+            image_url: "https://example.com/image.jpg",
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(productsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifyProducts();
+
+    expect(result.products).toHaveLength(1);
+    expect(result.products[0]?.name).toBe("Produto JSON API");
+    expect(result.products[0]?.price).toBeCloseTo(123.45, 2);
+    expect(result.products[0]?.currency).toBe("USD");
+    expect(result.products[0]?.imageUrl).toBe("https://example.com/image.jpg");
+  });
+
+  it("extracts price from JSON:API relationships with included resources", async () => {
+    const productsPayload = {
+      data: [
+        {
+          type: "product",
+          id: "prod-jsonapi-rel",
+          attributes: {
+            name: "Produto JSON API Relationship",
+          },
+          relationships: {
+            default_price: {
+              data: { type: "prices", id: "price-jsonapi" },
+            },
+            default_offer: {
+              data: { type: "offers", id: "offer-jsonapi" },
+            },
+          },
+        },
+      ],
+      included: [
+        {
+          type: "prices",
+          id: "price-jsonapi",
+          attributes: {
+            price_cents: 54321,
+            currency: "BRL",
+          },
+        },
+        {
+          type: "offers",
+          id: "offer-jsonapi",
+          attributes: {
+            price_cents: 54321,
+            currency: "BRL",
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(productsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifyProducts();
+
+    expect(result.products).toHaveLength(1);
+    expect(result.products[0]?.name).toBe("Produto JSON API Relationship");
+    expect(result.products[0]?.price).toBeCloseTo(543.21, 2);
+    expect(result.products[0]?.currency).toBe("BRL");
   });
 
   it("reads price and currency from the official product payload shape", async () => {
@@ -383,6 +590,171 @@ describe("getKiwifyProducts price fallbacks", () => {
     expect(result.products[0]?.price).toBeCloseTo(129, 2);
     expect(result.products[1]?.price).toBeCloseTo(99, 2);
     expect(result.products[2]?.price).toBeCloseTo(45, 2);
+  });
+});
+
+describe("getKiwifySubscriptions JSON:API handling", () => {
+  const originalFetch = global.fetch;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const buildEnv = () => ({
+    KIWIFY_API_BASE_URL: "https://api.example.com/",
+    KIWIFY_API_TOKEN: "abc123",
+    KIWIFY_API_ACCOUNT_ID: "account-123",
+  });
+
+  beforeEach(() => {
+    mockHasKiwifyApiEnv.mockReset();
+    mockGetKiwifyApiEnv.mockReset();
+
+    mockHasKiwifyApiEnv.mockReturnValue(true);
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("maps subscriptions with relationship data from included resources", async () => {
+    const payload = {
+      data: [
+        {
+          type: "subscription",
+          id: "sub-1",
+          attributes: {
+            status: "active",
+            created_at: "2024-02-01T00:00:00Z",
+          },
+          relationships: {
+            plan: { data: { type: "plan", id: "plan-1" } },
+            customer: { data: { type: "customer", id: "customer-1" } },
+            pricing: { data: { type: "price", id: "price-1" } },
+          },
+        },
+      ],
+      included: [
+        {
+          type: "plan",
+          id: "plan-1",
+          attributes: {
+            name: "Plano Pro",
+            product_name: "Curso Avançado",
+            price_cents: 9900,
+            currency: "USD",
+          },
+        },
+        {
+          type: "customer",
+          id: "customer-1",
+          attributes: {
+            name: "Alice",
+            email: "alice@example.com",
+          },
+        },
+        {
+          type: "price",
+          id: "price-1",
+          attributes: {
+            amount_cents: 9900,
+            currency: "USD",
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getKiwifySubscriptions();
+
+    expect(result.subscriptions).toHaveLength(1);
+    expect(result.subscriptions[0]).toMatchObject({
+      id: "sub-1",
+      status: "active",
+      planName: "Plano Pro",
+      productName: "Curso Avançado",
+      customerName: "Alice",
+      customerEmail: "alice@example.com",
+      amount: 99,
+      currency: "USD",
+    });
+  });
+});
+
+describe("getPixelEvents JSON:API handling", () => {
+  const originalFetch = global.fetch;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const buildEnv = () => ({
+    KIWIFY_API_BASE_URL: "https://api.example.com/",
+    KIWIFY_API_TOKEN: "abc123",
+    KIWIFY_API_ACCOUNT_ID: "account-123",
+  });
+
+  beforeEach(() => {
+    mockHasKiwifyApiEnv.mockReset();
+    mockGetKiwifyApiEnv.mockReset();
+
+    mockHasKiwifyApiEnv.mockReturnValue(true);
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("extracts pixel metrics from JSON:API payloads", async () => {
+    const payload = {
+      data: [
+        {
+          type: "pixel-event",
+          id: "evt-1",
+          attributes: {
+            event_name: "Purchase",
+            amount_cents: 1234,
+            currency: "USD",
+            occurred_at: "2024-03-01T12:30:00Z",
+            traffic: {
+              utm_source: "google",
+              utm_medium: "cpc",
+              utm_campaign: "camp-1",
+            },
+          },
+        },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await getPixelEvents();
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      id: "evt-1",
+      eventName: "Purchase",
+      amount: 12.34,
+      currency: "USD",
+      utmSource: "google",
+      utmMedium: "cpc",
+      utmCampaign: "camp-1",
+    });
+    expect(result.totalAmount).toBeCloseTo(12.34);
+    expect(result.currency).toBe("USD");
   });
 });
 
