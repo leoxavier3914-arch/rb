@@ -647,6 +647,10 @@ const extractPriceFromOffer = (offer: unknown): number | null => {
 
 const normalizeBaseUrl = (baseUrl: string) => (baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
 
+const FALLBACK_HOST_OVERRIDES: Record<string, string> = {
+  "public-api.kiwify.com": "app.kiwify.com.br",
+};
+
 const resolveFallbackBaseUrl = (baseUrl: string, path: string): string | null => {
   if (!path.startsWith("api/v1/")) {
     return null;
@@ -656,12 +660,11 @@ const resolveFallbackBaseUrl = (baseUrl: string, path: string): string | null =>
     const parsed = new URL(normalizeBaseUrl(baseUrl));
     const { hostname } = parsed;
 
-    if (!hostname.startsWith("public-api.")) {
-      return null;
-    }
+    const override = FALLBACK_HOST_OVERRIDES[hostname];
+    const fallbackHostname =
+      override ?? (hostname.startsWith("public-api.") ? hostname.replace(/^public-api\./, "app.") : null);
 
-    const fallbackHostname = hostname.replace(/^public-api\./, "app.");
-    if (fallbackHostname === hostname) {
+    if (!fallbackHostname || fallbackHostname === hostname) {
       return null;
     }
 
