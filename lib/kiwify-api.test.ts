@@ -16,6 +16,7 @@ import {
   getKiwifySale,
   getKiwifySales,
   getKiwifySubscriptions,
+  getKiwifyEnrollments,
   getPixelEvents,
   refundKiwifySale,
 } from "./kiwify-api";
@@ -126,6 +127,12 @@ describe("kiwifyRequest account id handling", () => {
       headers: { "Content-Type": "application/json" },
     });
 
+  const buildEnrollmentsResponse = () =>
+    new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
   beforeEach(() => {
     mockHasKiwifyApiEnv.mockReset();
     mockGetKiwifyApiEnv.mockReset();
@@ -167,7 +174,12 @@ describe("kiwifyRequest account id handling", () => {
     expect(url.searchParams.get("account_id")).toBe("account-123");
   });
 
-  it("falls back to the app domain when public-api returns 404", async () => {
+  const expectFallbackRequest = (call: unknown[]): Headers => {
+    const [, init] = call ?? [];
+    return init instanceof Headers ? init : new Headers((init as RequestInit | undefined)?.headers);
+  };
+
+  it("falls back to the app.br domain when public-api returns 404 for subscriptions", async () => {
     mockGetKiwifyApiEnv.mockReturnValue({
       ...buildEnv(),
       KIWIFY_API_BASE_URL: "https://public-api.kiwify.com/",
@@ -189,12 +201,15 @@ describe("kiwifyRequest account id handling", () => {
     const secondRequestUrl = new URL(String(mockFetch.mock.calls[1]?.[0]));
 
     expect(firstRequestUrl.origin).toBe("https://public-api.kiwify.com");
-    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com");
+    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com.br");
     expect(secondRequestUrl.pathname).toContain("api/v1/subscriptions");
     expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
+
+    const fallbackHeaders = expectFallbackRequest(mockFetch.mock.calls[1] ?? []);
+    expect(fallbackHeaders.get("x-kiwify-account-id")).toBe("account-123");
   });
 
-  it("falls back to the app domain when the public-api fetch fails", async () => {
+  it("falls back to the app.br domain when the public-api fetch fails for subscriptions", async () => {
     mockGetKiwifyApiEnv.mockReturnValue({
       ...buildEnv(),
       KIWIFY_API_BASE_URL: "https://public-api.kiwify.com/",
@@ -211,9 +226,42 @@ describe("kiwifyRequest account id handling", () => {
     const secondRequestUrl = new URL(String(mockFetch.mock.calls[1]?.[0]));
 
     expect(firstRequestUrl.origin).toBe("https://public-api.kiwify.com");
-    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com");
+    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com.br");
     expect(secondRequestUrl.pathname).toContain("api/v1/subscriptions");
     expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
+
+    const fallbackHeaders = expectFallbackRequest(mockFetch.mock.calls[1] ?? []);
+    expect(fallbackHeaders.get("x-kiwify-account-id")).toBe("account-123");
+  });
+
+  it("falls back to the app.br domain for enrollments when public-api returns 404", async () => {
+    mockGetKiwifyApiEnv.mockReturnValue({
+      ...buildEnv(),
+      KIWIFY_API_BASE_URL: "https://public-api.kiwify.com/",
+    });
+
+    mockFetch.mockResolvedValueOnce(
+      new Response("<!DOCTYPE html><pre>Cannot GET /api/v1/enrollments</pre>", {
+        status: 404,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+    mockFetch.mockResolvedValueOnce(buildEnrollmentsResponse());
+
+    await getKiwifyEnrollments();
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    const firstRequestUrl = new URL(String(mockFetch.mock.calls[0]?.[0]));
+    const secondRequestUrl = new URL(String(mockFetch.mock.calls[1]?.[0]));
+
+    expect(firstRequestUrl.origin).toBe("https://public-api.kiwify.com");
+    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com.br");
+    expect(secondRequestUrl.pathname).toContain("api/v1/enrollments");
+    expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
+
+    const fallbackHeaders = expectFallbackRequest(mockFetch.mock.calls[1] ?? []);
+    expect(fallbackHeaders.get("x-kiwify-account-id")).toBe("account-123");
   });
 
   it("uses the products endpoint without account_id query param", async () => {
