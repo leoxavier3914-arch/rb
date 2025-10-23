@@ -127,6 +127,21 @@ describe("kiwifyRequest authorization header", () => {
     expect(headers.get("Authorization")).toBe("Custom abc");
     expect(mockGetKiwifyAccessToken).toHaveBeenCalledTimes(1);
   });
+
+  it("normalizes bearer schemes provided by the token manager", async () => {
+    mockGetKiwifyApiEnv.mockReturnValue(buildEnv());
+    mockGetKiwifyAccessToken.mockResolvedValueOnce(buildToken("bearer manager-token"));
+
+    await getSalesStatistics();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const fetchInit = mockFetch.mock.calls[0]?.[1];
+    const headers = fetchInit?.headers instanceof Headers
+      ? fetchInit.headers
+      : new Headers(fetchInit?.headers);
+
+    expect(headers.get("Authorization")).toBe("Bearer manager-token");
+  });
 });
 
 describe("kiwifyRequest account id handling", () => {

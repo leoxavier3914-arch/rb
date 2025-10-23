@@ -63,6 +63,18 @@ describe("kiwify oauth token manager", () => {
     expect(cached).toBe(token);
   });
 
+  it("normalizes bearer schemes from the token response", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ access_token: "lower", token_type: "bearer", expires_in: 120 }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const token = await getKiwifyAccessToken();
+    expect(token.authorization).toBe("Bearer lower");
+  });
+
   it("refreshes tokens when they approach expiry", async () => {
     vi.useFakeTimers();
     fetchMock

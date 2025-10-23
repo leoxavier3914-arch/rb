@@ -661,6 +661,25 @@ const resolveFallbackBaseUrl = (baseUrl: string, path: string): string | null =>
   }
 };
 
+const normalizeAuthorizationHeader = (authorization: string): string => {
+  const trimmed = authorization.trim();
+  if (!trimmed) {
+    return authorization;
+  }
+
+  const [scheme, ...rest] = trimmed.split(/\s+/);
+  if (!scheme) {
+    return authorization;
+  }
+
+  if (scheme.toLowerCase() !== "bearer") {
+    return authorization;
+  }
+
+  const credentials = rest.join(" ");
+  return credentials ? `Bearer ${credentials}` : "Bearer";
+};
+
 const kiwifyRequest = async (path: string, { searchParams, init }: RequestOptions = {}): Promise<RequestResult> => {
   if (!hasKiwifyApiEnv()) {
     return {
@@ -727,8 +746,9 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
     const executeFetch = async (baseUrl: string, injectLegacyToken: boolean, authorization: string) => {
       const url = buildUrl(baseUrl, injectLegacyToken);
       const headers = new Headers(init?.headers ?? {});
+      const normalizedAuthorization = normalizeAuthorizationHeader(authorization);
       if (!headers.has("Authorization")) {
-        headers.set("Authorization", authorization);
+        headers.set("Authorization", normalizedAuthorization);
       }
       headers.set("Accept", "application/json");
       if (!headers.has("Content-Type")) {
