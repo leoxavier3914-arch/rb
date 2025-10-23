@@ -92,7 +92,7 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     KIWIFY_API_AUDIENCE,
   } = getKiwifyApiEnv();
 
-  const tokenUrl = new URL("/oauth/token", KIWIFY_API_BASE_URL);
+  const tokenUrl = new URL("oauth/token", KIWIFY_API_BASE_URL);
   const payload = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: KIWIFY_API_CLIENT_ID,

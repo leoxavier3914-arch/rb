@@ -6,11 +6,8 @@ import { useFormState } from "react-dom";
 
 import { JsonPreview } from "@/components/json-preview";
 
-import {
-  refreshTokenAction,
-  tokenActionInitialState,
-  type TokenActionState,
-} from "./actions";
+import { refreshTokenAction } from "./actions";
+import { tokenActionInitialState, type TokenActionState } from "./token-action-state";
 
 function TokenFeedback({ state }: { state: TokenActionState }) {
   if (!state.message) {

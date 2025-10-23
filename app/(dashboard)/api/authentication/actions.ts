@@ -3,16 +3,7 @@
 import { hasKiwifyApiEnv } from "@/lib/env";
 import { getAccessTokenMetadata, invalidateCachedToken } from "@/lib/kiwify/client";
 
-export interface TokenActionState {
-  ok: boolean;
-  message: string;
-  metadata?: Awaited<ReturnType<typeof getAccessTokenMetadata>>;
-}
-
-export const tokenActionInitialState: TokenActionState = {
-  ok: false,
-  message: "",
-};
+import { tokenActionInitialState, type TokenActionState } from "./token-action-state";
 
 export async function refreshTokenAction(
   _prevState: TokenActionState,
