@@ -52,10 +52,24 @@ const parseTokenResponse = (payload: unknown) => {
 
   const expiresIn =
     coerceNumber(record.expires_in) ?? coerceNumber(record.expiresIn) ?? DEFAULT_EXPIRATION_SECONDS;
-  const tokenType = typeof record.token_type === "string" ? record.token_type : "Bearer";
+  const tokenTypeRaw = typeof record.token_type === "string" ? record.token_type : "";
+  const normalizedTokenType = (() => {
+    const trimmed = tokenTypeRaw.trim();
+    if (!trimmed) {
+      return "Bearer";
+    }
+
+    if (trimmed.toLowerCase() === "bearer") {
+      return "Bearer";
+    }
+
+    return trimmed;
+  })();
 
   const expiresAt = Date.now() + Math.max(expiresIn - 5, 1) * 1000;
-  const authorization = tokenType ? `${tokenType} ${accessToken}`.trim() : accessToken;
+  const authorization = normalizedTokenType
+    ? `${normalizedTokenType} ${accessToken}`.trim()
+    : accessToken;
 
   return { authorization, expiresAt } satisfies KiwifyOAuthToken;
 };
