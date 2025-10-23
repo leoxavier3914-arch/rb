@@ -703,11 +703,31 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
       params.set("account_id", env.KIWIFY_API_ACCOUNT_ID);
     }
 
+    const shouldInjectLegacyToken = (baseUrl: string) => {
+      if (!normalizedPath.startsWith("api/v1/")) {
+        return false;
+      }
+
+      try {
+        const { hostname } = new URL(normalizeBaseUrl(baseUrl));
+        return !hostname.startsWith("public-api.");
+      } catch {
+        return false;
+      }
+    };
+
     const buildUrl = (baseUrl: string) => {
       const url = new URL(normalizedPath, normalizeBaseUrl(baseUrl));
-      params.forEach((value, key) => {
+      const requestParams = new URLSearchParams(params);
+
+      if (shouldInjectLegacyToken(baseUrl)) {
+        requestParams.set("token", env.KIWIFY_API_TOKEN);
+      }
+
+      requestParams.forEach((value, key) => {
         url.searchParams.set(key, value);
       });
+
       return url;
     };
 
