@@ -648,7 +648,7 @@ export default async function SaleDetailsPage({
           </h1>
         </div>
         <Link
-          href="/approved-sales"
+          href="/webhooks/approved-sales"
           className="inline-flex items-center gap-2 rounded-full border border-surface-accent/60 bg-surface-accent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
         >
           ← Voltar para o hub

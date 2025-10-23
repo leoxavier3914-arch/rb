@@ -2,15 +2,15 @@ import { EventsBoard } from "@/components/events-board";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { formatSaleStatus } from "@/lib/sale-event-metadata";
 import { parseEventFilters } from "@/lib/event-filters";
-import { getApprovedSales } from "@/lib/queries";
+import { getPendingPayments } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-interface ApprovedSalesPageProps {
+interface PendingPaymentsPageProps {
   searchParams: Record<string, string | string[] | undefined>;
 }
 
-export default async function ApprovedSalesPage({ searchParams }: ApprovedSalesPageProps) {
+export default async function PendingPaymentsPage({ searchParams }: PendingPaymentsPageProps) {
   const { filters, values } = parseEventFilters(searchParams);
 
   const {
@@ -21,7 +21,7 @@ export default async function ApprovedSalesPage({ searchParams }: ApprovedSalesP
     totalAffiliateCommissionAmount,
     totalCount,
     lastEvent,
-  } = await getApprovedSales({ filters });
+  } = await getPendingPayments({ filters });
 
   const events = records.map((sale) => {
     const netDisplay = formatCurrency(sale.net_amount ?? sale.amount, sale.currency);
@@ -61,21 +61,21 @@ export default async function ApprovedSalesPage({ searchParams }: ApprovedSalesP
   const currency = records[0]?.currency;
 
   const stats = [
-    { label: "Total de vendas", value: totalCount.toString() },
+    { label: "Pagamentos pendentes", value: totalCount.toString() },
     {
-      label: "Receita líquida",
+      label: "Valor líquido em aberto",
       value: formatCurrency(totalAmount, currency) ?? "—",
-      helper: "Somatório líquido considerando as últimas confirmações",
+      helper: "Somatório do que pode entrar após confirmação",
     },
     {
-      label: "Valor cheio capturado",
+      label: "Valor cheio aguardado",
       value: formatCurrency(totalGrossAmount, currency) ?? "—",
-      helper: "Preço integral antes das taxas",
+      helper: "Preço integral estimado dos pedidos pendentes",
     },
     {
-      label: "Comissão Kiwify",
+      label: "Comissão Kiwify prevista",
       value: formatCurrency(totalKiwifyCommissionAmount, currency) ?? "—",
-      helper: "Total retido pela Kiwify nos últimos eventos",
+      helper: "Taxas ainda não capturadas",
     },
   ];
 
@@ -83,24 +83,24 @@ export default async function ApprovedSalesPage({ searchParams }: ApprovedSalesP
     stats.push({
       label: "Comissão de afiliados",
       value: formatCurrency(totalAffiliateCommissionAmount, currency) ?? "—",
-      helper: "Repasse somado aos parceiros em destaque",
+      helper: "Possível repasse aos parceiros",
     });
   }
 
   stats.push({
-    label: "Última confirmação",
+    label: "Última atualização",
     value: lastEvent ? formatDate(lastEvent) ?? "—" : "—",
-    helper: "Atualize a página para forçar a sincronização",
+    helper: "Atualize a página para sincronizar novos eventos",
   });
 
   return (
     <EventsBoard
       stats={stats}
-      heading="Entradas mais recentes"
-      description="Listagem limitada aos últimos 40 eventos confirmados pela Kiwify."
-      emptyState="Ainda não recebemos vendas aprovadas. Aguardando o primeiro webhook da Kiwify."
+      heading="Pendências em aberto"
+      description="Listagem limitada aos últimos 40 eventos de pagamento pendente enviados pela Kiwify."
+      emptyState="Ainda não recebemos webhooks de pagamento pendente. Aguarde novas tentativas da Kiwify."
       events={events}
-      filterAction="/approved-sales"
+      filterAction="/webhooks/pending-payments"
       filters={values}
     />
   );
