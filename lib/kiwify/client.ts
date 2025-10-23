@@ -19,6 +19,7 @@ interface TokenCacheEntry {
   scope?: string;
   expiresAt: number;
   obtainedAt: number;
+  accountId?: string;
 }
 
 const globalCache = globalThis as typeof globalThis & {
@@ -198,6 +199,7 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     token_type: string;
     expires_in: number;
     scope?: string;
+    account_id?: string;
   };
 
   const now = Date.now();
@@ -208,6 +210,7 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     scope: tokenResponse.scope,
     obtainedAt: now,
     expiresAt,
+    accountId: tokenResponse.account_id,
   };
 
   saveTokenCache(entry);
@@ -317,6 +320,11 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
   if (!skipAuth) {
     const token = await requestAccessToken();
     headers.set("Authorization", `${token.tokenType} ${token.accessToken}`);
+    if (token.accountId) {
+      headers.set("x-kiwify-account-id", token.accountId);
+    } else {
+      headers.delete("x-kiwify-account-id");
+    }
   }
 
   const resolvedBody = await resolveBody(body, headers);
@@ -343,6 +351,11 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
     await invalidateCachedToken();
     const token = await requestAccessToken(true);
     headers.set("Authorization", `${token.tokenType} ${token.accessToken}`);
+    if (token.accountId) {
+      headers.set("x-kiwify-account-id", token.accountId);
+    } else {
+      headers.delete("x-kiwify-account-id");
+    }
     const retryResponse = await fetch(url, {
       ...init,
       headers,
