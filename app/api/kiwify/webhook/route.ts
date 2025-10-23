@@ -15,20 +15,13 @@ import {
   type NormalizedPendingPayment,
   type NormalizedRejectedPayment,
   type NormalizedRefundedSale,
+  type NormalizedSaleLike,
   type NormalizedSubscriptionEvent,
 } from "@/lib/kiwify";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { kiwifyWebhookEnv } from "@/lib/env";
 
 type JsonRecord = Record<string, unknown>;
-
-type NormalizedPayload =
-  | { kind: "approved_sale"; value: NormalizedApprovedSale }
-  | { kind: "pending_payment"; value: NormalizedPendingPayment }
-  | { kind: "rejected_payment"; value: NormalizedRejectedPayment }
-  | { kind: "refunded_sale"; value: NormalizedRefundedSale }
-  | { kind: "abandoned_cart"; value: NormalizedAbandonedCart }
-  | { kind: "subscription_event"; value: NormalizedSubscriptionEvent };
 
 type NormalizedByKind = {
   approved_sale: NormalizedApprovedSale;
@@ -39,123 +32,79 @@ type NormalizedByKind = {
   subscription_event: NormalizedSubscriptionEvent;
 };
 
+type NormalizedPayload<K extends EventKind = EventKind> = {
+  kind: K;
+  value: NormalizedByKind[K];
+};
+
 type UpsertConfig<K extends EventKind> = {
   table: string;
   buildRow: (payload: NormalizedByKind[K]) => JsonRecord;
 };
 
-const normalizeMap: { [K in EventKind]: () => UpsertConfig<K> } = {
-  approved_sale: () => ({
+const buildSaleFinancialRow = (sale: NormalizedSaleLike): JsonRecord => ({
+  sale_id: sale.saleId,
+  customer_name: sale.customerName,
+  customer_email: sale.customerEmail,
+  product_name: sale.productName,
+  amount: sale.amount,
+  gross_amount: sale.grossAmount,
+  net_amount: sale.netAmount,
+  kiwify_commission_amount: sale.kiwifyCommissionAmount,
+  affiliate_commission_amount: sale.affiliateCommissionAmount,
+  currency: sale.currency,
+  payment_method: sale.paymentMethod,
+  occurred_at: sale.occurredAt,
+  payload: sale.payload,
+});
+
+const buildSaleMetadataRow = (sale: NormalizedSaleLike): JsonRecord => ({
+  status: sale.status,
+  role: sale.role,
+  customer_phone: sale.customerPhone,
+  customer_document: sale.customerDocument,
+  customer_ip: sale.customerIp,
+  utm_source: sale.utmSource,
+  utm_medium: sale.utmMedium,
+  utm_campaign: sale.utmCampaign,
+});
+
+const upsertConfigMap = {
+  approved_sale: {
     table: "approved_sales",
-    buildRow: (sale) => ({
+    buildRow: (sale: NormalizedApprovedSale): JsonRecord => ({
       event_reference: sale.eventReference,
-      sale_id: sale.saleId,
-      customer_name: sale.customerName,
-      customer_email: sale.customerEmail,
-      product_name: sale.productName,
-      amount: sale.amount,
-      gross_amount: sale.grossAmount,
-      net_amount: sale.netAmount,
-      kiwify_commission_amount: sale.kiwifyCommissionAmount,
-      affiliate_commission_amount: sale.affiliateCommissionAmount,
-      currency: sale.currency,
-      payment_method: sale.paymentMethod,
-      status: sale.status,
-      role: sale.role,
-      customer_phone: sale.customerPhone,
-      customer_document: sale.customerDocument,
-      customer_ip: sale.customerIp,
-      utm_source: sale.utmSource,
-      utm_medium: sale.utmMedium,
-      utm_campaign: sale.utmCampaign,
-      occurred_at: sale.occurredAt,
-      payload: sale.payload,
+      ...buildSaleFinancialRow(sale),
+      ...buildSaleMetadataRow(sale),
     }),
-  }),
-  pending_payment: () => ({
+  },
+  pending_payment: {
     table: "pending_payments",
-    buildRow: (sale) => ({
+    buildRow: (sale: NormalizedPendingPayment): JsonRecord => ({
       event_reference: sale.eventReference,
-      sale_id: sale.saleId,
-      customer_name: sale.customerName,
-      customer_email: sale.customerEmail,
-      product_name: sale.productName,
-      amount: sale.amount,
-      gross_amount: sale.grossAmount,
-      net_amount: sale.netAmount,
-      kiwify_commission_amount: sale.kiwifyCommissionAmount,
-      affiliate_commission_amount: sale.affiliateCommissionAmount,
-      currency: sale.currency,
-      payment_method: sale.paymentMethod,
-      status: sale.status,
-      role: sale.role,
-      customer_phone: sale.customerPhone,
-      customer_document: sale.customerDocument,
-      customer_ip: sale.customerIp,
-      utm_source: sale.utmSource,
-      utm_medium: sale.utmMedium,
-      utm_campaign: sale.utmCampaign,
-      occurred_at: sale.occurredAt,
-      payload: sale.payload,
+      ...buildSaleFinancialRow(sale),
+      ...buildSaleMetadataRow(sale),
     }),
-  }),
-  rejected_payment: () => ({
+  },
+  rejected_payment: {
     table: "rejected_payments",
-    buildRow: (sale) => ({
+    buildRow: (sale: NormalizedRejectedPayment): JsonRecord => ({
       event_reference: sale.eventReference,
-      sale_id: sale.saleId,
-      customer_name: sale.customerName,
-      customer_email: sale.customerEmail,
-      product_name: sale.productName,
-      amount: sale.amount,
-      gross_amount: sale.grossAmount,
-      net_amount: sale.netAmount,
-      kiwify_commission_amount: sale.kiwifyCommissionAmount,
-      affiliate_commission_amount: sale.affiliateCommissionAmount,
-      currency: sale.currency,
-      payment_method: sale.paymentMethod,
-      status: sale.status,
-      role: sale.role,
-      customer_phone: sale.customerPhone,
-      customer_document: sale.customerDocument,
-      customer_ip: sale.customerIp,
-      utm_source: sale.utmSource,
-      utm_medium: sale.utmMedium,
-      utm_campaign: sale.utmCampaign,
-      occurred_at: sale.occurredAt,
-      payload: sale.payload,
+      ...buildSaleFinancialRow(sale),
+      ...buildSaleMetadataRow(sale),
     }),
-  }),
-  refunded_sale: () => ({
+  },
+  refunded_sale: {
     table: "refunded_sales",
-    buildRow: (sale) => ({
+    buildRow: (sale: NormalizedRefundedSale): JsonRecord => ({
       event_reference: sale.eventReference,
-      sale_id: sale.saleId,
-      customer_name: sale.customerName,
-      customer_email: sale.customerEmail,
-      product_name: sale.productName,
-      amount: sale.amount,
-      gross_amount: sale.grossAmount,
-      net_amount: sale.netAmount,
-      kiwify_commission_amount: sale.kiwifyCommissionAmount,
-      affiliate_commission_amount: sale.affiliateCommissionAmount,
-      currency: sale.currency,
-      payment_method: sale.paymentMethod,
-      status: sale.status,
-      role: sale.role,
-      customer_phone: sale.customerPhone,
-      customer_document: sale.customerDocument,
-      customer_ip: sale.customerIp,
-      utm_source: sale.utmSource,
-      utm_medium: sale.utmMedium,
-      utm_campaign: sale.utmCampaign,
-      occurred_at: sale.occurredAt,
-      payload: sale.payload,
+      ...buildSaleFinancialRow(sale),
+      ...buildSaleMetadataRow(sale),
     }),
-  }),
-  abandoned_cart: () => ({
+  },
+  abandoned_cart: {
     table: "abandoned_carts",
-    buildRow: (cart) => ({
+    buildRow: (cart: NormalizedAbandonedCart): JsonRecord => ({
       event_reference: cart.eventReference,
       cart_id: cart.cartId,
       customer_name: cart.customerName,
@@ -172,33 +121,21 @@ const normalizeMap: { [K in EventKind]: () => UpsertConfig<K> } = {
       occurred_at: cart.occurredAt,
       payload: cart.payload,
     }),
-  }),
-  subscription_event: () => ({
+  },
+  subscription_event: {
     table: "subscription_events",
-    buildRow: (event) => ({
+    buildRow: (event: NormalizedSubscriptionEvent): JsonRecord => ({
       event_reference: event.eventReference,
       subscription_id: event.subscriptionId,
-      sale_id: event.saleId,
-      customer_name: event.customerName,
-      customer_email: event.customerEmail,
-      product_name: event.productName,
-      amount: event.amount,
-      gross_amount: event.grossAmount,
-      net_amount: event.netAmount,
-      kiwify_commission_amount: event.kiwifyCommissionAmount,
-      affiliate_commission_amount: event.affiliateCommissionAmount,
-      currency: event.currency,
-      payment_method: event.paymentMethod,
+      ...buildSaleFinancialRow(event),
       event_type: event.eventType,
       subscription_status: event.subscriptionStatus,
-      occurred_at: event.occurredAt,
-      payload: event.payload,
     }),
-  }),
-};
+  },
+} satisfies { [K in EventKind]: UpsertConfig<K> };
 
 const getUpsertConfig = <K extends EventKind>(kind: K): UpsertConfig<K> =>
-  normalizeMap[kind]();
+  upsertConfigMap[kind];
 
 const ON_CONFLICT = { onConflict: "event_reference" } as const;
 
@@ -252,22 +189,22 @@ const parseBody = (rawBody: string): JsonRecord | null => {
   return null;
 };
 
-const normalizePayload = (kind: EventKind, payload: JsonRecord): NormalizedPayload => {
-  switch (kind) {
-    case "approved_sale":
-      return { kind, value: normalizeApprovedSale(payload) };
-    case "pending_payment":
-      return { kind, value: normalizePendingPayment(payload) };
-    case "rejected_payment":
-      return { kind, value: normalizeRejectedPayment(payload) };
-    case "refunded_sale":
-      return { kind, value: normalizeRefundedSale(payload) };
-    case "abandoned_cart":
-      return { kind, value: normalizeAbandonedCart(payload) };
-    case "subscription_event":
-      return { kind, value: normalizeSubscriptionEvent(payload) };
-  }
-};
+const payloadNormalizers = {
+  approved_sale: normalizeApprovedSale,
+  pending_payment: normalizePendingPayment,
+  rejected_payment: normalizeRejectedPayment,
+  refunded_sale: normalizeRefundedSale,
+  abandoned_cart: normalizeAbandonedCart,
+  subscription_event: normalizeSubscriptionEvent,
+} satisfies { [K in EventKind]: (payload: JsonRecord) => NormalizedByKind[K] };
+
+const normalizePayload = <K extends EventKind>(
+  kind: K,
+  payload: JsonRecord,
+): NormalizedPayload<K> => ({
+  kind,
+  value: payloadNormalizers[kind](payload),
+});
 
 export async function HEAD() {
   return new NextResponse(null, { status: 200 });
