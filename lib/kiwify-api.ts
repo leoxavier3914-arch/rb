@@ -1554,21 +1554,25 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
   const products = rawItems
     .filter((item): item is UnknownRecord => isRecord(item))
     .map((record) => {
+      const source: UnknownRecord = isRecord(record.attributes)
+        ? { ...record, ...(record.attributes as UnknownRecord) }
+        : record;
+
       const id =
-        extractString(record, [
+        extractString(source, [
           "id",
           "uuid",
           "product_id",
           "external_id",
         ]) ?? null;
       const name =
-        extractString(record, ["name", "title", "product_name", "display_name"]) ?? null;
+        extractString(source, ["name", "title", "product_name", "display_name"]) ?? null;
       const description =
-        extractString(record, ["description", "summary", "about", "details"]) ?? null;
+        extractString(source, ["description", "summary", "about", "details"]) ?? null;
       const status =
-        extractString(record, ["status", "state", "availability", "lifecycle_state"]) ?? null;
+        extractString(source, ["status", "state", "availability", "lifecycle_state"]) ?? null;
       const isPublished =
-        extractBoolean(record, [
+        extractBoolean(source, [
           "is_published",
           "published",
           "active",
@@ -1577,11 +1581,11 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
           "is_public",
         ]);
       const isHidden =
-        extractBoolean(record, [
+        extractBoolean(source, [
           "is_hidden",
           "hidden",
         ]);
-      let price = extractNumber(record, [
+      let price = extractNumber(source, [
         "price",
         "default_price",
         "default_price.price",
@@ -1596,7 +1600,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
       ]);
 
       if (price === null) {
-        const cents = extractNumber(record, [
+        const cents = extractNumber(source, [
           "price_cents",
           "priceCents",
           "default_price_cents",
@@ -1624,21 +1628,21 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
 
       if (price === null) {
         const defaultOffer =
-          record.default_offer ??
-          record.defaultOffer ??
-          record.default_offering ??
-          record.defaultOffering ??
+          source.default_offer ??
+          source.defaultOffer ??
+          source.default_offering ??
+          source.defaultOffering ??
           null;
         price = extractPriceFromOffer(defaultOffer);
       }
 
       if (price === null) {
         const offersSource =
-          record.offers ??
-          record.available_offers ??
-          record.availableOffers ??
-          record.offer_options ??
-          record.offerOptions ??
+          source.offers ??
+          source.available_offers ??
+          source.availableOffers ??
+          source.offer_options ??
+          source.offerOptions ??
           null;
         for (const offer of ensureArray(offersSource)) {
           const offerPrice = extractPriceFromOffer(offer);
@@ -1650,7 +1654,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
       }
 
       const currency =
-        extractString(record, [
+        extractString(source, [
           "currency",
           "currency_code",
           "default_price.currency",
@@ -1659,13 +1663,13 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
           "pricing.currency",
         ]) ?? null;
 
-      let averageTicket = extractNumber(record, [
+      let averageTicket = extractNumber(source, [
         "average_ticket",
         "metrics.average_ticket",
         "analytics.average_ticket",
       ]);
       if (averageTicket === null) {
-        const cents = extractNumber(record, [
+        const cents = extractNumber(source, [
           "average_ticket_cents",
           "metrics.average_ticket_cents",
         ]);
@@ -1674,7 +1678,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
         }
       }
 
-      const totalSales = extractNumber(record, [
+      const totalSales = extractNumber(source, [
         "total_sales",
         "metrics.total_sales",
         "analytics.total_sales",
@@ -1683,7 +1687,7 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
       ]);
 
       const imageUrl =
-        extractString(record, [
+        extractString(source, [
           "image",
           "image_url",
           "thumbnail",
@@ -1692,12 +1696,12 @@ export async function getKiwifyProducts(): Promise<ProductsResult> {
         ]) ?? null;
 
       const updatedAt =
-        extractString(record, ["updated_at", "updatedAt", "updated_at_iso", "modified_at"]) ??
+        extractString(source, ["updated_at", "updatedAt", "updated_at_iso", "modified_at"]) ??
         null;
       const createdAt =
-        extractString(record, ["created_at", "createdAt", "created_at_iso"]) ?? null;
+        extractString(source, ["created_at", "createdAt", "created_at_iso"]) ?? null;
 
-      const tags = extractStringArray(record, ["tags", "categories", "labels"]);
+      const tags = extractStringArray(source, ["tags", "categories", "labels"]);
 
       return {
         id,
