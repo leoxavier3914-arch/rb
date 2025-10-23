@@ -768,6 +768,28 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
     };
 
     const fallbackBaseUrl = resolveFallbackBaseUrl(env.KIWIFY_API_BASE_URL, normalizedPath);
+    const fallbackRequiresLegacyToken = (() => {
+      if (!fallbackBaseUrl) {
+        return false;
+      }
+
+      try {
+        const { hostname } = new URL(normalizeBaseUrl(fallbackBaseUrl));
+        return normalizedPath.startsWith("api/v1/") && !hostname.startsWith("public-api.");
+      } catch {
+        return false;
+      }
+    })();
+
+    const missingLegacyTokenForFallback = fallbackRequiresLegacyToken && !env.KIWIFY_API_TOKEN;
+
+    const buildLegacyTokenError = (status: number): RequestResult => ({
+      ok: false,
+      status,
+      payload: null,
+      error:
+        "Configure a variável de ambiente KIWIFY_API_TOKEN para permitir requisições de fallback ao endpoint legado da Kiwify.",
+    });
 
     const attemptFetch = async (baseUrl: string) => {
       const injectLegacyToken = shouldInjectLegacyToken(baseUrl);
@@ -797,11 +819,17 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
       if (!fallbackBaseUrl) {
         throw error;
       }
+      if (missingLegacyTokenForFallback) {
+        return buildLegacyTokenError(0);
+      }
       response = await attemptFetch(fallbackBaseUrl);
       usedFallback = true;
     }
 
     if (!usedFallback && response.status === 404 && fallbackBaseUrl) {
+      if (missingLegacyTokenForFallback) {
+        return buildLegacyTokenError(response.status);
+      }
       response = await attemptFetch(fallbackBaseUrl);
       usedFallback = true;
     }

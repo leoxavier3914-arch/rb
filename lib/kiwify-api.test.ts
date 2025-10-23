@@ -263,6 +263,27 @@ describe("kiwifyRequest account id handling", () => {
     expect(fallbackHeaders.get("x-kiwify-account-id")).toBe("account-123");
   });
 
+  it("informs that the legacy token is required before attempting the fallback", async () => {
+    mockGetKiwifyApiEnv.mockReturnValue(
+      createMockEnv({
+        KIWIFY_API_BASE_URL: "https://public-api.kiwify.com/",
+        KIWIFY_API_TOKEN: undefined,
+      }),
+    );
+
+    mockFetch.mockResolvedValueOnce(
+      new Response("<!DOCTYPE html><pre>Cannot GET /api/v1/subscriptions</pre>", {
+        status: 404,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+
+    const result = await getKiwifySubscriptions();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.error).toContain("KIWIFY_API_TOKEN");
+  });
+
   it("falls back to the app.br domain when the public-api fetch fails for subscriptions", async () => {
     mockGetKiwifyApiEnv.mockReturnValue({
       ...buildEnv(),
