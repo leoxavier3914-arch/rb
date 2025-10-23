@@ -645,6 +645,32 @@ const extractPriceFromOffer = (offer: unknown): number | null => {
   return extractPriceFromOfferFields(offer, undefined, visited);
 };
 
+const normalizeBaseUrl = (baseUrl: string) => (baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+
+const resolveFallbackBaseUrl = (baseUrl: string, path: string): string | null => {
+  if (!path.startsWith("api/v1/")) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalizeBaseUrl(baseUrl));
+    const { hostname } = parsed;
+
+    if (!hostname.startsWith("public-api.")) {
+      return null;
+    }
+
+    const fallbackHostname = hostname.replace(/^public-api\./, "app.");
+    if (fallbackHostname === hostname) {
+      return null;
+    }
+
+    return `${parsed.protocol}//${fallbackHostname}${parsed.port ? `:${parsed.port}` : ""}${parsed.pathname}`;
+  } catch {
+    return null;
+  }
+};
+
 const kiwifyRequest = async (path: string, { searchParams, init }: RequestOptions = {}): Promise<RequestResult> => {
   if (!hasKiwifyApiEnv()) {
     return {
@@ -657,12 +683,7 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
 
   try {
     const env = getKiwifyApiEnv();
-    const base = env.KIWIFY_API_BASE_URL.endsWith("/")
-      ? env.KIWIFY_API_BASE_URL
-      : `${env.KIWIFY_API_BASE_URL}/`;
     const normalizedPath = path.replace(/^\/+/, "");
-    const url = new URL(normalizedPath, base);
-
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(searchParams ?? {})) {
       if (value === null || value === undefined) {
@@ -679,27 +700,67 @@ const kiwifyRequest = async (path: string, { searchParams, init }: RequestOption
       params.set("account_id", env.KIWIFY_API_ACCOUNT_ID);
     }
 
-    params.forEach((value, key) => {
-      url.searchParams.set(key, value);
-    });
+    const buildUrl = (baseUrl: string) => {
+      const url = new URL(normalizedPath, normalizeBaseUrl(baseUrl));
+      params.forEach((value, key) => {
+        url.searchParams.set(key, value);
+      });
+      return url;
+    };
 
-    const headers = new Headers(init?.headers ?? {});
-    if (!headers.has("Authorization")) {
-      headers.set("Authorization", formatAuthorizationHeader(env.KIWIFY_API_TOKEN));
-    }
-    headers.set("Accept", "application/json");
-    if (!headers.has("Content-Type")) {
-      headers.set("Content-Type", "application/json");
-    }
-    if (!headers.has("x-kiwify-account-id")) {
-      headers.set("x-kiwify-account-id", env.KIWIFY_API_ACCOUNT_ID);
+    const executeFetch = async (baseUrl: string) => {
+      const url = buildUrl(baseUrl);
+      const headers = new Headers(init?.headers ?? {});
+      if (!headers.has("Authorization")) {
+        headers.set("Authorization", formatAuthorizationHeader(env.KIWIFY_API_TOKEN));
+      }
+      headers.set("Accept", "application/json");
+      if (!headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+      if (!headers.has("x-kiwify-account-id")) {
+        headers.set("x-kiwify-account-id", env.KIWIFY_API_ACCOUNT_ID);
+      }
+
+      const response = await fetch(url, {
+        ...init,
+        headers,
+        cache: "no-store",
+      });
+
+      return response;
+    };
+
+    const fallbackBaseUrl = resolveFallbackBaseUrl(env.KIWIFY_API_BASE_URL, normalizedPath);
+
+    const attemptFetch = async (baseUrl: string) => {
+      try {
+        return await executeFetch(baseUrl);
+      } catch (error) {
+        if (error instanceof Error) {
+          throw error;
+        }
+        throw new Error(String(error));
+      }
+    };
+
+    let usedFallback = false;
+    let response: Response;
+
+    try {
+      response = await attemptFetch(env.KIWIFY_API_BASE_URL);
+    } catch (error) {
+      if (!fallbackBaseUrl) {
+        throw error;
+      }
+      response = await attemptFetch(fallbackBaseUrl);
+      usedFallback = true;
     }
 
-    const response = await fetch(url, {
-      ...init,
-      headers,
-      cache: "no-store",
-    });
+    if (!usedFallback && response.status === 404 && fallbackBaseUrl) {
+      response = await attemptFetch(fallbackBaseUrl);
+      usedFallback = true;
+    }
 
     const { status } = response;
     if (status === 204) {

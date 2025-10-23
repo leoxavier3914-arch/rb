@@ -167,6 +167,55 @@ describe("kiwifyRequest account id handling", () => {
     expect(url.searchParams.get("account_id")).toBe("account-123");
   });
 
+  it("falls back to the app domain when public-api returns 404", async () => {
+    mockGetKiwifyApiEnv.mockReturnValue({
+      ...buildEnv(),
+      KIWIFY_API_BASE_URL: "https://public-api.kiwify.com/",
+    });
+
+    mockFetch.mockResolvedValueOnce(
+      new Response("<!DOCTYPE html><pre>Cannot GET /api/v1/subscriptions</pre>", {
+        status: 404,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+    mockFetch.mockResolvedValueOnce(buildSubscriptionsResponse());
+
+    await getKiwifySubscriptions();
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    const firstRequestUrl = new URL(String(mockFetch.mock.calls[0]?.[0]));
+    const secondRequestUrl = new URL(String(mockFetch.mock.calls[1]?.[0]));
+
+    expect(firstRequestUrl.origin).toBe("https://public-api.kiwify.com");
+    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com");
+    expect(secondRequestUrl.pathname).toContain("api/v1/subscriptions");
+    expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
+  });
+
+  it("falls back to the app domain when the public-api fetch fails", async () => {
+    mockGetKiwifyApiEnv.mockReturnValue({
+      ...buildEnv(),
+      KIWIFY_API_BASE_URL: "https://public-api.kiwify.com/",
+    });
+
+    mockFetch.mockRejectedValueOnce(new Error("fetch failed"));
+    mockFetch.mockResolvedValueOnce(buildSubscriptionsResponse());
+
+    await getKiwifySubscriptions();
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    const firstRequestUrl = new URL(String(mockFetch.mock.calls[0]?.[0]));
+    const secondRequestUrl = new URL(String(mockFetch.mock.calls[1]?.[0]));
+
+    expect(firstRequestUrl.origin).toBe("https://public-api.kiwify.com");
+    expect(secondRequestUrl.origin).toBe("https://app.kiwify.com");
+    expect(secondRequestUrl.pathname).toContain("api/v1/subscriptions");
+    expect(secondRequestUrl.searchParams.get("account_id")).toBe("account-123");
+  });
+
   it("uses the products endpoint without account_id query param", async () => {
     mockFetch.mockResolvedValueOnce(buildProductsResponse());
 
