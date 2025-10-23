@@ -1,5 +1,6 @@
 import { JsonPreview } from "@/components/json-preview";
 import { hasKiwifyApiEnv } from "@/lib/env";
+import { formatKiwifyApiPath } from "@/lib/kiwify/client";
 import { fetchFinancialSummary, listWithdrawals } from "@/lib/kiwify/resources";
 
 export const dynamic = "force-dynamic";
@@ -27,13 +28,16 @@ export default async function FinancialPage() {
     error = "Não foi possível carregar as informações financeiras. Revise o token e permissões de conta.";
   }
 
+  const summaryPath = formatKiwifyApiPath("financial/summary");
+  const withdrawalsPath = formatKiwifyApiPath("financial/withdrawals");
+
   return (
     <div className="flex flex-col gap-6">
       <section className="grid gap-4 rounded-2xl border border-surface-accent/40 bg-surface-accent/60 p-6 shadow-soft">
         <h3 className="text-lg font-semibold text-white">Financeiro em tempo real</h3>
         <p className="text-sm text-muted-foreground">
           Consulte o saldo disponível, valores bloqueados, taxas e histórico de saques exatamente como a Kiwify exibe no
-          painel administrativo. Os dados seguem o contrato de /v1/financial/summary e /v1/financial/withdrawals.
+          painel administrativo. Os dados seguem o contrato de {summaryPath} e {withdrawalsPath}.
         </p>
       </section>
 
@@ -41,8 +45,8 @@ export default async function FinancialPage() {
         <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-6 text-sm text-red-100">{error}</div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
-          <JsonPreview title="Resumo financeiro" data={summary} />
-          <JsonPreview title="Histórico de saques" data={withdrawals} />
+          <JsonPreview title={`Resumo financeiro (GET ${summaryPath})`} data={summary} />
+          <JsonPreview title={`Histórico de saques (GET ${withdrawalsPath})`} data={withdrawals} />
         </div>
       )}
     </div>

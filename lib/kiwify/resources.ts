@@ -1,6 +1,6 @@
 import { kiwifyFetch } from "@/lib/kiwify/client";
 
-export async function fetchAccountOverview(path = "/v1/account") {
+export async function fetchAccountOverview(path = "account") {
   return kiwifyFetch<Record<string, unknown>>(path);
 }
 
@@ -11,7 +11,7 @@ export async function listProducts(options: {
   updatedAfter?: string;
   path?: string;
 } = {}) {
-  const { path = "/v1/products", page, perPage, status, updatedAfter } = options;
+  const { path = "products", page, perPage, status, updatedAfter } = options;
 
   return kiwifyFetch<unknown>(path, {
     searchParams: {
@@ -23,7 +23,7 @@ export async function listProducts(options: {
   });
 }
 
-export async function createProduct(payload: Record<string, unknown>, path = "/v1/products") {
+export async function createProduct(payload: Record<string, unknown>, path = "products") {
   return kiwifyFetch<unknown>(path, {
     method: "POST",
     body: payload,
@@ -35,7 +35,7 @@ export async function updateProduct(
   payload: Record<string, unknown>,
   options: { path?: string } = {},
 ) {
-  const { path = "/v1/products" } = options;
+  const { path = "products" } = options;
   const resourcePath = `${path.replace(/\/$/, "")}/${productId}`;
 
   return kiwifyFetch<unknown>(resourcePath, {
@@ -51,7 +51,7 @@ export async function listSales(options: {
   createdAfter?: string;
   path?: string;
 } = {}) {
-  const { path = "/v1/sales", page, perPage, status, createdAfter } = options;
+  const { path = "sales", page, perPage, status, createdAfter } = options;
 
   return kiwifyFetch<unknown>(path, {
     searchParams: {
@@ -64,7 +64,7 @@ export async function listSales(options: {
 }
 
 export async function fetchFinancialSummary(options: { path?: string } = {}) {
-  const { path = "/v1/financial/summary" } = options;
+  const { path = "financial/summary" } = options;
   return kiwifyFetch<unknown>(path, { cache: "no-store" });
 }
 
@@ -73,7 +73,7 @@ export async function listWithdrawals(options: {
   perPage?: number;
   path?: string;
 } = {}) {
-  const { path = "/v1/financial/withdrawals", page, perPage } = options;
+  const { path = "financial/withdrawals", page, perPage } = options;
 
   return kiwifyFetch<unknown>(path, {
     searchParams: {
@@ -88,7 +88,7 @@ export async function listAffiliates(options: {
   perPage?: number;
   path?: string;
 } = {}) {
-  const { path = "/v1/affiliates", page, perPage } = options;
+  const { path = "affiliates", page, perPage } = options;
 
   return kiwifyFetch<unknown>(path, {
     searchParams: {
@@ -104,7 +104,7 @@ export async function listWebhooks(options: {
   eventType?: string;
   path?: string;
 } = {}) {
-  const { path = "/v1/webhooks/events", page, perPage, eventType } = options;
+  const { path = "webhooks/events", page, perPage, eventType } = options;
 
   return kiwifyFetch<unknown>(path, {
     searchParams: {
@@ -122,7 +122,7 @@ export async function listParticipants(options: {
   status?: string;
   path?: string;
 }) {
-  const { productId, path = "/v1/products", page, perPage, status } = options;
+  const { productId, path = "products", page, perPage, status } = options;
   const resourcePath = `${path.replace(/\/$/, "")}/${productId}/participants`;
 
   return kiwifyFetch<unknown>(resourcePath, {
@@ -140,7 +140,7 @@ export async function listWebhooksDeliveries(options: {
   status?: string;
   path?: string;
 } = {}) {
-  const { path = "/v1/webhooks/deliveries", page, perPage, status } = options;
+  const { path = "webhooks/deliveries", page, perPage, status } = options;
 
   return kiwifyFetch<unknown>(path, {
     searchParams: {

@@ -41,7 +41,7 @@ function ActionFeedback({ state }: { state: ProductActionState }) {
   );
 }
 
-export function CreateProductForm() {
+export function CreateProductForm({ endpointPlaceholder }: { endpointPlaceholder: string }) {
   const [state, formAction] = useFormState(createProductAction, productActionInitialState);
 
   return (
@@ -68,7 +68,7 @@ export function CreateProductForm() {
           <input
             name="resourcePath"
             type="text"
-            placeholder="/v1/products"
+            placeholder={endpointPlaceholder}
             className="w-full rounded-xl border border-surface-accent/40 bg-surface px-4 py-2 text-sm text-muted-foreground shadow-inner focus:border-primary focus:outline-none"
           />
         </label>
@@ -85,7 +85,7 @@ export function CreateProductForm() {
   );
 }
 
-export function UpdateProductForm() {
+export function UpdateProductForm({ endpointPlaceholder }: { endpointPlaceholder: string }) {
   const [state, formAction] = useFormState(updateProductAction, productActionInitialState);
 
   return (
@@ -121,7 +121,7 @@ export function UpdateProductForm() {
           <input
             name="resourcePath"
             type="text"
-            placeholder="/v1/products"
+            placeholder={endpointPlaceholder}
             className="w-full rounded-xl border border-surface-accent/40 bg-surface px-4 py-2 text-sm text-muted-foreground shadow-inner focus:border-primary focus:outline-none"
           />
         </label>
