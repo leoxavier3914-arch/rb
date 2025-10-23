@@ -42,8 +42,18 @@ const webhookEnvSchema = supabaseEnvBaseSchema
   })
   .superRefine(ensureSameSupabaseProject);
 
+const kiwifyApiEnvSchema = z.object({
+  KIWIFY_API_BASE_URL: httpsUrlSchema,
+  KIWIFY_API_CLIENT_ID: z.string().min(1),
+  KIWIFY_API_CLIENT_SECRET: z.string().min(1),
+  KIWIFY_API_SCOPE: z.string().optional(),
+  KIWIFY_API_AUDIENCE: z.string().optional(),
+  KIWIFY_PARTNER_ID: z.string().optional(),
+});
+
 type SupabaseEnv = z.infer<typeof supabaseEnvSchema>;
 type WebhookEnv = z.infer<typeof webhookEnvSchema>;
+type KiwifyApiEnv = z.infer<typeof kiwifyApiEnvSchema>;
 
 type EnvHelper<T> = {
   get: () => T;
@@ -145,6 +155,29 @@ const kiwifyWebhookEnvHelper = createEnvHelper<WebhookEnv>(
   buildRawWebhookEnv,
 );
 
+const buildRawKiwifyApiEnv = () => ({
+  KIWIFY_API_BASE_URL: normalizeEnvValue(process.env.KIWIFY_API_BASE_URL),
+  KIWIFY_API_CLIENT_ID: normalizeEnvValue(process.env.KIWIFY_API_CLIENT_ID),
+  KIWIFY_API_CLIENT_SECRET: normalizeEnvValue(process.env.KIWIFY_API_CLIENT_SECRET),
+  KIWIFY_API_SCOPE: (() => {
+    const normalized = normalizeEnvValue(process.env.KIWIFY_API_SCOPE);
+    return normalized || undefined;
+  })(),
+  KIWIFY_API_AUDIENCE: (() => {
+    const normalized = normalizeEnvValue(process.env.KIWIFY_API_AUDIENCE);
+    return normalized || undefined;
+  })(),
+  KIWIFY_PARTNER_ID: (() => {
+    const normalized = normalizeEnvValue(process.env.KIWIFY_PARTNER_ID);
+    return normalized || undefined;
+  })(),
+});
+
+const kiwifyApiEnvHelper = createEnvHelper<KiwifyApiEnv>(
+  kiwifyApiEnvSchema,
+  buildRawKiwifyApiEnv,
+);
+
 export const supabaseEnv = {
   get: () => supabaseEnvHelper.get(),
   has: () => supabaseEnvHelper.has(),
@@ -153,6 +186,12 @@ export const supabaseEnv = {
 export const kiwifyWebhookEnv = {
   get: () => kiwifyWebhookEnvHelper.get(),
   has: () => kiwifyWebhookEnvHelper.has(),
+};
+
+export const kiwifyApiEnv = {
+  get: () => kiwifyApiEnvHelper.get(),
+  has: () => kiwifyApiEnvHelper.has(),
+  maybe: () => kiwifyApiEnvHelper.maybe(),
 };
 
 export function getSupabaseEnv(): SupabaseEnv {
@@ -167,7 +206,16 @@ export function getKiwifyWebhookEnv(): WebhookEnv {
   return kiwifyWebhookEnv.get();
 }
 
+export function getKiwifyApiEnv(): KiwifyApiEnv {
+  return kiwifyApiEnv.get();
+}
+
+export function hasKiwifyApiEnv() {
+  return kiwifyApiEnv.has();
+}
+
 export function __resetEnvForTesting() {
   supabaseEnvHelper.reset();
   kiwifyWebhookEnvHelper.reset();
+  kiwifyApiEnvHelper.reset();
 }
