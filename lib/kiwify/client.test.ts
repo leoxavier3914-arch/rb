@@ -157,6 +157,52 @@ describe("kiwifyFetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("uses documented fallbacks to resolve the account identifier", async () => {
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockImplementationOnce(async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "token-abc",
+            token_type: "Bearer",
+            expires_in: 3600,
+            account: { id: "acc-from-account" },
+            user: { account_id: "acc-from-user" },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-account");
+        expect(headers.get("authorization")).toBe("Bearer token-abc");
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      })
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-account");
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await kiwifyFetch("products");
+    await kiwifyFetch("products");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("refreshes cached account metadata when the token is reissued", async () => {
     const fetchMock = vi
       .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()

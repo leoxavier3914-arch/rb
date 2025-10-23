@@ -199,8 +199,42 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     token_type: string;
     expires_in: number;
     scope?: string;
-    account_id?: string;
+    account_id?: unknown;
+    account?: unknown;
+    user?: { account_id?: unknown; account?: unknown } | null;
   };
+
+  const resolveAccountId = (value: unknown): string | undefined => {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }
+
+    if (typeof value === "number") {
+      return String(value);
+    }
+
+    if (typeof value === "object") {
+      const candidate = (value as { id?: unknown; account_id?: unknown }).id ??
+        (value as { id?: unknown; account_id?: unknown }).account_id;
+
+      return resolveAccountId(candidate);
+    }
+
+    return undefined;
+  };
+
+  const resolvedAccountId =
+    resolveAccountId(tokenResponse.account_id) ??
+    // Fallbacks observed in the live OAuth token payload: a nested "account" object
+    // as well as the legacy "user.account_id" field exposed for backwards compatibility.
+    resolveAccountId(tokenResponse.account) ??
+    resolveAccountId(tokenResponse.user?.account_id) ??
+    resolveAccountId(tokenResponse.user?.account);
 
   const now = Date.now();
   const expiresAt = now + Math.max(0, (tokenResponse.expires_in - 60) * 1000);
@@ -210,7 +244,7 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     scope: tokenResponse.scope,
     obtainedAt: now,
     expiresAt,
-    accountId: tokenResponse.account_id,
+    accountId: resolvedAccountId,
   };
 
   saveTokenCache(entry);
