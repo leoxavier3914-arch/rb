@@ -36,6 +36,26 @@ describe("kiwify/resources", () => {
     });
   });
 
+  it("caps page size to 100 when listing sales", async () => {
+    vi.mocked(kiwifyFetch).mockResolvedValue({ data: [] });
+
+    await listSales({
+      startDate: "2024-01-01",
+      endDate: "2024-01-31",
+      pageSize: 150,
+    });
+
+    expect(kiwifyFetch).toHaveBeenCalledWith("sales", {
+      searchParams: {
+        page_number: 1,
+        page_size: 100,
+        status: undefined,
+        start_date: "2024-01-01",
+        end_date: "2024-01-31",
+      },
+    });
+  });
+
   it("fetches all sales in 90-day intervals and aggregates results", async () => {
     const responses = [
       {
@@ -117,5 +137,29 @@ describe("kiwify/resources", () => {
     expect(result.requests).toHaveLength(2);
     expect(result.requests[0].pages).toHaveLength(2);
     expect(result.requests[1].pages).toHaveLength(1);
+  });
+
+  it("caps page size to 100 for all-time sales aggregation", async () => {
+    vi.mocked(kiwifyFetch).mockResolvedValue({
+      data: [],
+      meta: { has_more: false },
+    });
+
+    await listAllSales({
+      startDate: "2024-01-01",
+      endDate: "2024-01-15",
+      perPage: 150,
+    });
+
+    expect(kiwifyFetch).toHaveBeenCalledTimes(1);
+    expect(kiwifyFetch).toHaveBeenCalledWith("sales", {
+      searchParams: {
+        page_number: 1,
+        page_size: 100,
+        status: undefined,
+        start_date: "2024-01-01",
+        end_date: "2024-01-15",
+      },
+    });
   });
 });

@@ -4,7 +4,23 @@ import { kiwifyFetch } from "@/lib/kiwify/client";
 
 const MAX_SALES_RANGE_DAYS = 90;
 
+const MAX_SALES_PAGE_SIZE = 100;
+
 const formatDateParam = (date: Date) => formatISO(date, { representation: "date" });
+
+const toPositiveInteger = (value: number | undefined, fallback: number) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  const normalized = Math.floor(value);
+  return normalized > 0 ? normalized : fallback;
+};
+
+const normalizeSalesPageSize = (value: number | undefined) => {
+  const normalized = toPositiveInteger(value, MAX_SALES_PAGE_SIZE);
+  return Math.min(normalized, MAX_SALES_PAGE_SIZE);
+};
 
 const parseDateParam = (value: string, label: string): Date => {
   const parsed = parseISO(value);
@@ -166,10 +182,13 @@ export async function listSales(options: {
     endDate,
   } = options;
 
+  const resolvedPageNumber = toPositiveInteger(pageNumber, 1);
+  const resolvedPageSize = normalizeSalesPageSize(pageSize ?? perPage ?? MAX_SALES_PAGE_SIZE);
+
   return kiwifyFetch<unknown>(path, {
     searchParams: {
-      page_number: pageNumber,
-      page_size: pageSize,
+      page_number: resolvedPageNumber,
+      page_size: resolvedPageSize,
       status,
       start_date: startDate,
       end_date: endDate,
@@ -206,11 +225,13 @@ type ListAllSalesResult = {
 };
 
 export async function listAllSales(options: ListAllSalesOptions): Promise<ListAllSalesResult> {
-  const { startDate, endDate, perPage = 200, status, path } = options;
+  const { startDate, endDate, perPage: requestedPerPage = MAX_SALES_PAGE_SIZE, status, path } = options;
 
-  if (perPage <= 0) {
+  if (typeof requestedPerPage === "number" && requestedPerPage <= 0) {
     throw new Error("perPage must be greater than 0");
   }
+
+  const perPage = normalizeSalesPageSize(requestedPerPage);
 
   const rangeStart = parseDateParam(startDate, "startDate");
   const today = new Date();

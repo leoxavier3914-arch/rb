@@ -8,11 +8,19 @@ const DATE_ONLY_LENGTH = 10;
 
 const toISODate = (date: Date) => date.toISOString().slice(0, DATE_ONLY_LENGTH);
 
-const clampPage = (value: number, fallback: number) => {
+const DEFAULT_PAGE_SIZE = 100;
+
+const clampPage = (value: number, fallback: number, max?: number) => {
   if (!Number.isFinite(value) || value <= 0) {
     return fallback;
   }
-  return value;
+
+  const normalized = Math.floor(value);
+  if (typeof max === "number") {
+    return Math.min(normalized, max);
+  }
+
+  return normalized;
 };
 
 const normalizeStatus = (status: string | null) => {
@@ -44,14 +52,21 @@ export async function GET(request: Request) {
   const startDate = search.get("start_date") ?? toISODate(defaultStart);
 
   const status = normalizeStatus(search.get("status"));
-  const pageNumber = clampPage(Number(search.get("page")) || Number(search.get("page_number")) || 1, 1);
-  const pageSize = clampPage(Number(search.get("page_size")) || Number(search.get("per_page")) || 200, 1);
+  const pageNumber = clampPage(
+    Number(search.get("page")) || Number(search.get("page_number")) || 1,
+    1,
+  );
+  const pageSize = clampPage(
+    Number(search.get("page_size")) || Number(search.get("per_page")) || DEFAULT_PAGE_SIZE,
+    DEFAULT_PAGE_SIZE,
+    DEFAULT_PAGE_SIZE,
+  );
 
   try {
     const response = await kiwifyFetch<unknown>("sales", {
       searchParams: {
-        page_number: pageNumber,
-        page_size: pageSize,
+        page_number: String(pageNumber),
+        page_size: String(pageSize),
         status,
         start_date: startDate,
         end_date: endDate,
