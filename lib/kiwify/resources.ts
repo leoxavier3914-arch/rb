@@ -49,20 +49,20 @@ export async function updateProduct(
 }
 
 export async function listSales(options: {
+  startDate: string;
   page?: number;
-  perPage?: number;
+  limit?: number;
   status?: string;
-  createdAfter?: string;
   path?: string;
-} = {}) {
-  const { path = "sales", page, perPage, status, createdAfter } = options;
+}) {
+  const { path = "sales", page, limit, status, startDate } = options;
 
   return kiwifyFetch<unknown>(path, {
     searchParams: {
       page,
-      per_page: perPage,
+      limit,
       status,
-      created_after: createdAfter,
+      start_date: startDate,
     },
   });
 }
