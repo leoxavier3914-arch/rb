@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+import { ReactQueryProvider } from "@/components/providers/ReactQueryProvider";
+
 export const metadata: Metadata = {
   title: "Kiwify Sales Hub",
   description:
@@ -14,7 +16,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR">
-      <body className="bg-background text-white">{children}</body>
+      <body className="bg-background text-white">
+        <ReactQueryProvider>{children}</ReactQueryProvider>
+      </body>
     </html>
   );
 }
