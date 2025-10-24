@@ -5,7 +5,7 @@ import { KiwifyApiError, kiwifyFetch } from "@/lib/kiwify/client";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(_request: Request, { params }: { params: { saleId: string } }) {
   if (!hasKiwifyApiEnv()) {
     return NextResponse.json(
       { error: "API da Kiwify não configurada." },
@@ -13,7 +13,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     );
   }
 
-  const saleId = decodeURIComponent(params.id ?? "");
+  const saleId = decodeURIComponent(params.saleId ?? "");
   if (!saleId) {
     return NextResponse.json(
       { error: "ID da venda é obrigatório." },
