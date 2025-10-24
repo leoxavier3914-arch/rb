@@ -326,14 +326,16 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     return resolveAccountId(candidate);
   };
 
-  const resolvedAccountId =
+  const resolvedAccountIdFromResponse =
     resolveAccountId(tokenResponse.account_id) ??
     // Fallbacks observed in the live OAuth token payload: a nested "account" object
     // as well as the legacy "user.account_id" field exposed for backwards compatibility.
     resolveAccountId(tokenResponse.account) ??
     resolveAccountId(tokenResponse.user?.account_id) ??
-    resolveAccountId(tokenResponse.user?.account) ??
-    resolveAccountIdFromJwt(tokenResponse.access_token);
+    resolveAccountId(tokenResponse.user?.account);
+
+  const resolvedAccountId =
+    resolvedAccountIdFromResponse ?? resolveAccountIdFromJwt(tokenResponse.access_token);
 
   const now = Date.now();
   const expiresAt = now + Math.max(0, (tokenResponse.expires_in - 60) * 1000);
