@@ -39,8 +39,9 @@ O cliente Supabase é inicializado em `lib/supabase.ts` com `fetch` forçando `n
 
   # Credenciais da API oficial
   KIWIFY_API_BASE_URL="https://public-api.kiwify.com"
-  KIWIFY_API_CLIENT_ID="<client_id gerado no painel da Kiwify>"
-  KIWIFY_API_CLIENT_SECRET="<client_secret gerado no painel da Kiwify>"
+  KIWIFY_CLIENT_ID="<client_id gerado no painel da Kiwify>"
+  KIWIFY_CLIENT_SECRET="<client_secret gerado no painel da Kiwify>"
+  KIWIFY_ACCOUNT_ID="<account_id exibido ao lado da API Key no painel>"
   KIWIFY_API_SCOPE="<escopo opcional fornecido pela Kiwify>"
   KIWIFY_API_AUDIENCE="<audience opcional, quando aplicável>"
   KIWIFY_API_PATH_PREFIX="/v1"
@@ -57,7 +58,7 @@ O painel principal concentra-se na rota `/webhooks`, que agrupa as subseções `
 
 ## API oficial da Kiwify
 - A navegação inclui uma nova seção **API** com subpáginas para Autenticação, Conta, Produtos, Vendas, Financeiro, Afiliados, Webhooks e Participantes.
-- O fluxo de autenticação realiza o grant `client_credentials` usando `KIWIFY_API_CLIENT_ID` e `KIWIFY_API_CLIENT_SECRET`, exibindo validade e preview do token.
+- O fluxo de autenticação realiza o grant `client_credentials` usando `KIWIFY_CLIENT_ID` e `KIWIFY_CLIENT_SECRET`, exibindo validade e preview do token.
 - O prefixo configurável (`KIWIFY_API_PATH_PREFIX`, padrão `/v1`) é aplicado automaticamente em todas as chamadas; informe `"/"` para desativá-lo e apontar para caminhos sem versão.
 - Os formulários de Produtos permitem criar (`POST {prefix}/products`) e atualizar (`PATCH {prefix}/products/:id`) itens enviando o JSON esperado pela documentação, onde `{prefix}` corresponde ao valor efetivo de `KIWIFY_API_PATH_PREFIX`.
 - A listagem de produtos segue os filtros documentados oficialmente (`page_number`, `page_size`), enquanto vendas, finanças, afiliados, webhooks e participantes continuam aceitando a convenção `page`/`per_page` exposta pela API.

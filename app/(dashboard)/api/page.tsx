@@ -55,7 +55,8 @@ export default function ApiOverviewPage() {
         title="Variáveis de ambiente detectadas"
         data={{
           base_url: env?.KIWIFY_API_BASE_URL,
-          client_id: env?.KIWIFY_API_CLIENT_ID ? `${env.KIWIFY_API_CLIENT_ID.slice(0, 6)}…` : null,
+          client_id: env?.KIWIFY_CLIENT_ID ? `${env.KIWIFY_CLIENT_ID.slice(0, 6)}…` : null,
+          account_id: env?.KIWIFY_ACCOUNT_ID ?? null,
           scope: env?.KIWIFY_API_SCOPE ?? null,
           audience: env?.KIWIFY_API_AUDIENCE ?? null,
           path_prefix: envConfigured ? pathPrefix || "/" : null,

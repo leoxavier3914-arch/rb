@@ -1,7 +1,6 @@
 import { JsonPreview } from "@/components/json-preview";
 import { hasKiwifyApiEnv } from "@/lib/env";
-import { formatKiwifyApiPath } from "@/lib/kiwify/client";
-import { listProducts } from "@/lib/kiwify/resources";
+import { kiwifyGET } from "@/lib/kiwify";
 
 import { CreateProductForm, UpdateProductForm } from "./forms";
 
@@ -20,13 +19,13 @@ export default async function ProductsPage() {
   let error: string | null = null;
 
   try {
-    products = await listProducts({ perPage: 25 });
+    products = await kiwifyGET("/v1/products", { page_size: 25 });
   } catch (err) {
     console.error("Erro ao consultar produtos na Kiwify", err);
     error = "Não foi possível listar os produtos. Verifique o token e as permissões.";
   }
 
-  const productsPath = formatKiwifyApiPath("products");
+  const productsPath = "/v1/products";
 
   return (
     <div className="flex flex-col gap-6">

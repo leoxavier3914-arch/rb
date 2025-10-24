@@ -36,15 +36,17 @@ export default async function AuthenticationPage() {
       ) : (
         <div className="rounded-2xl border border-dashed border-yellow-500/40 bg-yellow-500/10 p-6 text-sm text-yellow-100">
           Configure <code className="rounded bg-surface px-1">KIWIFY_API_BASE_URL</code>,
-          <code className="rounded bg-surface px-1">KIWIFY_API_CLIENT_ID</code> e
-          <code className="rounded bg-surface px-1">KIWIFY_API_CLIENT_SECRET</code> para habilitar o fluxo de autenticação.
+          <code className="rounded bg-surface px-1">KIWIFY_CLIENT_ID</code>,
+          <code className="rounded bg-surface px-1">KIWIFY_CLIENT_SECRET</code> e
+          <code className="rounded bg-surface px-1">KIWIFY_ACCOUNT_ID</code> para habilitar o fluxo de autenticação.
         </div>
       )}
 
       <JsonPreview
         title="Credenciais ativas"
         data={{
-          client_id: env?.KIWIFY_API_CLIENT_ID ? `${env.KIWIFY_API_CLIENT_ID.slice(0, 6)}…` : null,
+          client_id: env?.KIWIFY_CLIENT_ID ? `${env.KIWIFY_CLIENT_ID.slice(0, 6)}…` : null,
+          account_id: env?.KIWIFY_ACCOUNT_ID ?? null,
           scope: env?.KIWIFY_API_SCOPE ?? "padrão",
           audience: env?.KIWIFY_API_AUDIENCE ?? "padrão",
         }}

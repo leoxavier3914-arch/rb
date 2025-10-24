@@ -1,6 +1,88 @@
 import { createHash } from "node:crypto";
 import { SAO_PAULO_TIME_ZONE } from "./timezone";
 
+async function fetchToken() {
+  const clientId = process.env.KIWIFY_CLIENT_ID?.trim();
+  const clientSecret = process.env.KIWIFY_CLIENT_SECRET?.trim();
+
+  if (!clientId) {
+    throw new Error("Missing KIWIFY_CLIENT_ID environment variable");
+  }
+
+  if (!clientSecret) {
+    throw new Error("Missing KIWIFY_CLIENT_SECRET environment variable");
+  }
+
+  const body = new URLSearchParams();
+  body.set("client_id", clientId);
+  body.set("client_secret", clientSecret);
+
+  const r = await fetch("https://public-api.kiwify.com/v1/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+
+  if (!r.ok) throw new Error(`Kiwify token: ${r.status} ${await r.text()}`);
+  const d = await r.json();
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    access_token: d.access_token as string,
+    expires_at: now + Number(d.expires_in ?? 3600),
+  };
+}
+
+type KiwifyAuth = { access_token: string; expires_at: number };
+let cache: KiwifyAuth | null = null;
+let inflight: Promise<KiwifyAuth> | null = null;
+
+export async function getKiwifyAuth(): Promise<KiwifyAuth> {
+  const now = Math.floor(Date.now() / 1000);
+  if (cache && cache.expires_at - now > 60) return cache;
+  if (!inflight) inflight = fetchToken().finally(() => (inflight = null));
+  cache = await inflight!;
+  return cache!;
+}
+
+export async function kiwifyGET(
+  path: string,
+  qs?: Record<string, string | number | undefined>,
+) {
+  const { access_token } = await getKiwifyAuth();
+  const url = new URL(`https://public-api.kiwify.com${path}`);
+  if (qs)
+    for (const [k, v] of Object.entries(qs))
+      if (v != null) url.searchParams.set(k, String(v));
+
+  const accountId = String(process.env.KIWIFY_ACCOUNT_ID ?? "").trim();
+  if (!accountId) {
+    throw new Error("Missing KIWIFY_ACCOUNT_ID environment variable");
+  }
+
+  const headers = {
+    Authorization: `Bearer ${access_token}`,
+    "x-kiwify-account-id": accountId,
+  };
+
+  console.log("[KIWIFY] GET", url.toString(), {
+    accountId: headers["x-kiwify-account-id"],
+    tokenPrefix: access_token.slice(0, 16),
+  });
+
+  let res = await fetch(url, { headers, cache: "no-store" });
+  if (res.status === 401) {
+    cache = null;
+    const fresh = await getKiwifyAuth();
+    const headers2 = {
+      Authorization: `Bearer ${fresh.access_token}`,
+      "x-kiwify-account-id": accountId,
+    };
+    res = await fetch(url, { headers: headers2, cache: "no-store" });
+  }
+  if (!res.ok) throw new Error(`Kiwify GET ${url.pathname}: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
 interface NormalizedBase {
   eventReference: string;
   customerName: string | null;
