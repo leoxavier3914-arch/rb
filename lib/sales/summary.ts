@@ -207,7 +207,9 @@ const matchesQuery = (sale: Record<string, unknown>, query: string) => {
     haystacks.add(buyerEmail.toLowerCase());
   }
 
-  for (const value of haystacks) {
+  const haystackValues = Array.from(haystacks);
+
+  for (const value of haystackValues) {
     if (value.includes(normalizedQuery)) {
       return true;
     }
