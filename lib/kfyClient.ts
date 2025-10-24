@@ -182,7 +182,8 @@ async function fetchWithRetry<T>(path: string, options: FetchOptions = {}, attem
   }
 
   const baseUrl = withTrailingSlash(env.KIWIFY_API_URL);
-  const url = new URL(path, baseUrl);
+  const normalizedPath = path.replace(/^\/+/, "");
+  const url = new URL(normalizedPath, baseUrl);
   if (options.searchParams) {
     Object.entries(options.searchParams).forEach(([key, value]) => {
       if (value === undefined || value === null || value === "") return;
