@@ -1,26 +1,25 @@
 import Link from "next/link";
-import { Suspense } from "react";
+import { PropsWithChildren } from "react";
 
 const navigation = [
-  { name: "Vendas", href: "/api/sales" },
-  { name: "API", href: "/api" },
-  { name: "Webhooks", href: "/webhooks" },
+  { name: "Dashboard", href: "/dashboard" },
+  { name: "Vendas", href: "/vendas" },
+  { name: "Reembolsos", href: "/reembolsos" },
+  { name: "Produtos", href: "/produtos" },
+  { name: "Clientes", href: "/clientes" },
+  { name: "Alunas", href: "/alunas" },
+  { name: "Relatórios", href: "/relatorios" },
+  { name: "Config", href: "/config" },
 ];
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({ children }: PropsWithChildren) {
   return (
-    <div className="min-h-screen bg-background px-6 pb-10 pt-12 text-white">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
+    <div className="min-h-screen bg-background px-6 pb-16 pt-12 text-white">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-10">
         <header className="flex flex-col gap-8 rounded-3xl bg-surface/80 p-8 shadow-soft backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-6">
             <div>
-              <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                Hub de vendas Kiwify
-              </p>
+              <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Painel Kiwify</p>
               <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">Romeike Beauty</h1>
             </div>
           </div>
@@ -40,9 +39,7 @@ export default function DashboardLayout({
         <main className="relative">
           <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,hsla(183,72%,48%,0.18),transparent_60%)]" />
           <section className="rounded-3xl border border-surface-accent/40 bg-surface/90 p-8 shadow-soft">
-            <Suspense fallback={<div className="animate-pulse text-muted-foreground">Carregando…</div>}>
-              {children}
-            </Suspense>
+            {children}
           </section>
         </main>
       </div>
