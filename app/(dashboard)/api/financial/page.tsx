@@ -3,7 +3,9 @@ import { headers } from "next/headers";
 import { JsonPreview } from "@/components/json-preview";
 import { StatCard } from "@/components/stat-card";
 import { hasKiwifyApiEnv } from "@/lib/env";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { formatCentsBRL } from "@/lib/format/currency";
+import { formatPercentAuto } from "@/lib/format/percent";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,7 @@ type PayoutEntry = {
   status?: string | null;
   created_at?: string | null;
   currency?: string | null;
+  price?: number | string | null;
 };
 
 type FinancialSummary = {
@@ -31,44 +34,83 @@ type FinancialSummary = {
   stats?: Record<string, unknown> | null;
 };
 
-function resolveCurrency(...values: Array<string | null | undefined>) {
-  for (const value of values) {
-    if (value && value.trim().length > 0) {
-      return value;
-    }
+type PercentStatEntry = {
+  key: string;
+  label: string;
+  value: unknown;
+  helper?: string;
+};
+
+function parseCents(value: number | string | null | undefined) {
+  if (value === null || value === undefined) {
+    return null;
   }
-  return undefined;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
 }
 
 function extractAmount(entry: BalancePayload[keyof BalancePayload]) {
   if (entry === null || entry === undefined) {
-    return { amount: null, currency: undefined };
+    return null;
   }
 
-  if (typeof entry === "number") {
-    return { amount: entry, currency: undefined };
-  }
-
-  if (typeof entry === "string") {
-    const parsed = Number(entry);
-    return { amount: Number.isNaN(parsed) ? null : parsed, currency: undefined };
+  if (typeof entry === "number" || typeof entry === "string") {
+    return parseCents(entry);
   }
 
   if (typeof entry === "object") {
-    const amount = entry.amount;
-    const currency = resolveCurrency(entry.currency);
-
-    if (typeof amount === "number") {
-      return { amount, currency };
-    }
-
-    if (typeof amount === "string") {
-      const parsed = Number(amount);
-      return { amount: Number.isNaN(parsed) ? null : parsed, currency };
-    }
+    return parseCents(entry.amount);
   }
 
-  return { amount: null, currency: undefined };
+  return null;
+}
+
+const PERCENT_STAT_LABELS: Record<string, { label: string; helper?: string }> = {
+  credit_card_approval_rate: {
+    label: "Aprovação no cartão de crédito",
+    helper: "Pedidos aprovados com cartão no período consultado.",
+  },
+  boleto_approval_rate: {
+    label: "Aprovação no boleto",
+    helper: "Boletos compensados entre os pedidos emitidos.",
+  },
+  pix_approval_rate: {
+    label: "Aprovação no PIX",
+    helper: "Proporção de pagamentos PIX confirmados.",
+  },
+  refund_rate: {
+    label: "Taxa de reembolsos",
+    helper: "Percentual de pedidos reembolsados.",
+  },
+  chargeback_rate: {
+    label: "Taxa de chargeback",
+    helper: "Pedidos contestados em relação ao total de vendas.",
+  },
+  subscription_renewal_rate: {
+    label: "Renovação de assinaturas",
+    helper: "Assinaturas renovadas automaticamente.",
+  },
+  conversion_rate: {
+    label: "Taxa de conversão",
+    helper: "Conversões sobre acessos ou leads coletados.",
+  },
+};
+
+function humanizeStatKey(key: string) {
+  return key
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
 }
 
 async function fetchFinancialSummaryFromApi(): Promise<FinancialSummary> {
@@ -113,12 +155,46 @@ export default async function FinancialPage() {
   }
 
   const balance = summary?.balance ?? {};
-  const availableInfo = extractAmount(balance.available);
-  const pendingInfo = extractAmount(balance.pending);
-  const currency = resolveCurrency(balance.currency, availableInfo.currency, pendingInfo.currency) ?? "BRL";
+  const availableCents = extractAmount(balance.available);
+  const pendingCents = extractAmount(balance.pending);
   const legalEntityId = balance.legal_entity_id ?? null;
   const payouts = summary?.payouts?.data ?? [];
   const stats = summary?.stats ?? null;
+  const labeledPercentStatEntries: PercentStatEntry[] = stats
+    ? Object.entries(PERCENT_STAT_LABELS).flatMap(([key, meta]) => {
+        const value = stats?.[key];
+        if (value === null || value === undefined) {
+          return [];
+        }
+        return [
+          {
+            key,
+            label: meta.label,
+            helper: meta.helper,
+            value,
+          } satisfies PercentStatEntry,
+        ];
+      })
+    : [];
+
+  const dynamicPercentStatEntries: PercentStatEntry[] = stats
+    ? Object.entries(stats)
+        .filter(([key, value]) =>
+          (key.endsWith("_rate") || key.endsWith("_percentage")) &&
+          !(key in PERCENT_STAT_LABELS) &&
+          value !== null &&
+          value !== undefined,
+        )
+        .map(
+          ([key, value]) =>
+            ({ key, label: humanizeStatKey(key), value } satisfies PercentStatEntry),
+        )
+    : [];
+
+  const percentStatEntries: PercentStatEntry[] = [
+    ...labeledPercentStatEntries,
+    ...dynamicPercentStatEntries,
+  ];
 
   return (
     <div className="flex flex-col gap-6">
@@ -137,7 +213,7 @@ export default async function FinancialPage() {
           <div className="grid gap-4 md:grid-cols-3">
             <StatCard
               label="Saldo disponível"
-              value={formatCurrency(availableInfo.amount, currency) ?? "—"}
+              value={formatCentsBRL(availableCents)}
               helper={
                 legalEntityId
                   ? `Conta favorecida: ${legalEntityId}`
@@ -146,7 +222,7 @@ export default async function FinancialPage() {
             />
             <StatCard
               label="Saldo pendente"
-              value={formatCurrency(pendingInfo.amount, currency) ?? "—"}
+              value={formatCentsBRL(pendingCents)}
               helper="Valores aguardando liberação conforme regras da Kiwify."
             />
             <StatCard
@@ -155,6 +231,27 @@ export default async function FinancialPage() {
               helper="Os dados são consultados em tempo real sempre que a página é carregada."
             />
           </div>
+
+          {percentStatEntries.length > 0 ? (
+            <section className="grid gap-4 rounded-2xl border border-surface-accent/40 bg-surface-accent/60 p-6 shadow-soft">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-lg font-semibold text-white">Indicadores de performance</h4>
+                <span className="text-xs uppercase tracking-widest text-muted-foreground">
+                  {percentStatEntries.length} métricas
+                </span>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                {percentStatEntries.map((entry) => (
+                  <StatCard
+                    key={entry.key}
+                    label={entry.label}
+                    value={formatPercentAuto(entry.value)}
+                    helper={entry.helper}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className="grid gap-4 rounded-2xl border border-surface-accent/40 bg-surface-accent/60 p-6 shadow-soft">
             <div className="flex items-center justify-between gap-3">
@@ -176,7 +273,8 @@ export default async function FinancialPage() {
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {payouts.map((payout) => {
-                      const amountDisplay = formatCurrency(payout.amount ?? null, payout.currency ?? currency) ?? "—";
+                      const payoutCents = parseCents(payout.amount) ?? parseCents(payout.price);
+                      const amountDisplay = formatCentsBRL(payoutCents);
                       const statusDisplay = payout.status ?? "—";
                       const createdAtDisplay = formatDate(payout.created_at) ?? "—";
 
