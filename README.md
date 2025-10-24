@@ -1,97 +1,108 @@
-# Kiwify Sales Hub
+# Kiwify Dashboard
 
-Painel em Next.js para acompanhar em tempo real as operações de uma loja digital na Kiwify. O projeto foi pensado para rodar no Vercel, usando Supabase como camada de persistência e as novas rotas App Router para receber os webhooks da plataforma.
-
-## Visão geral
-- Interface dark mode com navegação entre **Vendas aprovadas**, **Pagamentos pendentes/recusados**, **Reembolsos** e **Carrinhos abandonados**.
-- Ingestão de webhooks oficiais da Kiwify com deduplicação via `event_reference` e armazenamento do payload completo para auditoria.
-- Estatísticas instantâneas (volume, valores, comissões) e filtros por período ou busca textual diretamente na dashboard.
-- Normalização de datas e valores para fuso horário de São Paulo e padronização de payloads heterogêneos.
-- Hub completo para consumir a API oficial da Kiwify diretamente no painel (produtos, vendas, financeiro, afiliados, participantes e webhooks), com formulários prontos para criação/edição de catálogo.
-
-## Arquitetura do projeto
-```
-app/                    # Rotas públicas e privadas (App Router)
-  api/kiwify/webhook    # Endpoint de ingestão de webhooks
-components/             # Componentes compartilhados da UI
-lib/                    # Utilitários (Supabase, normalização de eventos, helpers de formato)
-supabase/migrations/    # Migrações SQL versionadas para o banco
-```
-
-O cliente Supabase é inicializado em `lib/supabase.ts` com `fetch` forçando `no-store` para evitar respostas em cache. Os normalizadores que convertem os webhooks crus para o formato interno ficam em `lib/kiwify.ts` e são compartilhados entre a API e os testes.
+Painel completo construído com Next.js 15 (App Router) e Tiposcript para acompanhar produtos, vendas, clientes e matrículas da Kiwify. O backend local sincroniza os dados para uma instância Supabase, expõe rotas internas tipadas e oferece uma UX pronta para operação diária.
 
 ## Requisitos
-- Node.js 18 ou 20
-- npm 9+
-- Instância Supabase configurada com as migrações do diretório `supabase/migrations`
 
-## Configuração
-1. Instale as dependências:
-   ```bash
-   npm install
-   ```
-2. Copie suas credenciais para um arquivo `.env.local` (ou defina as variáveis no ambiente):
--  ```bash
-  SUPABASE_URL="https://<sua-instancia>.supabase.co"
-  SUPABASE_SERVICE_ROLE_KEY="<chave-service-role>"
-  NEXT_PUBLIC_SUPABASE_URL="https://<sua-instancia>.supabase.co"
-  KIWIFY_WEBHOOK_SECRET="<token exibido na Kiwify>"
+- Node.js 18+
+- Instância Supabase com Postgres 15
+- Credenciais da API oficial da Kiwify com fluxo `client_credentials`
 
-  # Credenciais da API oficial
-  KIWIFY_API_BASE_URL="https://public-api.kiwify.com"
-  KIWIFY_CLIENT_ID="<client_id gerado no painel da Kiwify>"
-  KIWIFY_CLIENT_SECRET="<client_secret gerado no painel da Kiwify>"
-  KIWIFY_ACCOUNT_ID="<account_id exibido ao lado da API Key no painel>"
-  KIWIFY_API_SCOPE="<escopo opcional fornecido pela Kiwify>"
-  KIWIFY_API_AUDIENCE="<audience opcional, quando aplicável>"
-  KIWIFY_API_PATH_PREFIX="/v1"
-  KIWIFY_PARTNER_ID="<id do parceiro/afiliado opcional>"
-  ```
-  `SUPABASE_URL` aceita fallback de `NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` aceita fallback de `SUPABASE_SERVICE_ROLE`, permitindo usar as mesmas variáveis do ambiente de produção.
-3. Rode as migrações no Supabase (via CLI `supabase db push` ou pipeline CI/CD).
+## Variáveis de ambiente
+
+Crie um arquivo `.env.local` (ou configure diretamente no ambiente) com os valores abaixo. Todos são validados em runtime com Zod:
+
+```bash
+SUPABASE_URL="https://<sua-instancia>.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="<service-role>"
+KIWIFY_CLIENT_ID="<client-id>"
+KIWIFY_CLIENT_SECRET="<client-secret>"
+KIWIFY_ACCOUNT_ID="<account-id>"
+KIWIFY_WEBHOOK_SECRET="<secret-usado-no-webhook>"
+NEXT_PUBLIC_APP_TIMEZONE="America/Sao_Paulo"
+# Opcional para mutações de produtos diretamente pela API
+NEXT_PUBLIC_KIWIFY_ALLOW_PRODUCT_MUTATIONS="false"
+```
+
+Defina também `NEXT_PUBLIC_APP_URL` quando publicar para que os fetches server-side usem domínio absoluto.
+
+## Estrutura
+
+```
+app/
+  (dashboard)/              # Shell da aplicação e páginas principais
+  api/kfy/                  # Rotas internas tipadas (auth, sync, vendas, etc.)
+  api/webhooks/kiwify/      # Reexporta o webhook original (inalterado)
+components/                 # UI compartilhada (tabelas, filtros, charts)
+lib/                        # Cliente Kiwify, Supabase, formatações, auth helpers
+schema/                     # Migrações SQL (tabelas, views, políticas)
+types/                      # Schemas Zod e typescript das entidades
+scripts/                    # utilitários (seed, migrate, sync)
+tests/                      # Vitest + Playwright
+```
+
+## Migrações
+
+Execute todas as migrações em `schema/` na ordem numérica:
+
+```bash
+npm run db:migrate
+```
+
+O script percorre os arquivos SQL sequencialmente utilizando o client service-role (é necessário habilitar a função `pg_execute_sql` na instância Supabase). As tabelas criadas contemplam produtos, clientes, pedidos, reembolsos, matrículas, cupons e eventos crus da Kiwify, além das views `kfy_kpi_overview` e `kfy_status_counts`.
+
+## Sincronização com a Kiwify
+
+- `npm run sync:full` realiza uma sincronização completa (ordens, produtos, clientes, reembolsos, matrículas, cupons).
+- `npm run sync:range -- --from=2024-01-01 --to=2024-01-31` executa uma janela incremental.
+- Dentro do painel `/config` há botões para executar ambos os fluxos on-demand.
+
+A rota `/api/kfy/sync` aplica upserts idempotentes, persiste o payload bruto em `kfy_events` e respeita backoff exponencial em respostas `429/5xx` da API oficial.
+O script CLI usa `SYNC_BASE_URL` (padrão `http://localhost:3000`) para enviar o POST para o servidor em execução.
 
 ## Desenvolvimento
+
 ```bash
+npm install
 npm run dev
 ```
-O painel principal concentra-se na rota `/webhooks`, que agrupa as subseções `/webhooks/approved-sales`, `/webhooks/pending-payments`, `/webhooks/rejected-payments`, `/webhooks/refunded-sales` e `/webhooks/abandoned-carts`.
 
-## API oficial da Kiwify
-- A navegação inclui uma nova seção **API** com subpáginas para Autenticação, Conta, Produtos, Vendas, Financeiro, Afiliados, Webhooks e Participantes.
-- O fluxo de autenticação realiza o grant `client_credentials` usando `KIWIFY_CLIENT_ID` e `KIWIFY_CLIENT_SECRET`, exibindo validade e preview do token.
-- O prefixo configurável (`KIWIFY_API_PATH_PREFIX`, padrão `/v1`) é aplicado automaticamente em todas as chamadas; informe `"/"` para desativá-lo e apontar para caminhos sem versão.
-- Os formulários de Produtos permitem criar (`POST {prefix}/products`) e atualizar (`PATCH {prefix}/products/:id`) itens enviando o JSON esperado pela documentação, onde `{prefix}` corresponde ao valor efetivo de `KIWIFY_API_PATH_PREFIX`.
-- A listagem de produtos segue os filtros documentados oficialmente (`page_number`, `page_size`), enquanto vendas, finanças, afiliados, webhooks e participantes continuam aceitando a convenção `page`/`per_page` exposta pela API.
-- Todos os painéis expõem o payload bruto via `JsonPreview`, facilitando auditoria e comparações com os dados persistidos via webhooks.
-- Quando `KIWIFY_PARTNER_ID` é definido, o header `x-kiwify-partner-id` é anexado automaticamente às requisições feitas pelo cliente `kiwifyFetch`.
+### Scripts úteis
 
-### Testes
+- `npm run test` – Vitest (unitários e integração)
+- `npm run test:e2e` – Playwright (smoke, exige servidor em execução)
+- `npm run seed` – Cadastra dados de demonstração no Supabase
+
+## Páginas principais
+
+- **/dashboard** – Filtros persistentes (localStorage + search params), cards de KPI (bruto, líquido, comissão), contadores de status e gráficos (linha, barras, pizza).
+- **/vendas** – Tabela com TanStack Table + scroll infinito, CSV respeitando filtros, busca por cliente/pedido, filtros de status/método/produto.
+- **/reembolsos** – Lista paginada com motivo, status e dados relacionados ao pedido.
+- **/produtos** – Cards com foto, preço, status, volume de vendas; botões de CRUD desabilitados por padrão (a API ainda não expõe mutação pública).
+- **/clientes** – Tabela com pedidos, total gasto, última compra e filtro “Clientes ativos”.
+- **/alunas** – Matriculas por curso com detalhe `/alunas/[id]` exibindo histórico de compras/matrículas.
+- **/relatorios** – Builder combinando dimensões e métricas com exportação CSV.
+- **/config** – Validação de envs, acionamento manual de sync e log dos últimos eventos sincronizados.
+
+## Testes
+
+- Unitários cobrem o client Kiwify (`lib/kfyClient.ts`) e o fluxo de sincronização.
+- Playwright possui smoke suite (dashboard) e especificação de Vendas (marcada como `skip` aguardando ambiente com dados reais).
+
+Execute tudo com:
+
 ```bash
 npm test
+npm run test:e2e
 ```
-Os testes cobrem normalização de payloads, leitura de variáveis de ambiente e o fluxo completo do webhook.
 
-## Webhooks da Kiwify
-- `HEAD /api/kiwify/webhook` responde `200` para o health-check usado pela Kiwify.
-- `POST /api/kiwify/webhook` exige a query `signature` calculada com `HMAC-SHA1(JSON.stringify(body), KIWIFY_WEBHOOK_SECRET)`.
-- A assinatura é validada com `timingSafeEqual`; qualquer divergência retorna `400`.
-- Com a assinatura válida, o payload é normalizado e persistido na tabela correspondente (`approved_sales`, `pending_payments`, `rejected_payments`, `refunded_sales`, `abandoned_carts` ou `subscription_events`).
+## Webhook
 
-## Migrações principais
-| Arquivo | Descrição |
-| --- | --- |
-| `20241001000000_reset_schema.sql` | Zera completamente o schema público para facilitar reimportações. |
-| `20241001010000_create_core_tables.sql` | Cria `approved_sales` e `abandoned_carts` com os campos essenciais. |
-| `20241001020000_create_additional_payment_tables.sql` | Adiciona `pending_payments`, `rejected_payments` e `refunded_sales`. |
-| `20241001030000_create_subscription_events_table.sql` | Define a tabela de eventos de assinatura e índices auxiliares. |
-| `20241001040000_add_amount_breakdown.sql` | Inclui colunas de valores brutos, líquidos e comissões em todas as tabelas. |
-| `20241001050000_add_sale_customer_metadata.sql` | Adiciona metadados do cliente/UTM e backfill a partir dos payloads. |
-| `20241001060000_backfill_sale_customer_metadata_extensions.sql` | Atualiza registros antigos com campos de metadados consolidados. |
+O arquivo `app/api/kiwify/webhook/route.ts` permanece intacto. A nova rota `/api/webhooks/kiwify/route.ts` apenas reexporta o manipulador existente para compatibilidade com o novo layout de rotas.
 
-Execute-as na ordem listada para obter o schema mais recente.
+## Notas
 
-## Dicas de produção
-- Configure um endpoint público no Vercel apenas para `/api/kiwify/webhook` e mantenha o restante da aplicação protegido por autenticação.
-- Utilize logs do Supabase para monitorar deduplicação via `event_reference` e eventuais falhas de inserção.
-- Considere criar políticas RLS (Row Level Security) específicas para consumo do painel caso seja exposto a terceiros.
-
+- Todas as rotas internas exigem header `x-admin-role: true` e validam origem opcional (`ALLOWED_ORIGINS`).
+- O cliente Kiwify (`lib/kfyClient.ts`) implementa cache in-memory do token, backoff exponencial, paginação por cursor e normalização de status/método.
+- Os filtros usam timezone `America/Sao_Paulo` para converter datas (inclusão automática de 23:59:59 no limite superior).
+- Para habilitar mutações de produto diretamente via API oficial, defina `NEXT_PUBLIC_KIWIFY_ALLOW_PRODUCT_MUTATIONS=true` e revise a documentação da Kiwify antes de liberar em produção.
