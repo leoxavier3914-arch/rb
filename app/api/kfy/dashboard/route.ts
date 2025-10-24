@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { z } from "zod";
 
 import { assertIsAdmin } from "@/lib/auth";
-import { supabaseAdmin } from "@/lib/supabase";
+import { hasSupabaseConfig, supabaseAdmin } from "@/lib/supabase";
 
 const orderRowSchema = z.object({
   product_id: z.number(),
@@ -33,6 +33,16 @@ const querySchema = z.object({
 export async function GET(request: NextRequest) {
   assertIsAdmin(request);
   const params = querySchema.parse(Object.fromEntries(request.nextUrl.searchParams.entries()));
+
+  if (!hasSupabaseConfig()) {
+    return NextResponse.json({
+      kpi: { grossCents: 0, netCents: 0, feeCents: 0, commissionCents: 0 },
+      statusCounts: { approved: 0, pending: 0, refunded: 0, rejected: 0 },
+      revenueSeries: [],
+      productSeries: [],
+      methodSeries: [],
+    });
+  }
 
   let query = supabaseAdmin
     .from("kfy_orders")
