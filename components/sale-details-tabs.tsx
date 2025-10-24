@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react"
 import clsx from "clsx"
 import QRCode from "qrcode"
@@ -27,7 +28,7 @@ type DetailAction = PixQrAction
 
 export type DetailItem = {
   label: string
-  value: string | null
+  value: ReactNode | null
   list?: DetailListItem[]
   action?: DetailAction
 }
@@ -38,16 +39,20 @@ type Section = {
   items: DetailItem[]
 }
 
-const fallbackValue = (value: string | null | undefined) => {
+const fallbackValue = (value: ReactNode | null | undefined) => {
   if (value === null || value === undefined) {
     return <span className="text-muted-foreground/70">—</span>
   }
 
-  if (typeof value === "string" && value.trim().length === 0) {
-    return <span className="text-muted-foreground/70">—</span>
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (trimmed.length === 0) {
+      return <span className="text-muted-foreground/70">—</span>
+    }
+    return trimmed
   }
 
-  return typeof value === "string" ? value.trim() : value
+  return value
 }
 
 const PixQrCodeAction = ({ action }: { action: PixQrAction }) => {

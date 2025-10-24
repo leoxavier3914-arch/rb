@@ -1,670 +1,589 @@
-import Link from "next/link"
-import { notFound } from "next/navigation"
+import Link from "next/link";
+import { headers } from "next/headers";
+import { notFound } from "next/navigation";
 
-import SaleDetailsTabs, { type DetailItem, type DetailListItem } from "@/components/sale-details-tabs"
+import SaleDetailsTabs, { type DetailItem, type DetailListItem } from "@/components/sale-details-tabs";
+import { formatDate } from "@/lib/format";
+import { formatCentsBRL } from "@/lib/format/currency";
+import { formatPercentAuto } from "@/lib/format/percent";
+import { formatSaleStatus, normalizeSaleMetadataValue, resolveSaleDocumentLabel } from "@/lib/sale-event-metadata";
 
-import { formatCurrency, formatDate } from "@/lib/format"
-import { getSaleDetails, type SaleDetailRecord } from "@/lib/queries"
-import {
-  formatSaleRole,
-  formatSaleStatus,
-  normalizeSaleMetadataValue,
-  resolveSaleDocumentLabel,
-} from "@/lib/sale-event-metadata"
+export const dynamic = "force-dynamic";
 
-export const dynamic = "force-dynamic"
+type SaleDetail = Record<string, unknown>;
 
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  credit_card: "Cartão de crédito",
-  pix: "Pix",
-  boleto: "Boleto bancário",
-  bank_transfer: "Transferência bancária",
-  paypal: "PayPal",
-}
+const candidateCollections = ["items", "order.items", "data.items", "data.order.items", "products", "order.products", "line_items"] as const;
 
-const PAYMENT_METHOD_PATHS = [
-  "payment_method",
-  "payment.method",
-  "data.payment_method",
-  "data.payment.method",
-  "data.order.payment_method",
-  "data.order.payment.method",
-  "data.order.payment.method_name",
-  "payment.method_name",
-  "payment.methodName",
-]
-
-const STATUS_PATHS = [
-  "data.status",
-  "data.order.status",
-  "data.order.payment.status",
-  "data.payment.status",
-  "transaction.status",
-]
-
-const ROLE_PATHS = [
-  "role",
-  "data.role",
-  "data.order.role",
-  "metadata.role",
-  "sale_type",
-  "saleType",
-  "data.sale_type",
-  "data.saleType",
-  "data.order.sale_type",
-  "data.order.saleType",
-  "Sale.sale_type",
-  "Sale.saleType",
-]
-
-const INSTALLMENT_PATHS = [
-  "data.payment.installments",
-  "data.order.payment.installments",
-  "payment.installments",
-  "payment.parcelas",
-  "payment_details.installments",
-  "installments",
-  "data.payment.number_installments",
-]
-
-const PHONE_PATHS = [
-  "customer.phone",
-  "customer.phone_number",
-  "customer.phoneNumber",
-  "customer.mobile",
-  "customer.mobile_phone",
-  "customer.mobilePhone",
-  "customer.mobile_number",
-  "customer.mobilePhoneNumber",
-  "customer_phone",
-  "customer_phone_number",
-  "customerPhone",
-  "customerPhoneNumber",
-  "Customer.mobile",
-  "Customer.mobile_phone",
-  "Customer.mobileNumber",
-  "Customer.mobile_number",
-  "Customer.mobilePhoneNumber",
-  "data.customer.phone",
-  "data.customer.phone_number",
-  "data.customer.phoneNumber",
-  "data.customer.mobile",
-  "data.customer.mobile_phone",
-  "data.customer.mobileNumber",
-  "data.customer.mobile_number",
-  "data.customer.mobilePhoneNumber",
-  "data.order.customer.phone",
-  "data.order.customer.phone_number",
-  "data.order.customer.phoneNumber",
-  "data.order.customer.mobile",
-  "data.order.customer.mobile_phone",
-  "data.order.customer.mobileNumber",
-  "data.order.customer.mobile_number",
-  "data.order.customer.mobilePhoneNumber",
-  "buyer.phone",
-  "buyer.phoneNumber",
-  "buyer.mobile",
-  "buyer.mobileNumber",
-  "buyer.mobile_phone",
-  "buyer.mobile_number",
-  "buyer.mobilePhoneNumber",
-  "data.buyer.phone",
-  "data.buyer.phone_number",
-  "data.buyer.phoneNumber",
-  "data.buyer.mobile",
-  "data.buyer.mobile_phone",
-  "data.buyer.mobileNumber",
-  "data.buyer.mobile_number",
-  "data.buyer.mobilePhoneNumber",
-]
-
-const DOCUMENT_PATHS = [
-  "customer.document",
-  "customer.cpf",
-  "customer.CPF",
-  "customer.cnpj",
-  "customer.CNPJ",
-  "customer.tax_id",
-  "customer.taxId",
-  "customer.document_number",
-  "customer.documentNumber",
-  "customer_document",
-  "customer_document_number",
-  "customerDocument",
-  "customerDocumentNumber",
-  "Customer.CPF",
-  "Customer.CNPJ",
-  "Customer.cpf",
-  "Customer.cnpj",
-  "data.customer.document",
-  "data.customer.cpf",
-  "data.customer.CPF",
-  "data.customer.cnpj",
-  "data.customer.CNPJ",
-  "data.customer.tax_id",
-  "data.customer.taxId",
-  "data.customer.document_number",
-  "data.customer.documentNumber",
-  "data.order.customer.document",
-  "data.order.customer.cpf",
-  "data.order.customer.CPF",
-  "data.order.customer.cnpj",
-  "data.order.customer.CNPJ",
-  "data.order.customer.tax_id",
-  "data.order.customer.taxId",
-  "data.order.customer.document_number",
-  "data.order.customer.documentNumber",
-  "buyer.document",
-  "buyer.cpf",
-  "buyer.CPF",
-  "buyer.cnpj",
-  "buyer.CNPJ",
-  "buyer.tax_id",
-  "buyer.taxId",
-  "buyer.document_number",
-  "buyer.documentNumber",
-  "data.buyer.document",
-  "data.buyer.cpf",
-  "data.buyer.CPF",
-  "data.buyer.cnpj",
-  "data.buyer.CNPJ",
-  "data.buyer.tax_id",
-  "data.buyer.taxId",
-  "data.buyer.document_number",
-  "data.buyer.documentNumber",
-]
-
-const IP_PATHS = [
-  "customer.ip",
-  "client_ip",
-  "data.client_ip",
-  "data.customer.ip",
-  "data.order.customer.ip",
-  "request.ip",
-]
-
-const UTM_SOURCE_PATHS = [
-  "utm_source",
-  "utmSource",
-  "data.utm_source",
-  "data.utmSource",
-  "TrackingParameters.utm_source",
-  "TrackingParameters.utmSource",
-  "trackingParameters.utm_source",
-  "trackingParameters.utmSource",
-  "data.order.utm_source",
-  "data.order.utmSource",
-  "data.order.metadata.utm_source",
-  "data.order.metadata.utmSource",
-  "metadata.utm_source",
-  "metadata.utmSource",
-]
-
-const UTM_MEDIUM_PATHS = [
-  "utm_medium",
-  "utmMedium",
-  "data.utm_medium",
-  "data.utmMedium",
-  "TrackingParameters.utm_medium",
-  "TrackingParameters.utmMedium",
-  "trackingParameters.utm_medium",
-  "trackingParameters.utmMedium",
-  "data.order.utm_medium",
-  "data.order.utmMedium",
-  "data.order.metadata.utm_medium",
-  "data.order.metadata.utmMedium",
-  "metadata.utm_medium",
-  "metadata.utmMedium",
-]
-
-const UTM_CAMPAIGN_PATHS = [
-  "utm_campaign",
-  "utmCampaign",
-  "data.utm_campaign",
-  "data.utmCampaign",
-  "TrackingParameters.utm_campaign",
-  "TrackingParameters.utmCampaign",
-  "trackingParameters.utm_campaign",
-  "trackingParameters.utmCampaign",
-  "data.order.utm_campaign",
-  "data.order.utmCampaign",
-  "data.order.metadata.utm_campaign",
-  "data.order.metadata.utmCampaign",
-  "metadata.utm_campaign",
-  "metadata.utmCampaign",
-]
-
-const PAYOUT_STATUS_PATHS = [
-  "payout_status",
-  "withdrawal_status",
-  "data.payout_status",
-  "data.order.payout_status",
-  "data.order.withdrawal_status",
-]
-
-const PAYOUT_DATE_PATHS = [
-  "expected_release_at",
-  "expected_release_date",
-  "release_date",
-  "release_at",
-  "data.expected_release_at",
-  "data.expected_release_date",
-  "data.payment.expected_release_at",
-  "data.payment.release_date",
-  "data.order.release_date",
-  "next_withdrawal_at",
-]
-
-const SALE_KIND_BADGE: Record<SaleDetailRecord['kind'], { label: string; tone: string }> = {
-  approved: { label: "Venda aprovada", tone: "bg-emerald-500/20 text-emerald-300 border-emerald-400/40" },
-  pending: { label: "Pagamento pendente", tone: "bg-amber-500/20 text-amber-200 border-amber-400/40" },
-  rejected: { label: "Pagamento recusado", tone: "bg-rose-500/20 text-rose-200 border-rose-400/40" },
-  refunded: { label: "Venda reembolsada", tone: "bg-sky-500/20 text-sky-200 border-sky-400/40" },
-}
-
-const PIX_CODE_PATHS = [
-  "pix_code",
-  "pixCode",
-  "pix.qr_code",
-  "pix.qrCode",
-  "data.pix_code",
-  "data.pixCode",
-  "data.pix.qr_code",
-  "data.pix.qrCode",
-  "data.payment.pix_code",
-  "data.payment.pixCode",
-  "data.payment.qr_code",
-  "data.payment.qrCode",
-  "data.order.pix_code",
-  "data.order.pixCode",
-  "data.order.payment.pix_code",
-  "data.order.payment.pixCode",
-  "data.order.payment.qr_code",
-  "data.order.payment.qrCode",
-  "payment.pix_code",
-  "payment.pixCode",
-  "payment.qr_code",
-  "payment.qrCode",
-]
-
-const PIX_EXPIRATION_PATHS = [
-  "pix_expiration",
-  "pixExpiration",
-  "pix.expiration",
-  "pix.expira_em",
-  "pix.expiraEm",
-  "data.pix_expiration",
-  "data.pixExpiration",
-  "data.pix.expiration",
-  "data.pix.expira_em",
-  "data.pix.expiraEm",
-  "data.payment.pix_expiration",
-  "data.payment.pixExpiration",
-  "data.payment.expiration",
-  "data.payment.expira_em",
-  "data.payment.expiraEm",
-  "data.order.pix_expiration",
-  "data.order.pixExpiration",
-  "data.order.payment.pix_expiration",
-  "data.order.payment.pixExpiration",
-  "data.order.payment.expiration",
-  "data.order.payment.expira_em",
-  "data.order.payment.expiraEm",
-  "payment.pix_expiration",
-  "payment.pixExpiration",
-  "payment.expiration",
-  "payment.expira_em",
-  "payment.expiraEm",
-]
-
-type UnknownPayload = Record<string, unknown>
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value)
-
-const getNestedValue = (payload: UnknownPayload, path: string): unknown => {
+const getNestedValue = (payload: Record<string, unknown>, path: string): unknown => {
   return path.split(".").reduce<unknown>((acc, key) => {
     if (acc === null || acc === undefined) {
-      return undefined
+      return undefined;
     }
 
     if (Array.isArray(acc)) {
-      const index = Number(key)
-      if (!Number.isNaN(index)) {
-        return acc[index]
+      const index = Number(key);
+      if (Number.isInteger(index)) {
+        return acc[index];
       }
-      return undefined
+      return undefined;
     }
 
-    if (isObject(acc) && key in acc) {
-      return acc[key]
+    if (typeof acc === "object" && acc && key in acc) {
+      return (acc as Record<string, unknown>)[key];
     }
 
-    return undefined
-  }, payload)
-}
+    return undefined;
+  }, payload);
+};
 
-const pickStringFromSources = (sources: UnknownPayload[], paths: string[]): string | null => {
+const pickString = (payload: Record<string, unknown>, paths: string[]): string | null => {
   for (const path of paths) {
-    for (const source of sources) {
-      const value = getNestedValue(source, path)
-      if (typeof value === "string" && value.trim().length > 0) {
-        return value.trim()
+    const value = getNestedValue(payload, path);
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+};
+
+const pickNumber = (payload: Record<string, unknown>, paths: string[]): number | null => {
+  for (const path of paths) {
+    const value = getNestedValue(payload, path);
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string") {
+      const normalized = value.replace(/[^0-9.,-]/g, "").replace(",", ".");
+      if (!normalized) continue;
+      const parsed = Number(normalized);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
       }
     }
   }
-  return null
-}
+  return null;
+};
 
-const pickStringFromEntries = (entries: SaleDetailRecord[], paths: string[]): string | null => {
-  for (const entry of entries) {
-    const sources: UnknownPayload[] = [entry as unknown as UnknownPayload, entry.payload]
-    const candidate = pickStringFromSources(sources, paths)
-    if (candidate) {
-      return candidate
-    }
-  }
-  return null
-}
-
-const pickNumberFromSources = (sources: UnknownPayload[], paths: string[]): number | null => {
+const pickCollections = (payload: Record<string, unknown>, paths: readonly string[]) => {
+  const result: Record<string, unknown>[] = [];
   for (const path of paths) {
-    for (const source of sources) {
-      const value = getNestedValue(source, path)
-
-      if (typeof value === "number" && Number.isFinite(value)) {
-        return value
-      }
-
-      if (typeof value === "string") {
-        const normalized = value.replace(/[^0-9.,-]/g, "").replace(",", ".")
-        if (normalized.length === 0) continue
-        const parsed = Number(normalized)
-        if (!Number.isNaN(parsed)) {
-          return parsed
+    const value = getNestedValue(payload, path);
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (entry && typeof entry === "object") {
+          result.push(entry as Record<string, unknown>);
         }
       }
     }
   }
-  return null
-}
+  return result;
+};
 
-const pickNumber = (payload: UnknownPayload, paths: string[]): number | null =>
-  pickNumberFromSources([payload], paths)
+const SALE_ID_PATHS = ["sale_id", "id", "sale.id", "data.sale_id", "data.id", "reference", "order.id", "order.reference"];
+const PRODUCT_ID_PATHS = [
+  "product_id",
+  "product.id",
+  "items.0.product.id",
+  "order.product_id",
+  "order.product.id",
+  "data.product.id",
+  "data.items.0.product.id",
+  "product.product_id",
+];
+const PRODUCT_NAME_PATHS = [
+  "product_name",
+  "product.name",
+  "product.title",
+  "items.0.product.name",
+  "items.0.name",
+  "order.product.name",
+  "data.product.name",
+  "data.items.0.product.name",
+  "offer_name",
+];
+const STATUS_PATHS = ["status", "data.status", "payment.status", "order.status", "sale.status"];
+const CREATED_AT_PATHS = ["created_at", "paid_at", "sale_date", "order.created_at", "data.created_at", "data.sale_date"];
+const UPDATED_AT_PATHS = ["updated_at", "data.updated_at", "order.updated_at", "payment.updated_at"];
+const PAYMENT_METHOD_PATHS = [
+  "payment_method",
+  "payment.method",
+  "payment.method_name",
+  "payment.methodName",
+  "order.payment.method",
+  "data.payment.method",
+];
+const PAYMENT_GATEWAY_PATHS = ["payment.gateway", "payment.provider", "gateway", "payment.acquirer"];
+const INSTALLMENTS_PATHS = [
+  "payment.installments",
+  "installments",
+  "payment.number_installments",
+  "installments_count",
+  "order.installments",
+];
+const RECURRENCE_PATHS = [
+  "subscription.interval",
+  "subscription.frequency",
+  "subscription.plan.interval",
+  "subscription.type",
+  "recurrence",
+  "billing_cycle",
+  "billing_interval",
+];
+const COUPON_PATHS = [
+  "coupon.code",
+  "coupon",
+  "discount.coupon",
+  "order.coupon.code",
+  "data.coupon",
+  "promotion.coupon",
+];
 
-const pickNumberFromEntries = (entries: SaleDetailRecord[], paths: string[]): number | null => {
-  for (const entry of entries) {
-    const sources: UnknownPayload[] = [entry as unknown as UnknownPayload, entry.payload]
-    const candidate = pickNumberFromSources(sources, paths)
-    if (candidate !== null) {
-      return candidate
-    }
-  }
-  return null
-}
+const NET_AMOUNT_PATHS = [
+  "net_amount",
+  "amount_net",
+  "total_net_amount",
+  "payment.net_amount",
+  "pricing.net_amount",
+  "data.net_amount",
+];
+const GROSS_AMOUNT_PATHS = [
+  "gross_amount",
+  "amount",
+  "total_amount",
+  "payment.amount",
+  "pricing.amount",
+  "order.amount",
+  "data.amount",
+];
+const FEES_AMOUNT_PATHS = ["fees", "fee_amount", "fees_amount", "total_fee", "total_fees", "payment.fees"];
+const FEES_PERCENT_PATHS = ["fees_percentage", "fee_percentage", "payment.fees_percentage", "fees.percent"];
+const KIWIFY_COMMISSION_PATHS = ["kiwify_commission_amount", "platform_commission", "kiwify_amount", "payment.kiwify_amount"];
+const AFFILIATE_COMMISSION_PATHS = [
+  "affiliate_commission_amount",
+  "affiliate.amount",
+  "commissions.affiliate",
+  "affiliates.total_amount",
+  "partner_commission",
+];
+
+const CUSTOMER_NAME_PATHS = [
+  "customer.name",
+  "customer.full_name",
+  "buyer.name",
+  "data.customer.name",
+  "data.order.customer.name",
+];
+const CUSTOMER_EMAIL_PATHS = [
+  "customer.email",
+  "buyer.email",
+  "data.customer.email",
+  "data.order.customer.email",
+];
+const CUSTOMER_PHONE_PATHS = [
+  "customer.phone",
+  "customer.phone_number",
+  "customer.mobile",
+  "buyer.phone",
+  "buyer.phone_number",
+  "data.customer.phone",
+  "data.order.customer.phone",
+];
+const CUSTOMER_DOCUMENT_PATHS = [
+  "customer.document",
+  "customer.cpf",
+  "customer.cnpj",
+  "buyer.document",
+  "data.customer.document",
+  "data.order.customer.document",
+];
+const ADDRESS_STREET_PATHS = [
+  "customer.address.street",
+  "customer.address.address1",
+  "customer.address.line1",
+  "address.street",
+  "address.address1",
+  "shipping_address.street",
+];
+const ADDRESS_NUMBER_PATHS = ["customer.address.number", "address.number", "customer.address.street_number"];
+const ADDRESS_COMPLEMENT_PATHS = ["customer.address.complement", "address.complement", "customer.address.line2"];
+const ADDRESS_NEIGHBORHOOD_PATHS = ["customer.address.neighborhood", "address.neighborhood", "customer.address.district"];
+const ADDRESS_CITY_PATHS = ["customer.address.city", "address.city", "shipping_address.city"];
+const ADDRESS_STATE_PATHS = ["customer.address.state", "address.state", "shipping_address.state", "address.province"];
+const ADDRESS_ZIP_PATHS = [
+  "customer.address.zip",
+  "customer.address.postal_code",
+  "address.zip",
+  "address.zipcode",
+  "address.postal_code",
+  "shipping_address.zipcode",
+];
+const ADDRESS_COUNTRY_PATHS = ["customer.address.country", "address.country"];
+
+const SPLIT_PATHS = ["split", "splits", "commissions", "partners", "distribution", "payouts"];
+const REFUNDS_PATHS = ["refunds", "chargebacks", "refund_history", "refundEvents"];
+
+const ITEM_NAME_PATHS = ["name", "product.name", "title", "product_title"];
+const ITEM_QUANTITY_PATHS = ["quantity", "qty", "amount", "count"];
+const ITEM_AMOUNT_PATHS = ["amount", "total", "price", "unit_price", "value"];
+
+const buildBaseUrl = () => {
+  const headersList = headers();
+  const host = headersList.get("x-forwarded-host") ?? headersList.get("host") ?? "localhost:3000";
+  const protocol = headersList.get("x-forwarded-proto") ?? "http";
+  return `${protocol}://${host}`;
+};
 
 const formatInstallments = (value: number | null): string | null => {
-  if (value === null) return null
-  if (value <= 1) return "1 (à vista)"
-  return `${value}`
-}
+  if (value === null) return null;
+  if (value <= 1) return "1 (à vista)";
+  return `${Math.round(value)}x`;
+};
 
-const formatPaymentMethod = (paymentMethod: string | null | undefined) => {
-  if (!paymentMethod) return null
-  const lower = paymentMethod.toLowerCase()
-  return PAYMENT_METHOD_LABELS[lower] ?? paymentMethod.toUpperCase()
-}
+const formatDateDisplay = (value: string | null): string | null => {
+  if (!value) return null;
+  return formatDate(value) ?? value;
+};
 
-const formatPixExpirationValue = (value: string | null): string | null => {
-  if (!value) return null
-  const trimmed = value.trim()
-  if (!trimmed) return null
-
-  const formatted = formatDate(trimmed)
-  if (formatted) {
-    return formatted
+const buildItemsList = (sale: SaleDetail): DetailListItem[] => {
+  const collections = pickCollections(sale, candidateCollections);
+  if (collections.length === 0) {
+    return [];
   }
 
-  const normalizedIsoLike = formatDate(trimmed.replace(" ", "T"))
-  if (normalizedIsoLike) {
-    return normalizedIsoLike
-  }
-
-  const match = trimmed.match(/^(\d{2})[\/](\d{2})[\/](\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/)
-  if (match) {
-    const [, day, month, year, hour = "00", minute = "00", second = "00"] = match
-    const isoCandidate = `${year}-${month}-${day}T${hour}:${minute}:${second}`
-    const normalized = formatDate(isoCandidate)
-    if (normalized) {
-      return normalized
+  return collections.map((item, index) => {
+    const name = pickString(item, ITEM_NAME_PATHS) ?? `Item ${index + 1}`;
+    const quantity = pickNumber(item, ITEM_QUANTITY_PATHS);
+    const amount = pickNumber(item, ITEM_AMOUNT_PATHS);
+    const parts: string[] = [];
+    if (quantity !== null && quantity > 0) {
+      parts.push(`${quantity}x`);
     }
+    if (amount !== null) {
+      parts.push(formatCentsBRL(amount));
+    }
+    const value = parts.length > 0 ? parts.join(" • ") : "—";
+    return { label: name, value };
+  });
+};
+
+const buildSplitList = (sale: SaleDetail): DetailListItem[] => {
+  const collections = pickCollections(sale, SPLIT_PATHS);
+  return collections.map((entry, index) => {
+    const participant =
+      pickString(entry, ["name", "title", "recipient.name", "partner_name"]) ??
+      pickString(entry, ["role", "type", "split_type"]) ??
+      `Participante ${index + 1}`;
+    const amount = pickNumber(entry, ["amount", "value", "total", "net_amount"]);
+    const percent = pickNumber(entry, ["percentage", "percent", "share"]);
+    const pieces = [] as string[];
+    if (amount !== null) {
+      pieces.push(formatCentsBRL(amount));
+    }
+    if (percent !== null) {
+      pieces.push(formatPercentAuto(percent));
+    }
+    const value = pieces.length > 0 ? pieces.join(" • ") : "—";
+    return { label: participant, value };
+  });
+};
+
+const buildRefundList = (sale: SaleDetail): DetailListItem[] => {
+  const collections = pickCollections(sale, REFUNDS_PATHS);
+  return collections.map((entry, index) => {
+    const kind = pickString(entry, ["status", "type", "reason"]) ?? `Registro ${index + 1}`;
+    const amount = pickNumber(entry, ["amount", "value", "total"]);
+    const occurredAt = pickString(entry, ["created_at", "occurred_at", "date", "processed_at"]);
+    const parts: string[] = [];
+    if (amount !== null) {
+      parts.push(formatCentsBRL(amount));
+    }
+    if (occurredAt) {
+      const formatted = formatDateDisplay(occurredAt);
+      if (formatted) {
+        parts.push(formatted);
+      }
+    }
+    const value = parts.length > 0 ? parts.join(" • ") : "—";
+    return { label: kind, value };
+  });
+};
+
+const buildAddress = (sale: SaleDetail): string | null => {
+  const street = pickString(sale, ADDRESS_STREET_PATHS);
+  const number = pickString(sale, ADDRESS_NUMBER_PATHS);
+  const complement = pickString(sale, ADDRESS_COMPLEMENT_PATHS);
+  const neighborhood = pickString(sale, ADDRESS_NEIGHBORHOOD_PATHS);
+  const city = pickString(sale, ADDRESS_CITY_PATHS);
+  const state = pickString(sale, ADDRESS_STATE_PATHS);
+  const zip = pickString(sale, ADDRESS_ZIP_PATHS);
+  const country = pickString(sale, ADDRESS_COUNTRY_PATHS);
+
+  const parts: string[] = [];
+  if (street) {
+    parts.push(number ? `${street}, ${number}` : street);
+  }
+  if (complement) {
+    parts.push(complement);
+  }
+  if (neighborhood) {
+    parts.push(neighborhood);
+  }
+  const cityState = [city, state].filter(Boolean).join(" - ");
+  if (cityState) {
+    parts.push(cityState);
+  }
+  if (zip) {
+    parts.push(`CEP ${zip}`);
+  }
+  if (country) {
+    parts.push(country);
   }
 
-  return trimmed
-}
+  if (parts.length === 0) {
+    return null;
+  }
+  return parts.join(" • ");
+};
 
-const buildSaleItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
-  const statusCandidate = primary.status ?? pickStringFromEntries(entries, STATUS_PATHS)
-  const status = formatSaleStatus(statusCandidate)
-  const roleCandidate = primary.role ?? pickStringFromEntries(entries, ROLE_PATHS)
-  const role = formatSaleRole(roleCandidate)
-  const installments = pickNumberFromEntries(entries, INSTALLMENT_PATHS)
-  const paymentMethodCandidate =
-    primary.payment_method ?? pickStringFromEntries(entries, PAYMENT_METHOD_PATHS)
-  const paymentMethod = formatPaymentMethod(paymentMethodCandidate)
-  const isPixPayment = paymentMethodCandidate?.toLowerCase() === "pix"
-  const pixCode = isPixPayment ? pickStringFromEntries(entries, PIX_CODE_PATHS) : null
-  const pixExpirationRaw = isPixPayment ? pickStringFromEntries(entries, PIX_EXPIRATION_PATHS) : null
-  const pixExpirationDisplay = formatPixExpirationValue(pixExpirationRaw)
-  const createdAt = pickStringFromEntries(entries, [
-    "created_at",
-    "data.created_at",
-    "data.order.created_at",
-    "data.createdAt",
-    "data.order.createdAt",
-  ])
+const fetchSaleDetail = async (saleId: string): Promise<SaleDetail | null> => {
+  const baseUrl = buildBaseUrl();
+  const url = new URL(`/api/sales/${encodeURIComponent(saleId)}`, baseUrl);
+  const response = await fetch(url.toString(), { cache: "no-store" });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "Erro ao carregar a venda");
+  }
+
+  const payload = (await response.json()) as { data?: unknown };
+  if (!payload?.data || typeof payload.data !== "object") {
+    throw new Error("Resposta da API não contém detalhes da venda");
+  }
+
+  return payload.data as SaleDetail;
+};
+
+const buildSaleItems = (sale: SaleDetail, computedSaleId: string): DetailItem[] => {
+  const productName = pickString(sale, PRODUCT_NAME_PATHS);
+  const productId = pickString(sale, PRODUCT_ID_PATHS);
+  const statusRaw = pickString(sale, STATUS_PATHS);
+  const statusDisplay = formatSaleStatus(statusRaw);
+  const createdAt = pickString(sale, CREATED_AT_PATHS);
+  const updatedAt = pickString(sale, UPDATED_AT_PATHS);
+  const paymentMethod = pickString(sale, PAYMENT_METHOD_PATHS);
+  const paymentGateway = pickString(sale, PAYMENT_GATEWAY_PATHS);
+  const installments = pickNumber(sale, INSTALLMENTS_PATHS);
+  const recurrence = pickString(sale, RECURRENCE_PATHS);
+  const coupon = pickString(sale, COUPON_PATHS);
+  const grossAmount = pickNumber(sale, GROSS_AMOUNT_PATHS);
+
+  const itemList = buildItemsList(sale);
 
   const items: DetailItem[] = [
-    { label: "ID da venda", value: (primary.sale_id ?? primary.id)?.toString() ?? null },
-    { label: "Status", value: status },
-    { label: "Categoria", value: SALE_KIND_BADGE[primary.kind]?.label ?? primary.label ?? null },
-    { label: "Tipo", value: role },
-    {
-      label: "Produto",
-      value:
-        primary.product_name ??
-        pickStringFromEntries(entries, ["product.name", "Product.name", "data.product.name", "data.order.product.name"]),
-    },
-    { label: "Método de pagamento", value: paymentMethod },
-  ]
+    { label: "ID da venda", value: computedSaleId },
+    { label: "Status", value: statusDisplay ?? statusRaw },
+    { label: "Produto", value: productId ? `${productName ?? "Produto"} (ID: ${productId})` : productName },
+    { label: "Data da venda", value: formatDateDisplay(createdAt) },
+    { label: "Última atualização", value: formatDateDisplay(updatedAt) },
+  ];
 
-  if (isPixPayment && (pixExpirationDisplay ?? pixExpirationRaw ?? pixCode)) {
-    items.push({
-      label: "Expiração do PIX",
-      value: pixExpirationDisplay ?? pixExpirationRaw,
-      action: pixCode
-        ? { type: "pix-qr", pixCode, expiresAt: pixExpirationDisplay ?? pixExpirationRaw ?? null }
-        : undefined,
-    })
+  if (itemList.length > 0) {
+    items.push({ label: "Itens", value: null, list: itemList });
   }
 
-  items.push(
-    { label: "Parcelas", value: formatInstallments(installments) },
-    { label: "Data de criação", value: formatDate(createdAt ?? primary.created_at) },
-  )
+  if (coupon) {
+    items.push({ label: "Cupom", value: coupon });
+  }
 
-  return items
-}
+  if (paymentMethod) {
+    items.push({ label: "Método de pagamento", value: paymentMethod.toUpperCase() });
+  }
 
-const buildCustomerItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
-  const phoneCandidate = primary.customer_phone ?? pickStringFromEntries(entries, PHONE_PATHS)
-  const phone = normalizeSaleMetadataValue(phoneCandidate)
-  const documentCandidate = primary.customer_document ?? pickStringFromEntries(entries, DOCUMENT_PATHS)
-  const documentLabel = resolveSaleDocumentLabel(documentCandidate)
-  const document = normalizeSaleMetadataValue(documentCandidate)
-  const ipCandidate = primary.customer_ip ?? pickStringFromEntries(entries, IP_PATHS)
-  const ip = normalizeSaleMetadataValue(ipCandidate)
-  const utmSourceCandidate = primary.utm_source ?? pickStringFromEntries(entries, UTM_SOURCE_PATHS)
-  const utmSource = normalizeSaleMetadataValue(utmSourceCandidate)
-  const utmMediumCandidate = primary.utm_medium ?? pickStringFromEntries(entries, UTM_MEDIUM_PATHS)
-  const utmMedium = normalizeSaleMetadataValue(utmMediumCandidate)
-  const utmCampaignCandidate = primary.utm_campaign ?? pickStringFromEntries(entries, UTM_CAMPAIGN_PATHS)
-  const utmCampaign = normalizeSaleMetadataValue(utmCampaignCandidate)
+  if (paymentGateway) {
+    items.push({ label: "Gateway", value: paymentGateway });
+  }
 
-  return [
-    { label: "Nome", value: primary.customer_name },
-    { label: "Email", value: primary.customer_email },
-    { label: "Celular", value: phone },
-    { label: documentLabel, value: document },
-    { label: "IP", value: ip },
-    { label: "UTM Source", value: utmSource },
-    { label: "UTM Medium", value: utmMedium },
-    { label: "UTM Campaign", value: utmCampaign },
-  ]
-}
+  if (recurrence) {
+    items.push({ label: "Recorrência", value: recurrence });
+  }
 
-const buildValueItems = (entries: SaleDetailRecord[], primary: SaleDetailRecord): DetailItem[] => {
-  const currency = primary.currency
-  const netDisplay = formatCurrency(primary.net_amount ?? primary.amount, currency)
-  const grossDisplay = formatCurrency(primary.gross_amount ?? primary.amount, currency)
-  const kiwifyDisplay = formatCurrency(primary.kiwify_commission_amount, currency)
-  const affiliateDisplay = formatCurrency(primary.affiliate_commission_amount, currency)
-  const payoutStatus = pickStringFromEntries(entries, PAYOUT_STATUS_PATHS)
-  const payoutDate = pickStringFromEntries(entries, PAYOUT_DATE_PATHS)
+  if (installments !== null) {
+    items.push({ label: "Parcelas", value: formatInstallments(installments) });
+  }
 
-  let feesDisplay: string | null = null
-  if (
-    primary.gross_amount !== null &&
-    primary.gross_amount !== undefined &&
-    primary.net_amount !== null &&
-    primary.net_amount !== undefined
-  ) {
-    const fees = Number(primary.gross_amount) - Number(primary.net_amount)
-    if (!Number.isNaN(fees) && Math.abs(fees) > 0.009) {
-      feesDisplay = formatCurrency(fees, currency)
+  if (grossAmount !== null) {
+    items.push({ label: "Valor total", value: formatCentsBRL(grossAmount) });
+  }
+
+  return items;
+};
+
+const buildCustomerItems = (sale: SaleDetail): DetailItem[] => {
+  const name = pickString(sale, CUSTOMER_NAME_PATHS);
+  const email = pickString(sale, CUSTOMER_EMAIL_PATHS);
+  const phone = normalizeSaleMetadataValue(pickString(sale, CUSTOMER_PHONE_PATHS));
+  const document = pickString(sale, CUSTOMER_DOCUMENT_PATHS);
+  const documentLabel = resolveSaleDocumentLabel(document);
+  const address = buildAddress(sale);
+
+  const items: DetailItem[] = [
+    { label: "Nome", value: name },
+  ];
+
+  if (email) {
+    items.push({
+      label: "Email",
+      value: <a href={`mailto:${email}`} className="text-primary hover:underline">{email}</a>,
+    });
+  }
+
+  if (phone) {
+    const sanitized = phone.replace(/[^0-9+]/g, "");
+    const telHref = sanitized ? `tel:${sanitized}` : null;
+    items.push({
+      label: "Telefone",
+      value: telHref ? (
+        <a href={telHref} className="text-primary hover:underline">{phone}</a>
+      ) : (
+        phone
+      ),
+    });
+  }
+
+  if (document) {
+    items.push({ label: documentLabel, value: document });
+  }
+
+  if (address) {
+    items.push({ label: "Endereço", value: address });
+  }
+
+  return items;
+};
+
+const buildFinancialItems = (sale: SaleDetail): DetailItem[] => {
+  const netAmount = pickNumber(sale, NET_AMOUNT_PATHS);
+  const grossAmount = pickNumber(sale, GROSS_AMOUNT_PATHS);
+  const feesAmount = pickNumber(sale, FEES_AMOUNT_PATHS);
+  const feesPercent = pickNumber(sale, FEES_PERCENT_PATHS);
+  const kiwifyCommission = pickNumber(sale, KIWIFY_COMMISSION_PATHS);
+  const affiliateCommission = pickNumber(sale, AFFILIATE_COMMISSION_PATHS);
+
+  const splitList = buildSplitList(sale);
+  const refundsList = buildRefundList(sale);
+
+  const items: DetailItem[] = [
+    { label: "Valor líquido", value: formatCentsBRL(netAmount) },
+    { label: "Valor cheio", value: formatCentsBRL(grossAmount) },
+  ];
+
+  if (feesAmount !== null) {
+    items.push({ label: "Taxas", value: formatCentsBRL(feesAmount) });
+  }
+
+  if (feesPercent !== null) {
+    items.push({ label: "Taxa (%)", value: formatPercentAuto(feesPercent) });
+  }
+
+  if (kiwifyCommission !== null) {
+    items.push({ label: "Comissão Kiwify", value: formatCentsBRL(kiwifyCommission) });
+  }
+
+  if (affiliateCommission !== null) {
+    items.push({ label: "Comissão de afiliados", value: formatCentsBRL(affiliateCommission) });
+  }
+
+  if (splitList.length > 0) {
+    items.push({ label: "Divisão dos valores", value: null, list: splitList });
+  }
+
+  if (refundsList.length > 0) {
+    items.push({ label: "Reembolsos/chargebacks", value: null, list: refundsList });
+  }
+
+  return items;
+};
+
+const buildBackHref = (searchParams?: Record<string, string | string[] | undefined>) => {
+  const allowed = ["status", "q", "start_date", "end_date", "page"];
+  const params = new URLSearchParams();
+
+  if (searchParams) {
+    for (const key of allowed) {
+      const value = searchParams[key];
+      const resolved = Array.isArray(value) ? value[0] : value;
+      if (resolved) {
+        params.set(key, resolved);
+      }
     }
   }
 
-  const breakdownCandidates: { label: string; value: string | null }[] = [
-    { label: "Produtor", value: netDisplay },
-    { label: "Kiwify", value: kiwifyDisplay },
-    { label: "Afiliados", value: affiliateDisplay },
-  ]
+  const qs = params.toString();
+  return qs ? `/sales?${qs}` : "/sales";
+};
 
-  const breakdown: DetailListItem[] = breakdownCandidates
-    .filter((item): item is { label: string; value: string } => item.value !== null)
-    .map((item) => ({ label: item.label, value: item.value }))
-
-  return [
-    { label: "Valor líquido", value: netDisplay },
-    { label: "Valor cheio", value: grossDisplay },
-    { label: "Taxas estimadas", value: feesDisplay },
-    {
-      label: "Divisão dos valores",
-      value: null,
-      list: breakdown.length > 0 ? breakdown : undefined,
-    },
-    { label: "Situação do recebimento", value: payoutStatus },
-    { label: "Data de liberação", value: formatDate(payoutDate) },
-  ]
+interface SaleDetailsPageProps {
+  params: { saleId: string };
+  searchParams?: Record<string, string | string[] | undefined>;
 }
 
-const Timeline = ({ entries }: { entries: SaleDetailRecord[] }) => {
-  if (entries.length <= 1) return null
+export default async function SaleDetailsPage({ params, searchParams }: SaleDetailsPageProps) {
+  const saleIdParam = decodeURIComponent(params.saleId);
+  const sale = await fetchSaleDetail(saleIdParam);
 
-  return (
-    <section className="rounded-3xl border border-surface-accent/30 bg-surface-accent/40 p-6">
-      <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-muted-foreground">Histórico do pedido</h3>
-      <ol className="mt-4 space-y-4">
-        {entries.map((entry) => {
-          const badge = SALE_KIND_BADGE[entry.kind]
-          const amountDisplay = formatCurrency(entry.net_amount ?? entry.amount, entry.currency)
-          return (
-            <li key={`${entry.table}-${entry.id}`} className="rounded-2xl border border-surface-accent/40 bg-surface/60 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-base font-semibold text-primary-foreground">{badge?.label ?? entry.label}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDate(entry.occurred_at ?? entry.created_at) ?? "Data indisponível"}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-2 text-right">
-                  {badge ? (
-                    <span
-                      className={`rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] ${badge.tone}`}
-                    >
-                      {badge.label}
-                    </span>
-                  ) : null}
-                  {amountDisplay ? <span className="text-sm font-medium text-primary">{amountDisplay}</span> : null}
-                </div>
-              </div>
-            </li>
-          )
-        })}
-      </ol>
-    </section>
-  )
-}
-
-export default async function SaleDetailsPage({
-  params,
-  searchParams,
-}: {
-  params: { saleId: string }
-  searchParams?: Record<string, string | string[] | undefined>
-}) {
-  const saleId = decodeURIComponent(params.saleId)
-  const details = await getSaleDetails(saleId)
-
-  if (!details) {
-    notFound()
+  if (!sale) {
+    notFound();
   }
 
-  const entryParam = searchParams?.entry
-  const entryId = Array.isArray(entryParam) ? entryParam[0] : entryParam
+  const saleId = pickString(sale, SALE_ID_PATHS) ?? saleIdParam;
+  const productName = pickString(sale, PRODUCT_NAME_PATHS) ?? "Venda";
+  const statusRaw = pickString(sale, STATUS_PATHS);
+  const statusDisplay = formatSaleStatus(statusRaw);
 
-  const { entries } = details
-  const primary = entryId
-    ? entries.find((entry) => entry.id === entryId) ?? details.primary
-    : details.primary
+  const saleItems = buildSaleItems(sale, saleId);
+  const customerItems = buildCustomerItems(sale);
+  const financialItems = buildFinancialItems(sale);
 
-  const saleItems = buildSaleItems(entries, primary)
-  const customerItems = buildCustomerItems(entries, primary)
-  const valueItems = buildValueItems(entries, primary)
   const sections = [
     { id: "sale", label: "Venda", items: saleItems },
     { id: "customer", label: "Cliente", items: customerItems },
-    { id: "values", label: "Valores", items: valueItems },
-  ]
+    { id: "financial", label: "Financeiro", items: financialItems },
+  ];
+
+  const backHref = buildBackHref(searchParams);
 
   return (
     <div className="space-y-8">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Detalhes da venda</p>
-          <h1 className="text-3xl font-semibold text-primary-foreground">
-            {primary.product_name ?? "Registro da Kiwify"}
-          </h1>
+          <h1 className="text-3xl font-semibold text-primary-foreground">{productName}</h1>
+          {statusDisplay ? (
+            <p className="text-sm text-muted-foreground">{statusDisplay}</p>
+          ) : null}
         </div>
         <Link
-          href="/webhooks/approved-sales"
+          href={backHref}
           className="inline-flex items-center gap-2 rounded-full border border-surface-accent/60 bg-surface-accent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
         >
-          ← Voltar para o hub
+          ← Voltar
         </Link>
       </header>
 
       <SaleDetailsTabs sections={sections} />
 
-      <Timeline entries={entries} />
-
-      <section className="rounded-3xl border border-surface-accent/20 bg-surface/50 p-6">
+      <section className="rounded-3xl border border-surface-accent/30 bg-surface-accent/40 p-6">
         <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-muted-foreground">Payload bruto</h3>
-        <pre className="mt-4 max-h-[480px] overflow-auto rounded-2xl bg-black/30 p-4 text-xs leading-relaxed text-muted-foreground">
-          {JSON.stringify(primary.payload, null, 2)}
+        <pre className="mt-4 max-h-[480px] overflow-auto rounded-2xl bg-black/40 p-4 text-xs leading-relaxed text-muted-foreground">
+          {JSON.stringify(sale, null, 2)}
         </pre>
       </section>
     </div>
-  )
+  );
 }
