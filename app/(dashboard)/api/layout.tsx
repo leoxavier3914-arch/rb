@@ -8,7 +8,7 @@ const navigation = [
   { name: "Autenticação", href: "/api/authentication" },
   { name: "Conta", href: "/api/account" },
   { name: "Produtos", href: "/api/products" },
-  { name: "Vendas", href: "/api/sales" },
+  { name: "Vendas", href: "/api/sales-overview" },
   { name: "Financeiro", href: "/api/financial" },
   { name: "Afiliados", href: "/api/affiliates" },
   { name: "Webhooks", href: "/api/webhooks" },
