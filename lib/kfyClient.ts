@@ -24,7 +24,7 @@ const envSchema = z.object({
   KIWIFY_CLIENT_ID: z.string().min(1, "KIWIFY_CLIENT_ID é obrigatório"),
   KIWIFY_CLIENT_SECRET: z.string().min(1, "KIWIFY_CLIENT_SECRET é obrigatório"),
   KIWIFY_ACCOUNT_ID: z.string().optional(),
-  KIWIFY_API_URL: z.string().url().default("https://api.kiwify.com.br/v1"),
+  KIWIFY_API_URL: z.string().url().default("https://public-api.kiwify.com/v1/"),
   KIWIFY_API_SCOPE: z.string().optional(),
   KIWIFY_API_AUDIENCE: z.string().optional(),
 });
@@ -66,32 +66,44 @@ const tokenCache = {
   expiresAt: 0,
 };
 
-const TOKEN_PATH_SUFFIX = "/oauth/token";
+const withTrailingSlash = (value: string) => (value.endsWith("/") ? value : `${value}/`);
 
-const buildTokenUrl = (baseUrl: string) => {
-  const url = new URL(baseUrl);
-  url.search = "";
-  url.hash = "";
+const buildTokenUrlCandidates = (baseUrl: string) => {
+  const base = new URL(baseUrl);
+  base.search = "";
+  base.hash = "";
 
-  const segments = url.pathname
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
+  const cleanedPath = base.pathname.replace(/\/+$/, "");
+  const segments = cleanedPath.split("/").filter(Boolean);
 
-  if (segments.length > 0 && /^v\d+$/i.test(segments[segments.length - 1] ?? "")) {
-    segments.pop();
+  const urls: string[] = [];
+
+  const withoutVersion = new URL(base.toString());
+  if (segments.length > 0) {
+    const prefixSegments = [...segments];
+    if (/^v\d+$/i.test(prefixSegments[prefixSegments.length - 1] ?? "")) {
+      prefixSegments.pop();
+    }
+    withoutVersion.pathname = `${prefixSegments.length > 0 ? `/${prefixSegments.join("/")}` : ""}/oauth/token`;
+  } else {
+    withoutVersion.pathname = "/oauth/token";
   }
 
-  const basePath = segments.length > 0 ? `/${segments.join("/")}` : "";
-  url.pathname = `${basePath}${TOKEN_PATH_SUFFIX}`;
+  urls.push(withoutVersion.toString());
 
-  return url.toString();
+  const withVersion = new URL(base.toString());
+  const versionPath = `${cleanedPath}/oauth/token`.replace(/\/+/g, "/");
+  withVersion.pathname = versionPath.startsWith("/") ? versionPath : `/${versionPath}`;
+
+  if (!urls.includes(withVersion.toString())) {
+    urls.push(withVersion.toString());
+  }
+
+  return urls;
 };
 
 async function requestNewToken(): Promise<{ access_token: string; expires_in: number }> {
   const env = requireEnv();
-  const tokenUrl = buildTokenUrl(env.KIWIFY_API_URL);
-
   const payload = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: env.KIWIFY_CLIENT_ID,
@@ -110,21 +122,39 @@ async function requestNewToken(): Promise<{ access_token: string; expires_in: nu
     payload.set("audience", env.KIWIFY_API_AUDIENCE);
   }
 
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: payload,
-    cache: "no-store",
-  });
+  const tokenUrls = buildTokenUrlCandidates(env.KIWIFY_API_URL);
+  let lastError: { status: number; body: string; url: string } | null = null;
 
-  if (!response.ok) {
+  for (const tokenUrl of tokenUrls) {
+    const body = new URLSearchParams(payload);
+    const response = await fetch(tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+      cache: "no-store",
+    });
+
+    if (response.ok) {
+      return response.json();
+    }
+
     const errorText = await response.text();
-    throw new Error(`Erro ao obter token da Kiwify: ${response.status} ${errorText}`);
+    lastError = { status: response.status, body: errorText, url: tokenUrl };
+
+    if (response.status !== 404) {
+      break;
+    }
   }
 
-  return response.json();
+  if (lastError) {
+    throw new Error(
+      `Erro ao obter token da Kiwify (${lastError.url}): ${lastError.status} ${lastError.body}`,
+    );
+  }
+
+  throw new Error("Erro ao obter token da Kiwify: caminho do token não encontrado");
 }
 
 export const getAccessToken = cache(async () => {
@@ -151,7 +181,8 @@ async function fetchWithRetry<T>(path: string, options: FetchOptions = {}, attem
     headers.set("x-kiwify-account-id", env.KIWIFY_ACCOUNT_ID);
   }
 
-  const url = new URL(path, env.KIWIFY_API_URL);
+  const baseUrl = withTrailingSlash(env.KIWIFY_API_URL);
+  const url = new URL(path, baseUrl);
   if (options.searchParams) {
     Object.entries(options.searchParams).forEach(([key, value]) => {
       if (value === undefined || value === null || value === "") return;
