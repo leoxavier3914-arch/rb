@@ -7,18 +7,22 @@ export async function fetchAccountOverview(path = "account") {
 export async function listProducts(options: {
   page?: number;
   perPage?: number;
-  status?: string;
-  updatedAfter?: string;
+  pageNumber?: number;
+  pageSize?: number;
   path?: string;
 } = {}) {
-  const { path = "products", page, perPage, status, updatedAfter } = options;
+  const {
+    path = "products",
+    page,
+    perPage,
+    pageNumber = page,
+    pageSize = perPage,
+  } = options;
 
   return kiwifyFetch<unknown>(path, {
     searchParams: {
-      page,
-      per_page: perPage,
-      status,
-      updated_after: updatedAfter,
+      page_number: pageNumber,
+      page_size: pageSize,
     },
   });
 }

@@ -38,7 +38,7 @@ O cliente Supabase é inicializado em `lib/supabase.ts` com `fetch` forçando `n
   KIWIFY_WEBHOOK_SECRET="<token exibido na Kiwify>"
 
   # Credenciais da API oficial
-  KIWIFY_API_BASE_URL="https://api.kiwify.com.br"
+  KIWIFY_API_BASE_URL="https://public-api.kiwify.com"
   KIWIFY_API_CLIENT_ID="<client_id gerado no painel da Kiwify>"
   KIWIFY_API_CLIENT_SECRET="<client_secret gerado no painel da Kiwify>"
   KIWIFY_API_SCOPE="<escopo opcional fornecido pela Kiwify>"
@@ -60,7 +60,7 @@ O painel principal concentra-se na rota `/webhooks`, que agrupa as subseções `
 - O fluxo de autenticação realiza o grant `client_credentials` usando `KIWIFY_API_CLIENT_ID` e `KIWIFY_API_CLIENT_SECRET`, exibindo validade e preview do token.
 - O prefixo configurável (`KIWIFY_API_PATH_PREFIX`, padrão `/v1`) é aplicado automaticamente em todas as chamadas; informe `"/"` para desativá-lo e apontar para caminhos sem versão.
 - Os formulários de Produtos permitem criar (`POST {prefix}/products`) e atualizar (`PATCH {prefix}/products/:id`) itens enviando o JSON esperado pela documentação, onde `{prefix}` corresponde ao valor efetivo de `KIWIFY_API_PATH_PREFIX`.
-- Listagens de vendas, finanças, afiliados, webhooks e participantes usam a mesma estrutura de filtros (`page`, `per_page`, `status`, etc.) adotada pela API da Kiwify.
+- A listagem de produtos segue os filtros documentados oficialmente (`page_number`, `page_size`), enquanto vendas, finanças, afiliados, webhooks e participantes continuam aceitando a convenção `page`/`per_page` exposta pela API.
 - Todos os painéis expõem o payload bruto via `JsonPreview`, facilitando auditoria e comparações com os dados persistidos via webhooks.
 - Quando `KIWIFY_PARTNER_ID` é definido, o header `x-kiwify-partner-id` é anexado automaticamente às requisições feitas pelo cliente `kiwifyFetch`.
 
