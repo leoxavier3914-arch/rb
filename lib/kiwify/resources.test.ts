@@ -21,6 +21,7 @@ describe("kiwify/resources", () => {
       page: 2,
       perPage: 50,
       status: "approved",
+      productId: "42",
       path: "custom/sales",
     });
 
@@ -32,6 +33,7 @@ describe("kiwify/resources", () => {
         status: "approved",
         start_date: "2024-01-01",
         end_date: "2024-03-31",
+        product_id: "42",
       },
     });
   });
@@ -82,6 +84,7 @@ describe("kiwify/resources", () => {
       startDate: "2024-01-01",
       endDate: "2024-04-15",
       perPage: 1,
+      productId: "987",
     });
 
     expect(kiwifyFetch).toHaveBeenCalledTimes(3);
@@ -95,6 +98,7 @@ describe("kiwify/resources", () => {
         status: undefined,
         start_date: "2024-01-01",
         end_date: "2024-03-30",
+        product_id: "987",
       },
     });
 
@@ -105,6 +109,7 @@ describe("kiwify/resources", () => {
         status: undefined,
         start_date: "2024-01-01",
         end_date: "2024-03-30",
+        product_id: "987",
       },
     });
 
@@ -115,6 +120,7 @@ describe("kiwify/resources", () => {
         status: undefined,
         start_date: "2024-03-31",
         end_date: "2024-04-15",
+        product_id: "987",
       },
     });
 
