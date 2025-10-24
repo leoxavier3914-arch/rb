@@ -67,6 +67,34 @@ async function getAllSales(): Promise<any[]> {
   return results;
 }
 
+function groupSalesByStatus(sales: any[]) {
+  const groups = {
+    paid: [] as any[],
+    refunded: [] as any[],
+    refused: [] as any[],
+    pending: [] as any[],
+    other: [] as any[],
+  };
+
+  for (const sale of sales) {
+    const status = String(sale?.status ?? "").toLowerCase();
+
+    if (status.includes("paid")) {
+      groups.paid.push(sale);
+    } else if (status.includes("refund")) {
+      groups.refunded.push(sale);
+    } else if (status.includes("refus")) {
+      groups.refused.push(sale);
+    } else if (status.includes("pend")) {
+      groups.pending.push(sale);
+    } else {
+      groups.other.push(sale);
+    }
+  }
+
+  return groups;
+}
+
 export const dynamic = "force-dynamic";
 
 export default async function SalesPage() {
@@ -83,7 +111,8 @@ export default async function SalesPage() {
 
   try {
     const items = await getAllSales();
-    sales = { total: items.length, items };
+    const grouped = groupSalesByStatus(items);
+    sales = { total: items.length, ...grouped };
   } catch (err) {
     console.error("Erro ao consultar vendas na Kiwify", err);
 
