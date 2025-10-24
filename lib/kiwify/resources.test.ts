@@ -49,9 +49,28 @@ describe("kiwify/resources", () => {
       searchParams: {
         page_number: 1,
         page_size: 100,
-        status: undefined,
         start_date: "2024-01-01",
         end_date: "2024-01-31",
+      },
+    });
+  });
+
+  it("forwards productId when listing sales", async () => {
+    vi.mocked(kiwifyFetch).mockResolvedValue({ data: [] });
+
+    await listSales({
+      startDate: "2024-02-01",
+      endDate: "2024-02-29",
+      productId: "123",
+    });
+
+    expect(kiwifyFetch).toHaveBeenCalledWith("sales", {
+      searchParams: {
+        page_number: 1,
+        page_size: 100,
+        start_date: "2024-02-01",
+        end_date: "2024-02-29",
+        product_id: "123",
       },
     });
   });
@@ -92,7 +111,6 @@ describe("kiwify/resources", () => {
       searchParams: {
         page_number: 1,
         page_size: 1,
-        status: undefined,
         start_date: "2024-01-01",
         end_date: "2024-03-30",
       },
@@ -102,7 +120,6 @@ describe("kiwify/resources", () => {
       searchParams: {
         page_number: 2,
         page_size: 1,
-        status: undefined,
         start_date: "2024-01-01",
         end_date: "2024-03-30",
       },
@@ -112,7 +129,6 @@ describe("kiwify/resources", () => {
       searchParams: {
         page_number: 1,
         page_size: 1,
-        status: undefined,
         start_date: "2024-03-31",
         end_date: "2024-04-15",
       },
@@ -156,7 +172,6 @@ describe("kiwify/resources", () => {
       searchParams: {
         page_number: 1,
         page_size: 100,
-        status: undefined,
         start_date: "2024-01-01",
         end_date: "2024-01-15",
       },

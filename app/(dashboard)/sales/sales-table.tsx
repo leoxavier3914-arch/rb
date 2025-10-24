@@ -13,8 +13,10 @@ import {
 } from "react";
 
 import { formatDate } from "@/lib/format";
+import { formatCentsBRL } from "@/lib/format/currency";
+import { StatCard } from "@/components/stat-card";
 
-import type { NormalizedSale } from "./page";
+import type { NormalizedSale, SalesSummary } from "./page";
 
 const PAGE_SIZE = 20;
 
@@ -114,6 +116,8 @@ interface SalesTableProps {
   initialStartDate: string | null;
   initialEndDate: string | null;
   initialPage: number;
+  summary: SalesSummary | null;
+  summaryError: string | null;
 }
 
 const allowedParams = ["status", "q", "start_date", "end_date", "page"] as const;
@@ -141,6 +145,118 @@ const formatDateDisplay = (value: string | null | undefined) => {
   return formatDate(value) ?? value;
 };
 
+const integerFormatter = new Intl.NumberFormat("pt-BR");
+
+const SUMMARY_CARD_CLASSES =
+  "flex flex-col gap-2 rounded-2xl border border-surface-accent/40 bg-surface-accent/60 p-5 shadow-soft";
+
+const SummarySkeleton = ({ count = 7 }: { count?: number }) => (
+  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+    {Array.from({ length: count }).map((_, index) => (
+      <div key={index} className={`${SUMMARY_CARD_CLASSES} animate-pulse`}>
+        <div className="h-3 w-24 rounded-full bg-surface-accent/50" />
+        <div className="h-6 w-32 rounded-full bg-surface-accent/60" />
+        <div className="h-3 w-20 rounded-full bg-surface-accent/40" />
+      </div>
+    ))}
+  </div>
+);
+
+const TableSkeleton = () => (
+  <div className="overflow-hidden rounded-3xl border border-surface-accent/40">
+    <table className="min-w-full divide-y divide-surface-accent/40">
+      <thead className="bg-surface/80">
+        <tr className="text-left text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+          {[
+            "Venda",
+            "Comprador",
+            "Produto",
+            "Status",
+            "Pagamento",
+            "Valor",
+            "Data",
+          ].map((header) => (
+            <th key={header} scope="col" className="px-6 py-4">
+              {header}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-surface-accent/30 bg-surface/60">
+        {Array.from({ length: 5 }).map((_, rowIndex) => (
+          <tr key={rowIndex} className="animate-pulse">
+            {Array.from({ length: 7 }).map((__, cellIndex) => (
+              <td key={cellIndex} className="px-6 py-5">
+                <div className="h-4 w-32 max-w-full rounded-full bg-surface-accent/40" />
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+interface SummaryCardsProps {
+  summary: SalesSummary;
+}
+
+const SummaryCards = ({ summary }: SummaryCardsProps) => {
+  const gross = formatCentsBRL(summary.totals.gross_amount_cents) ?? "R$ 0,00";
+  const net = formatCentsBRL(summary.totals.net_amount_cents) ?? "R$ 0,00";
+  const commission =
+    formatCentsBRL(summary.totals.kiwify_commission_cents) ?? "R$ 0,00";
+
+  const cards = [
+    {
+      label: "Valor Faturado",
+      value: gross,
+      helper: "Somente vendas aprovadas",
+    },
+    {
+      label: "Valor Líquido",
+      value: net,
+      helper: "Após taxas das vendas aprovadas",
+    },
+    {
+      label: "Comissão Kiwify",
+      value: commission,
+      helper: "Taxas somadas das vendas aprovadas",
+    },
+    {
+      label: "# Aprovadas",
+      value: integerFormatter.format(summary.counts.approved),
+    },
+    {
+      label: "# Pendentes",
+      value: integerFormatter.format(summary.counts.pending),
+    },
+    {
+      label: "# Reembolsadas",
+      value: integerFormatter.format(summary.counts.refunded),
+    },
+    {
+      label: "# Recusadas",
+      value: integerFormatter.format(summary.counts.refused),
+    },
+  ];
+
+  if (summary.counts.chargeback > 0) {
+    cards.push({
+      label: "# Chargeback",
+      value: integerFormatter.format(summary.counts.chargeback),
+    });
+  }
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+      {cards.map((card) => (
+        <StatCard key={card.label} label={card.label} value={card.value} helper={card.helper} />
+      ))}
+    </div>
+  );
+};
+
 export default function SalesTable({
   sales,
   initialStatus,
@@ -148,6 +264,8 @@ export default function SalesTable({
   initialStartDate,
   initialEndDate,
   initialPage,
+  summary,
+  summaryError,
 }: SalesTableProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -237,6 +355,8 @@ export default function SalesTable({
         sale.productName,
         sale.productId,
         sale.id,
+        sale.buyerName,
+        sale.buyerEmail,
       ];
 
       return haystacks.some((value) => normalize(value)?.includes(normalizedQuery));
@@ -353,6 +473,24 @@ export default function SalesTable({
       </section>
 
       <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-primary-foreground">Resumo das vendas</h2>
+          <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
+            Atualizado em tempo real pelos filtros
+          </p>
+        </div>
+        {summaryError && !isPending ? (
+          <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-100">
+            {summaryError}
+          </div>
+        ) : isPending || (!summary && !summaryError) ? (
+          <SummarySkeleton count={summary?.counts.chargeback ? 8 : 7} />
+        ) : summary ? (
+          <SummaryCards summary={summary} />
+        ) : null}
+      </section>
+
+      <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
             {isPending ? "Atualizando resultados…" : `${totalLabel} filtradas`}
@@ -380,78 +518,93 @@ export default function SalesTable({
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-3xl border border-surface-accent/40">
-          <table className="min-w-full divide-y divide-surface-accent/40">
-            <thead className="bg-surface/80">
-              <tr className="text-left text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                <th scope="col" className="px-6 py-4">Venda</th>
-                <th scope="col" className="px-6 py-4">Produto</th>
-                <th scope="col" className="px-6 py-4">Status</th>
-                <th scope="col" className="px-6 py-4">Pagamento</th>
-                <th scope="col" className="px-6 py-4">Valor</th>
-                <th scope="col" className="px-6 py-4">Data</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-accent/30 bg-surface/60">
-              {visibleSales.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-muted-foreground">
-                    Nenhuma venda encontrada para os filtros selecionados.
-                  </td>
+        {isPending ? (
+          <TableSkeleton />
+        ) : (
+          <div className="overflow-hidden rounded-3xl border border-surface-accent/40">
+            <table className="min-w-full divide-y divide-surface-accent/40">
+              <thead className="bg-surface/80">
+                <tr className="text-left text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+                  <th scope="col" className="px-6 py-4">Venda</th>
+                  <th scope="col" className="px-6 py-4">Comprador</th>
+                  <th scope="col" className="px-6 py-4">Produto</th>
+                  <th scope="col" className="px-6 py-4">Status</th>
+                  <th scope="col" className="px-6 py-4">Pagamento</th>
+                  <th scope="col" className="px-6 py-4">Valor</th>
+                  <th scope="col" className="px-6 py-4">Data</th>
                 </tr>
-              ) : (
-                visibleSales.map((sale) => {
-                  const href = buildDetailHref(sale.saleId, currentParams);
-                  const statusBadge = resolveStatusVariant(sale.status);
-                  return (
-                    <tr
-                      key={sale.id}
-                      className="group relative cursor-pointer transition-colors hover:bg-surface-accent/40 focus-within:bg-surface-accent/50"
-                    >
-                      <td className="relative px-6 py-5">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-semibold text-primary-foreground">
-                            {sale.saleId}
+              </thead>
+              <tbody className="divide-y divide-surface-accent/30 bg-surface/60">
+                {visibleSales.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-muted-foreground">
+                      Nenhuma venda encontrada para os filtros selecionados.
+                    </td>
+                  </tr>
+                ) : (
+                  visibleSales.map((sale) => {
+                    const href = buildDetailHref(sale.saleId, currentParams);
+                    const statusBadge = resolveStatusVariant(sale.status);
+                    return (
+                      <tr
+                        key={sale.id}
+                        className="group relative cursor-pointer transition-colors hover:bg-surface-accent/40 focus-within:bg-surface-accent/50"
+                      >
+                        <td className="relative px-6 py-5">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-primary-foreground">
+                              {sale.saleId}
+                            </span>
+                            {sale.productId ? (
+                              <span className="text-xs text-muted-foreground">Produto #{sale.productId}</span>
+                            ) : null}
+                          </div>
+                          <Link
+                            href={href}
+                            className="absolute inset-0"
+                            aria-label={`Ver detalhes da venda ${sale.saleId}`}
+                          />
+                        </td>
+                        <td className="px-6 py-5 text-sm text-primary-foreground">
+                          <div className="flex flex-col">
+                            <span className="font-semibold">
+                              {sale.buyerName ?? "Comprador não informado"}
+                            </span>
+                            {sale.buyerEmail ? (
+                              <span className="text-xs text-muted-foreground">{sale.buyerEmail}</span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-6 py-5 text-sm text-primary-foreground">
+                          {sale.productName ?? "Produto não informado"}
+                        </td>
+                        <td className="px-6 py-5">
+                          <span
+                            className={clsx(
+                              "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-[0.2em]",
+                              statusBadge,
+                            )}
+                          >
+                            {sale.statusLabel ?? sale.status ?? "Status desconhecido"}
                           </span>
-                          {sale.productId ? (
-                            <span className="text-xs text-muted-foreground">Produto #{sale.productId}</span>
-                          ) : null}
-                        </div>
-                        <Link
-                          href={href}
-                          className="absolute inset-0"
-                          aria-label={`Ver detalhes da venda ${sale.saleId}`}
-                        />
-                      </td>
-                      <td className="px-6 py-5 text-sm text-primary-foreground">
-                        {sale.productName ?? "Produto não informado"}
-                      </td>
-                      <td className="px-6 py-5">
-                        <span
-                          className={clsx(
-                            "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-[0.2em]",
-                            statusBadge,
-                          )}
-                        >
-                          {sale.statusLabel ?? sale.status ?? "Status desconhecido"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5 text-sm text-muted-foreground">
-                        {sale.paymentMethod ? sale.paymentMethod.toUpperCase() : "—"}
-                      </td>
-                      <td className="px-6 py-5 text-sm font-semibold text-primary">
-                        {sale.amountDisplay ?? "—"}
-                      </td>
-                      <td className="px-6 py-5 text-sm text-muted-foreground">
-                        {formatDateDisplay(sale.createdAt)}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                        </td>
+                        <td className="px-6 py-5 text-sm text-muted-foreground">
+                          {sale.paymentMethod ? sale.paymentMethod.toUpperCase() : "—"}
+                        </td>
+                        <td className="px-6 py-5 text-sm font-semibold text-primary">
+                          {sale.amountDisplay ?? formatCentsBRL(sale.amountCents) ?? "—"}
+                        </td>
+                        <td className="px-6 py-5 text-sm text-muted-foreground">
+                          {formatDateDisplay(sale.createdAt)}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
           <span>

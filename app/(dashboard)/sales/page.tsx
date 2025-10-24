@@ -4,79 +4,23 @@ import { Suspense } from "react";
 import { formatCentsBRL } from "@/lib/format/currency";
 import { formatDate } from "@/lib/format";
 import { formatSaleStatus } from "@/lib/sale-event-metadata";
+import {
+  AMOUNT_PATHS,
+  BUYER_EMAIL_PATHS,
+  BUYER_NAME_PATHS,
+  PRODUCT_ID_PATHS,
+  PRODUCT_NAME_PATHS,
+  SALE_ID_PATHS,
+  STATUS_PATHS,
+  PAYMENT_METHOD_PATHS,
+  CREATED_AT_PATHS,
+  UPDATED_AT_PATHS,
+  extractSalesCollection,
+  pickNumber,
+  pickString,
+} from "@/lib/sales/parsers";
 
 import SalesTable from "./sales-table";
-
-const candidateKeys = ["data", "items", "results", "sales"] as const;
-
-const getNestedValue = (payload: Record<string, unknown>, path: string): unknown => {
-  return path.split(".").reduce<unknown>((acc, key) => {
-    if (acc === null || acc === undefined) {
-      return undefined;
-    }
-
-    if (Array.isArray(acc)) {
-      const index = Number(key);
-      if (Number.isInteger(index)) {
-        return acc[index];
-      }
-      return undefined;
-    }
-
-    if (typeof acc === "object" && acc && key in acc) {
-      return (acc as Record<string, unknown>)[key];
-    }
-
-    return undefined;
-  }, payload);
-};
-
-const pickString = (payload: Record<string, unknown>, paths: string[]): string | null => {
-  for (const path of paths) {
-    const value = getNestedValue(payload, path);
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-  return null;
-};
-
-const pickNumber = (payload: Record<string, unknown>, paths: string[]): number | null => {
-  for (const path of paths) {
-    const value = getNestedValue(payload, path);
-
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value;
-    }
-
-    if (typeof value === "string") {
-      const normalized = value.replace(/[^0-9.,-]/g, "").replace(",", ".");
-      if (!normalized) continue;
-      const parsed = Number(normalized);
-      if (!Number.isNaN(parsed)) {
-        return parsed;
-      }
-    }
-  }
-  return null;
-};
-
-const extractSalesCollection = (payload: unknown): Record<string, unknown>[] => {
-  if (Array.isArray(payload)) {
-    return payload.filter((item): item is Record<string, unknown> => typeof item === "object" && !!item) as Record<string, unknown>[];
-  }
-
-  if (typeof payload === "object" && payload) {
-    for (const key of candidateKeys) {
-      const candidate = (payload as Record<string, unknown>)[key];
-      if (Array.isArray(candidate)) {
-        return candidate.filter((item): item is Record<string, unknown> => typeof item === "object" && !!item) as Record<string, unknown>[];
-      }
-    }
-  }
-
-  return [];
-};
 
 interface NormalizedSale {
   id: string;
@@ -91,63 +35,10 @@ interface NormalizedSale {
   createdAt: string | null;
   createdAtDisplay: string | null;
   updatedAt: string | null;
+  buyerName: string | null;
+  buyerEmail: string | null;
   raw: Record<string, unknown>;
 }
-
-const SALE_ID_PATHS = ["sale_id", "id", "sale.id", "data.sale_id", "data.id"];
-const PRODUCT_ID_PATHS = [
-  "product_id",
-  "product.id",
-  "product.product_id",
-  "items.0.product.id",
-  "items.0.product_id",
-  "order.product.id",
-  "order.product_id",
-  "data.product.id",
-  "data.items.0.product.id",
-];
-const PRODUCT_NAME_PATHS = [
-  "product_name",
-  "product.name",
-  "product.title",
-  "items.0.product.name",
-  "items.0.name",
-  "offer_name",
-  "order.product.name",
-  "data.product.name",
-  "data.items.0.product.name",
-];
-const STATUS_PATHS = ["status", "data.status", "payment.status", "order.status", "sale.status"];
-const PAYMENT_METHOD_PATHS = [
-  "payment_method",
-  "payment.method",
-  "payment.method_name",
-  "payment.methodName",
-  "payment.payment_method",
-  "order.payment.method",
-  "data.payment.method",
-];
-const AMOUNT_PATHS = [
-  "net_amount",
-  "amount",
-  "amount_cents",
-  "total_amount",
-  "payment.amount",
-  "pricing.amount",
-  "price",
-  "items.0.price",
-  "data.net_amount",
-  "data.amount",
-];
-const CREATED_AT_PATHS = [
-  "created_at",
-  "sale_date",
-  "paid_at",
-  "order.created_at",
-  "data.created_at",
-  "data.sale_date",
-];
-const UPDATED_AT_PATHS = ["updated_at", "data.updated_at", "order.updated_at"];
 
 const normalizeSale = (payload: Record<string, unknown>): NormalizedSale => {
   const saleId = pickString(payload, SALE_ID_PATHS);
@@ -162,6 +53,8 @@ const normalizeSale = (payload: Record<string, unknown>): NormalizedSale => {
   const amountCents = pickNumber(payload, AMOUNT_PATHS);
   const createdAt = pickString(payload, CREATED_AT_PATHS);
   const updatedAt = pickString(payload, UPDATED_AT_PATHS);
+  const buyerName = pickString(payload, BUYER_NAME_PATHS);
+  const buyerEmail = pickString(payload, BUYER_EMAIL_PATHS);
 
   return {
     id: fallbackId,
@@ -176,6 +69,8 @@ const normalizeSale = (payload: Record<string, unknown>): NormalizedSale => {
     createdAt,
     createdAtDisplay: formatDate(createdAt),
     updatedAt,
+    buyerName,
+    buyerEmail,
     raw: payload,
   };
 };
@@ -191,9 +86,10 @@ interface FetchSalesParams {
   status?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  productId?: string | null;
 }
 
-const fetchSales = async ({ status, startDate, endDate }: FetchSalesParams) => {
+const fetchSales = async ({ status, startDate, endDate, productId }: FetchSalesParams) => {
   const baseUrl = buildBaseUrl();
   const url = new URL("/api/sales", baseUrl);
 
@@ -206,6 +102,10 @@ const fetchSales = async ({ status, startDate, endDate }: FetchSalesParams) => {
   if (endDate) {
     url.searchParams.set("end_date", endDate);
   }
+  if (productId) {
+    url.searchParams.set("product_id", productId);
+  }
+  url.searchParams.set("fetch", "all");
 
   const response = await fetch(url.toString(), { cache: "no-store" });
   if (!response.ok) {
@@ -226,6 +126,78 @@ const fetchSales = async ({ status, startDate, endDate }: FetchSalesParams) => {
   return collection.map(normalizeSale);
 };
 
+interface SalesSummaryTotals {
+  gross_amount_cents: number;
+  net_amount_cents: number;
+  kiwify_commission_cents: number;
+}
+
+interface SalesSummaryCounts {
+  approved: number;
+  pending: number;
+  refunded: number;
+  refused: number;
+  chargeback: number;
+}
+
+interface SalesSummaryMeta {
+  start_date: string;
+  end_date: string;
+  status: string | null;
+  product_id: string | null;
+  query: string | null;
+  total_sales: number;
+}
+
+interface SalesSummaryResponse {
+  totals: SalesSummaryTotals;
+  counts: SalesSummaryCounts;
+  meta: SalesSummaryMeta;
+}
+
+const fetchSummary = async ({
+  status,
+  startDate,
+  endDate,
+  productId,
+  query,
+}: FetchSalesParams & { query?: string | null }) => {
+  const baseUrl = buildBaseUrl();
+  const url = new URL("/api/sales/summary", baseUrl);
+
+  if (status && status !== "all") {
+    url.searchParams.set("status", status);
+  }
+  if (startDate) {
+    url.searchParams.set("start_date", startDate);
+  }
+  if (endDate) {
+    url.searchParams.set("end_date", endDate);
+  }
+  if (productId) {
+    url.searchParams.set("product_id", productId);
+  }
+  if (query) {
+    url.searchParams.set("q", query);
+  }
+
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  if (!response.ok) {
+    const fallbackMessage = "Não foi possível carregar o resumo de vendas.";
+    try {
+      const body = await response.json();
+      throw new Error(typeof body?.error === "string" ? body.error : fallbackMessage);
+    } catch (error) {
+      if (error instanceof Error && error.message !== "Unexpected end of JSON input") {
+        throw error;
+      }
+      throw new Error(fallbackMessage);
+    }
+  }
+
+  return (await response.json()) as SalesSummaryResponse;
+};
+
 export const dynamic = "force-dynamic";
 
 interface SalesPageProps {
@@ -241,6 +213,8 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
   const endDate = Array.isArray(endDateParam) ? endDateParam[0] : endDateParam ?? null;
   const queryParam = searchParams?.q;
   const initialQuery = Array.isArray(queryParam) ? queryParam[0] ?? "" : queryParam ?? "";
+  const productParam = searchParams?.product_id;
+  const productId = Array.isArray(productParam) ? productParam[0] : productParam ?? null;
   const pageParam = searchParams?.page;
   const initialPage = Number(
     Array.isArray(pageParam) ? pageParam[0] : pageParam,
@@ -248,12 +222,32 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
 
   let sales: NormalizedSale[] = [];
   let error: string | null = null;
+  let summary: SalesSummaryResponse | null = null;
+  let summaryError: string | null = null;
 
-  try {
-    sales = await fetchSales({ status, startDate, endDate });
-  } catch (err) {
-    console.error("Erro ao carregar vendas", err);
-    error = err instanceof Error ? err.message : "Erro inesperado ao listar vendas.";
+  const [salesResult, summaryResult] = await Promise.allSettled([
+    fetchSales({ status, startDate, endDate, productId }),
+    fetchSummary({ status, startDate, endDate, productId, query: initialQuery }),
+  ]);
+
+  if (salesResult.status === "fulfilled") {
+    sales = salesResult.value;
+  } else {
+    console.error("Erro ao carregar vendas", salesResult.reason);
+    error =
+      salesResult.reason instanceof Error
+        ? salesResult.reason.message
+        : "Erro inesperado ao listar vendas.";
+  }
+
+  if (summaryResult.status === "fulfilled") {
+    summary = summaryResult.value;
+  } else {
+    console.error("Erro ao carregar resumo de vendas", summaryResult.reason);
+    summaryError =
+      summaryResult.reason instanceof Error
+        ? summaryResult.reason.message
+        : "Erro inesperado ao gerar o resumo de vendas.";
   }
 
   return (
@@ -283,6 +277,8 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
             initialStartDate={startDate}
             initialEndDate={endDate}
             initialPage={Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1}
+            summary={summary}
+            summaryError={summaryError}
           />
         </Suspense>
       )}
@@ -290,4 +286,4 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
   );
 }
 
-export type { NormalizedSale };
+export type { NormalizedSale, SalesSummaryResponse as SalesSummary };

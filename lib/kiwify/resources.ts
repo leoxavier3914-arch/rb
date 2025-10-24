@@ -169,6 +169,7 @@ export async function listSales(options: {
   pageNumber?: number;
   pageSize?: number;
   status?: string;
+  productId?: string;
   path?: string;
 }) {
   const {
@@ -180,19 +181,29 @@ export async function listSales(options: {
     status,
     startDate,
     endDate,
+    productId,
   } = options;
 
   const resolvedPageNumber = toPositiveInteger(pageNumber, 1);
   const resolvedPageSize = normalizeSalesPageSize(pageSize ?? perPage ?? MAX_SALES_PAGE_SIZE);
 
+  const searchParams: Record<string, string | number> = {
+    page_number: resolvedPageNumber,
+    page_size: resolvedPageSize,
+    start_date: startDate,
+    end_date: endDate,
+  };
+
+  if (status) {
+    searchParams.status = status;
+  }
+
+  if (productId) {
+    searchParams.product_id = productId;
+  }
+
   return kiwifyFetch<unknown>(path, {
-    searchParams: {
-      page_number: resolvedPageNumber,
-      page_size: resolvedPageSize,
-      status,
-      start_date: startDate,
-      end_date: endDate,
-    },
+    searchParams,
   });
 }
 
@@ -201,6 +212,7 @@ type ListAllSalesOptions = {
   endDate?: string;
   perPage?: number;
   status?: string;
+  productId?: string;
   path?: string;
 };
 
@@ -225,7 +237,14 @@ type ListAllSalesResult = {
 };
 
 export async function listAllSales(options: ListAllSalesOptions): Promise<ListAllSalesResult> {
-  const { startDate, endDate, perPage: requestedPerPage = MAX_SALES_PAGE_SIZE, status, path } = options;
+  const {
+    startDate,
+    endDate,
+    perPage: requestedPerPage = MAX_SALES_PAGE_SIZE,
+    status,
+    productId,
+    path,
+  } = options;
 
   if (typeof requestedPerPage === "number" && requestedPerPage <= 0) {
     throw new Error("perPage must be greater than 0");
@@ -273,6 +292,7 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
         pageNumber: page,
         pageSize: perPage,
         status,
+        productId,
         path,
       });
 
