@@ -33,6 +33,14 @@ function resolveBaseUrl(): string {
   return `${protocol}://${host}`.replace(/\/$/, "");
 }
 
+const EMPTY_DASHBOARD_RESPONSE: DashboardResponse = {
+  kpi: { grossCents: 0, netCents: 0, feeCents: 0, commissionCents: 0 },
+  statusCounts: { approved: 0, pending: 0, refunded: 0, rejected: 0 },
+  revenueSeries: [],
+  productSeries: [],
+  methodSeries: [],
+};
+
 async function getDashboardData(searchParams: Record<string, string | string[] | undefined>): Promise<DashboardResponse> {
   const from = typeof searchParams.from === "string" ? searchParams.from : formatISO(addDays(new Date(), -6), { representation: "date" });
   const to = typeof searchParams.to === "string" ? searchParams.to : formatISO(new Date(), { representation: "date" });
@@ -45,16 +53,27 @@ async function getDashboardData(searchParams: Record<string, string | string[] |
   const url = new URL("/api/kfy/dashboard", baseUrl);
   url.search = params.toString();
 
-  const response = await fetch(url.toString(), {
-    headers: { "x-admin-role": "true" },
-    cache: "no-store",
-  });
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { "x-admin-role": "true" },
+      cache: "no-store",
+    });
 
-  if (!response.ok) {
-    throw new Error("Falha ao carregar painel");
+    if (!response.ok) {
+      const body = await response.text().catch(() => undefined);
+      console.error("Falha ao carregar painel", {
+        status: response.status,
+        statusText: response.statusText,
+        body,
+      });
+      return EMPTY_DASHBOARD_RESPONSE;
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error("Falha ao carregar painel", error);
+    return EMPTY_DASHBOARD_RESPONSE;
   }
-
-  return response.json();
 }
 
 export default async function DashboardPage({
