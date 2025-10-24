@@ -253,57 +253,10 @@ describe("kiwifyFetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("resolves the account identifier from the JWT payload when not present elsewhere", async () => {
+  it("prefers the account id from the token response over values extracted from the JWT payload", async () => {
     const jwt = createJwt({
       account_id: "acc-from-jwt",
-    });
-
-    const fetchMock = vi
-      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
-      .mockImplementationOnce(async () =>
-        new Response(
-          JSON.stringify({
-            access_token: jwt,
-            token_type: "Bearer",
-            expires_in: 3600,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-      )
-      .mockImplementationOnce(async (_input, init) => {
-        const headers = new Headers(init?.headers as HeadersInit | undefined);
-        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-jwt");
-        expect(headers.get("authorization")).toBe(`Bearer ${jwt}`);
-
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      })
-      .mockImplementationOnce(async (_input, init) => {
-        const headers = new Headers(init?.headers as HeadersInit | undefined);
-        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-jwt");
-
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      });
-
-    global.fetch = fetchMock as unknown as typeof fetch;
-
-    await kiwifyFetch("products");
-    await kiwifyFetch("products");
-
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-
-  it("prefers the account id from the token response when both sources provide one", async () => {
-    const jwt = createJwt({
-      account_id: "acc-from-jwt",
+      account: "acc-from-jwt-slug",
     });
 
     const fetchMock = vi
@@ -350,9 +303,57 @@ describe("kiwifyFetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("falls back to the JWT account slug when the response does not include identifiers", async () => {
+    const jwt = createJwt({
+      account: "acc-slug",
+    });
+
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockImplementationOnce(async () =>
+        new Response(
+          JSON.stringify({
+            access_token: jwt,
+            token_type: "Bearer",
+            expires_in: 3600,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-slug");
+        expect(headers.get("authorization")).toBe(`Bearer ${jwt}`);
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      })
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-slug");
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await kiwifyFetch("products");
+    await kiwifyFetch("products");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("ignores JWT account slug when the response provides an identifier", async () => {
     const jwt = createJwt({
-      account: { slug: "acc-slug" },
+      account: "acc-slug",
     });
 
     const fetchMock = vi
