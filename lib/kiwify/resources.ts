@@ -289,26 +289,6 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
   };
 }
 
-export async function fetchFinancialSummary(options: { path?: string } = {}) {
-  const { path = "financial/summary" } = options;
-  return kiwifyFetch<unknown>(path, { cache: "no-store" });
-}
-
-export async function listWithdrawals(options: {
-  page?: number;
-  perPage?: number;
-  path?: string;
-} = {}) {
-  const { path = "financial/withdrawals", page, perPage } = options;
-
-  return kiwifyFetch<unknown>(path, {
-    searchParams: {
-      page,
-      per_page: perPage,
-    },
-  });
-}
-
 export async function listAffiliates(options: {
   page?: number;
   perPage?: number;
