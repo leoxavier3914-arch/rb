@@ -116,9 +116,18 @@ const normalizeApiPathPrefix = (prefix?: string) => {
   return withLeadingSlash.replace(/\/+$/, "");
 };
 
-const buildKiwifyApiUrl = (path: string, env?: KiwifyApiConfig) => {
+type BuildKiwifyApiUrlOptions = {
+  includePrefix?: boolean;
+};
+
+const buildKiwifyApiUrl = (
+  path: string,
+  env?: KiwifyApiConfig,
+  options: BuildKiwifyApiUrlOptions = {},
+) => {
   const config = env ?? getKiwifyApiEnv();
   const trimmedPath = path.trim();
+  const { includePrefix = true } = options;
 
   if (ABSOLUTE_URL_PATTERN.test(trimmedPath)) {
     return new URL(trimmedPath);
@@ -134,7 +143,9 @@ const buildKiwifyApiUrl = (path: string, env?: KiwifyApiConfig) => {
     return baseUrl;
   }
 
-  const prefix = normalizeApiPathPrefix(config.KIWIFY_API_PATH_PREFIX);
+  const prefix = includePrefix
+    ? normalizeApiPathPrefix(config.KIWIFY_API_PATH_PREFIX)
+    : "";
   const segments = [
     ...splitPathSegments(prefix),
     ...splitPathSegments(trimmedPath),
@@ -164,7 +175,7 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     KIWIFY_API_AUDIENCE,
   } = env;
 
-  const tokenUrl = buildKiwifyApiUrl("oauth/token", env);
+  const tokenUrl = buildKiwifyApiUrl("oauth/token", env, { includePrefix: false });
   const payload = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: KIWIFY_API_CLIENT_ID,

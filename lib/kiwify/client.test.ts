@@ -155,8 +155,17 @@ describe("kiwifyFetch", () => {
   it("sends the kiwify account id header when authenticated", async () => {
     const fetchMock = vi
       .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
-      .mockImplementationOnce(async () =>
-        new Response(
+      .mockImplementationOnce(async (input) => {
+        const requestUrl =
+          input instanceof URL
+            ? input.href
+            : typeof input === "string"
+              ? input
+              : input.url;
+
+        expect(requestUrl).toBe("https://public-api.kiwify.com/oauth/token");
+
+        return new Response(
           JSON.stringify({
             access_token: "token-123",
             token_type: "Bearer",
@@ -167,8 +176,8 @@ describe("kiwifyFetch", () => {
             status: 200,
             headers: { "Content-Type": "application/json" },
           },
-        ),
-      )
+        );
+      })
       .mockImplementationOnce(async (_input, init) => {
         const headers = new Headers(init?.headers as HeadersInit | undefined);
         expect(headers.get("x-kiwify-account-id")).toBe("acc-42");
