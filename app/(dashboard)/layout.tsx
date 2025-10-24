@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 const navigation = [
-  { name: "Vendas", href: "/sales" },
+  { name: "Vendas", href: "/api/sales" },
   { name: "API", href: "/api" },
   { name: "Webhooks", href: "/webhooks" },
 ];

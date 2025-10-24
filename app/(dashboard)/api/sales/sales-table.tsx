@@ -133,6 +133,7 @@ interface SalesTableProps {
 
 const allowedParams = ["status", "q", "start_date", "end_date", "page"] as const;
 const allowedParamSet = new Set<string>(allowedParams);
+const SALES_BASE_PATH = "/api/sales" as const;
 
 const buildDetailHref = (saleId: string, currentParams: URLSearchParams) => {
   const persisted = new URLSearchParams();
@@ -143,7 +144,8 @@ const buildDetailHref = (saleId: string, currentParams: URLSearchParams) => {
     }
   }
   const qs = persisted.toString();
-  return qs ? `/sales/${encodeURIComponent(saleId)}?${qs}` : `/sales/${encodeURIComponent(saleId)}`;
+  const encodedId = encodeURIComponent(saleId);
+  return qs ? `${SALES_BASE_PATH}/${encodedId}?${qs}` : `${SALES_BASE_PATH}/${encodedId}`;
 };
 
 const formatDateDisplay = (value: string | null | undefined) => {
@@ -156,7 +158,7 @@ const integerFormatter = new Intl.NumberFormat("pt-BR");
 const SUMMARY_CARD_CLASSES =
   "flex flex-col gap-2 rounded-2xl border border-surface-accent/40 bg-surface-accent/60 p-5 shadow-soft";
 
-const SummarySkeleton = ({ count = 7 }: { count?: number }) => (
+const SummarySkeleton = ({ count = 8 }: { count?: number }) => (
   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
     {Array.from({ length: count }).map((_, index) => (
       <div key={index} className={`${SUMMARY_CARD_CLASSES} animate-pulse`}>
@@ -169,8 +171,8 @@ const SummarySkeleton = ({ count = 7 }: { count?: number }) => (
 );
 
 const TableSkeleton = () => (
-  <div className="overflow-hidden rounded-3xl border border-surface-accent/40">
-    <table className="min-w-full divide-y divide-surface-accent/40">
+  <div className="overflow-x-auto rounded-3xl border border-surface-accent/40">
+    <table className="min-w-[960px] w-full divide-y divide-surface-accent/40">
       <thead className="bg-surface/80">
         <tr className="text-left text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
           {["Venda", "Comprador", "Produto", "Status", "Pagamento", "Valor", "Data"].map((header) => (
@@ -236,14 +238,11 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       label: "# Recusadas",
       value: integerFormatter.format(summary.counts.refused),
     },
-  ];
-
-  if (summary.counts.chargeback > 0) {
-    cards.push({
+    {
       label: "# Chargeback",
       value: integerFormatter.format(summary.counts.chargeback),
-    });
-  }
+    },
+  ];
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
@@ -479,7 +478,7 @@ export default function SalesTable({
         {summaryError && !isPending ? (
           <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-100">{summaryError}</div>
         ) : isPending || (!summary && !summaryError) ? (
-          <SummarySkeleton count={summary?.counts.chargeback ? 8 : 7} />
+          <SummarySkeleton />
         ) : summary ? (
           <SummaryCards summary={summary} />
         ) : null}
@@ -516,8 +515,8 @@ export default function SalesTable({
         {isPending ? (
           <TableSkeleton />
         ) : (
-          <div className="overflow-hidden rounded-3xl border border-surface-accent/40">
-            <table className="min-w-full divide-y divide-surface-accent/40">
+          <div className="overflow-x-auto rounded-3xl border border-surface-accent/40">
+            <table className="min-w-[960px] w-full divide-y divide-surface-accent/40">
               <thead className="bg-surface/80">
                 <tr className="text-left text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
                   <th scope="col" className="px-6 py-4">
