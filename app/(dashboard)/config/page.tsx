@@ -1,3 +1,4 @@
+import { AuthPanel } from "@/components/config/AuthPanel";
 import { SyncPanel } from "@/components/config/SyncPanel";
 import { hasSupabaseConfig, supabaseAdmin } from "@/lib/supabase";
 import { formatDateTime } from "@/lib/format";
@@ -71,6 +72,11 @@ export default async function ConfigPage() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold text-white">Autenticação com a Kiwify</h2>
+        <AuthPanel />
       </section>
 
       <section className="flex flex-col gap-4">
