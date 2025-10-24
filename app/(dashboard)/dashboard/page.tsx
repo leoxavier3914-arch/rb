@@ -54,8 +54,15 @@ async function getDashboardData(searchParams: Record<string, string | string[] |
   url.search = params.toString();
 
   try {
+    const headers: Record<string, string> = { "x-admin-role": "true" };
+    const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+    if (bypassSecret) {
+      headers["x-vercel-protection-bypass"] = bypassSecret;
+    }
+
     const response = await fetch(url.toString(), {
-      headers: { "x-admin-role": "true" },
+      headers,
       cache: "no-store",
     });
 
