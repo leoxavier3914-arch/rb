@@ -1,6 +1,6 @@
 import { JsonPreview } from "@/components/json-preview";
 import { hasKiwifyApiEnv } from "@/lib/env";
-import { formatKiwifyApiPath } from "@/lib/kiwify/client";
+import { formatKiwifyApiPath, KiwifyApiError } from "@/lib/kiwify/client";
 import { listSales } from "@/lib/kiwify/resources";
 
 export const dynamic = "force-dynamic";
@@ -18,10 +18,22 @@ export default async function SalesPage() {
   let error: string | null = null;
 
   try {
-    sales = await listSales({ perPage: 40 });
+    sales = await listSales({ limit: 40, startDate: "2024-01-01" });
   } catch (err) {
     console.error("Erro ao consultar vendas na Kiwify", err);
-    error = "Não foi possível listar as vendas. Ajuste filtros ou valide o token.";
+
+    const defaultMessage = "Não foi possível listar as vendas. Ajuste filtros ou valide o token.";
+    let message = defaultMessage;
+
+    if (err instanceof KiwifyApiError) {
+      const details = (err.details ?? null) as { type?: string } | null;
+
+      if (err.status === 400 && details?.type === "validation_error") {
+        message = "Nenhuma venda encontrada no período informado";
+      }
+    }
+
+    error = message;
   }
 
   const salesPath = formatKiwifyApiPath("sales");
