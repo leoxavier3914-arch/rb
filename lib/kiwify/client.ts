@@ -392,6 +392,11 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
 
   const headers = new Headers(customHeaders);
 
+  const partnerId = env.KIWIFY_PARTNER_ID ?? undefined;
+  if (partnerId && !headers.has("x-kiwify-partner-id")) {
+    headers.set("x-kiwify-partner-id", partnerId);
+  }
+
   if (!skipAuth) {
     const token = await requestAccessToken();
     headers.set("Authorization", `${token.tokenType} ${token.accessToken}`);
