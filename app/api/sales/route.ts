@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { hasKiwifyApiEnv } from "@/lib/env";
-import { kiwifyFetch } from "@/lib/kiwify/client";
+import { listAllSales, listSales } from "@/lib/kiwify/resources";
 
 const DEFAULT_INTERVAL_DAYS = 30;
 const DATE_ONLY_LENGTH = 10;
@@ -21,6 +21,27 @@ const clampPage = (value: number, fallback: number, max?: number) => {
   }
 
   return normalized;
+};
+
+const parseBooleanParam = (value: string | null | undefined, fallback: boolean) => {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (["false", "0", "no", "n", "page", "single"].includes(normalized)) {
+    return false;
+  }
+
+  if (["true", "1", "yes", "y", "all", "full"].includes(normalized)) {
+    return true;
+  }
+
+  return fallback;
 };
 
 const normalizeStatus = (status: string | null) => {
@@ -61,17 +82,42 @@ export async function GET(request: Request) {
     DEFAULT_PAGE_SIZE,
     DEFAULT_PAGE_SIZE,
   );
+  const productId = search.get("product_id");
+  const fetchAll = parseBooleanParam(search.get("fetch"), true);
 
   try {
-    const response = await kiwifyFetch<unknown>("sales", {
-      searchParams: {
-        page_number: String(pageNumber),
-        page_size: String(pageSize),
+    if (fetchAll) {
+      const result = await listAllSales({
+        startDate,
+        endDate,
         status,
-        start_date: startDate,
-        end_date: endDate,
-      },
-      cache: "no-store",
+        productId: productId ?? undefined,
+        perPage: DEFAULT_PAGE_SIZE,
+      });
+
+      return NextResponse.json({
+        data: result.sales,
+        meta: {
+          start_date: result.summary.range.startDate,
+          end_date: result.summary.range.endDate,
+          status: status ?? null,
+          product_id: productId ?? null,
+          fetch: "all",
+          page_size: DEFAULT_PAGE_SIZE,
+          total_sales: result.summary.totalSales,
+          total_intervals: result.summary.totalIntervals,
+          total_pages: result.summary.totalPages,
+        },
+      });
+    }
+
+    const response = await listSales({
+      startDate,
+      endDate,
+      pageNumber,
+      pageSize,
+      status,
+      productId: productId ?? undefined,
     });
 
     return NextResponse.json({
@@ -80,6 +126,8 @@ export async function GET(request: Request) {
         start_date: startDate,
         end_date: endDate,
         status: status ?? null,
+        product_id: productId ?? null,
+        fetch: "page",
         page_number: pageNumber,
         page_size: pageSize,
       },
