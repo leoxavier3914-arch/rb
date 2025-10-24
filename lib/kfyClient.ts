@@ -34,6 +34,8 @@ const parsedEnv = envSchema.safeParse({
   KIWIFY_CLIENT_SECRET: process.env.KIWIFY_CLIENT_SECRET,
   KIWIFY_ACCOUNT_ID: process.env.KIWIFY_ACCOUNT_ID,
   KIWIFY_API_URL: process.env.KIWIFY_API_URL,
+  KIWIFY_API_SCOPE: process.env.KIWIFY_API_SCOPE,
+  KIWIFY_API_AUDIENCE: process.env.KIWIFY_API_AUDIENCE,
 });
 
 const requireEnv = () => {
