@@ -1,7 +1,9 @@
+import { formatISO } from "date-fns";
+
 import { JsonPreview } from "@/components/json-preview";
 import { hasKiwifyApiEnv } from "@/lib/env";
 import { formatKiwifyApiPath, KiwifyApiError } from "@/lib/kiwify/client";
-import { listSales } from "@/lib/kiwify/resources";
+import { listAllSales } from "@/lib/kiwify/resources";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +20,8 @@ export default async function SalesPage() {
   let error: string | null = null;
 
   try {
-    sales = await listSales({ limit: 40, startDate: "2024-01-01" });
+    const today = formatISO(new Date(), { representation: "date" });
+    sales = await listAllSales({ startDate: "2020-01-01", endDate: today });
   } catch (err) {
     console.error("Erro ao consultar vendas na Kiwify", err);
 
