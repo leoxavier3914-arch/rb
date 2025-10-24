@@ -1,38 +1,50 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { supabaseEnv } from "./env";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __supabaseAdmin: SupabaseClient | undefined;
-}
+const envSchema = z.object({
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+});
 
-export function getSupabaseAdmin() {
-  const env = supabaseEnv.get();
-  if (!globalThis.__supabaseAdmin) {
-    const originalFetch = globalThis.fetch.bind(globalThis);
-    const fetchWithNoStore: typeof fetch = (input, init) =>
-      originalFetch(input, {
-        ...(init ?? {}),
-        cache: "no-store",
-      });
+const parsed = envSchema.safeParse({
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+});
 
-    globalThis.__supabaseAdmin = createClient(
-      env.SUPABASE_URL,
-      env.SUPABASE_SERVICE_ROLE_KEY,
-      {
-        auth: {
-          persistSession: false,
-        },
-        global: {
-          fetch: fetchWithNoStore,
+type SupabaseClientType = SupabaseClient<any, "public", any>;
+
+const missingConfigMessage = parsed.success
+  ? null
+  : `Variáveis do Supabase ausentes: ${parsed.error.message}`;
+
+const createErrorProxy = (): SupabaseClientType =>
+  new Proxy(
+    {},
+    {
+      get() {
+        throw new Error(missingConfigMessage ?? "Supabase não configurado");
+      },
+    },
+  ) as SupabaseClientType;
+
+export const supabaseAdmin: SupabaseClientType = parsed.success
+  ? createClient<any, "public", any>(parsed.data.SUPABASE_URL, parsed.data.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+      },
+      global: {
+        headers: {
+          "X-Client-Info": "kiwify-dashboard/1.0.0",
         },
       },
-    );
+    })
+  : createErrorProxy();
+
+export const getSupabaseAdmin = () => {
+  if (!parsed.success) {
+    throw new Error(missingConfigMessage ?? "Supabase não configurado");
   }
+  return supabaseAdmin;
+};
 
-  return globalThis.__supabaseAdmin;
-}
-
-export function hasSupabaseConfig() {
-  return supabaseEnv.has();
-}
+export const hasSupabaseConfig = () => parsed.success;
