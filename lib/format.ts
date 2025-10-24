@@ -1,42 +1,30 @@
-import { SAO_PAULO_TIME_ZONE } from "./timezone";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
-export function formatCurrency(
-  amount: number | string | null | undefined,
-  currency?: string | null,
-) {
-  if (amount === null || amount === undefined) {
-    return null;
-  }
-
-  const numericValue = typeof amount === "string" ? Number(amount) : amount;
-
-  if (numericValue === null || numericValue === undefined || Number.isNaN(numericValue)) {
-    return null;
-  }
-
-  const code = currency ?? "BRL";
-  const formatter = new Intl.NumberFormat("pt-BR", {
+export function formatCurrency(valueInCents: number, currency = "BRL") {
+  return new Intl.NumberFormat("pt-BR", {
     style: "currency",
-    currency: code,
+    currency,
     minimumFractionDigits: 2,
-  });
-
-  return formatter.format(numericValue);
+  }).format(valueInCents / 100);
 }
 
-export function formatDate(date: string | null | undefined) {
-  if (!date) return null;
-  try {
-    return new Intl.DateTimeFormat("pt-BR", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: SAO_PAULO_TIME_ZONE,
-    }).format(new Date(date));
-  } catch (error) {
-    console.warn("Data inválida recebida", date, error);
-    return null;
-  }
+export function formatPercentage(value: number, options: Intl.NumberFormatOptions = {}) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "percent",
+    maximumFractionDigits: options.maximumFractionDigits ?? 1,
+    minimumFractionDigits: options.minimumFractionDigits ?? 0,
+  }).format(value);
+}
+
+export function formatDate(date: Date | string) {
+  return format(typeof date === "string" ? new Date(date) : date, "dd MMM yyyy", {
+    locale: ptBR,
+  });
+}
+
+export function formatDateTime(date: Date | string) {
+  return format(typeof date === "string" ? new Date(date) : date, "dd/MM/yyyy HH:mm", {
+    locale: ptBR,
+  });
 }
