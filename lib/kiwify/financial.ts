@@ -1,4 +1,5 @@
 import { kiwifyGET } from "@/lib/kiwify";
+import { formatCentsBRL } from "@/lib/format/currency";
 
 type BalanceResp = { available?: number; pending?: number; legal_entity_id?: string; [k: string]: any };
 type PayoutsResp = { pagination?: any; data?: any[]; items?: any[]; results?: any[]; [k: string]: any };
@@ -48,8 +49,8 @@ export async function getFinancialSummary(opts?: { start_date?: string; end_date
   ]);
 
   console.log("[FIN] balance", {
-    available: balance?.available,
-    pending: balance?.pending,
+    available: formatCentsBRL(balance?.available),
+    pending: formatCentsBRL(balance?.pending),
     legal_entity_id: balance?.legal_entity_id,
   });
   console.log("[FIN] payouts.count", (payouts?.data ?? payouts?.items ?? payouts?.results ?? []).length);
