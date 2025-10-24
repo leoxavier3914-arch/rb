@@ -1,4 +1,5 @@
 import { addDays, formatISO } from "date-fns";
+import { headers } from "next/headers";
 
 import { PaymentMethodPieChart } from "@/components/charts/PaymentMethodPieChart";
 import { ProductBarChart } from "@/components/charts/ProductBarChart";
@@ -14,6 +15,24 @@ interface DashboardResponse {
   methodSeries: { method: string; grossCents: number }[];
 }
 
+function resolveBaseUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL;
+  if (envUrl) {
+    const normalized = envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+    return normalized.replace(/\/$/, "");
+  }
+
+  const headersList = headers();
+  const protocol = headersList.get("x-forwarded-proto") ?? "http";
+  const host = headersList.get("x-forwarded-host") ?? headersList.get("host");
+
+  if (!host) {
+    throw new Error("Unable to determine base URL");
+  }
+
+  return `${protocol}://${host}`.replace(/\/$/, "");
+}
+
 async function getDashboardData(searchParams: Record<string, string | string[] | undefined>): Promise<DashboardResponse> {
   const from = typeof searchParams.from === "string" ? searchParams.from : formatISO(addDays(new Date(), -6), { representation: "date" });
   const to = typeof searchParams.to === "string" ? searchParams.to : formatISO(new Date(), { representation: "date" });
@@ -22,10 +41,11 @@ async function getDashboardData(searchParams: Record<string, string | string[] |
   if (typeof searchParams.productId === "string") params.set("productId", searchParams.productId);
   if (typeof searchParams.paymentMethod === "string") params.set("paymentMethod", searchParams.paymentMethod);
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
-  const url = baseUrl ? `${baseUrl}/api/kfy/dashboard?${params.toString()}` : `/api/kfy/dashboard?${params.toString()}`;
+  const baseUrl = resolveBaseUrl();
+  const url = new URL("/api/kfy/dashboard", baseUrl);
+  url.search = params.toString();
 
-  const response = await fetch(url, {
+  const response = await fetch(url.toString(), {
     headers: { "x-admin-role": "true" },
     cache: "no-store",
   });
