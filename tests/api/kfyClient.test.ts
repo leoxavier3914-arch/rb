@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react")>();
+  return {
+    ...actual,
+    cache: <T extends (...args: any[]) => any>(fn: T) => fn,
+  };
+});
 
 vi.stubEnv("KIWIFY_CLIENT_ID", "client");
 vi.stubEnv("KIWIFY_CLIENT_SECRET", "secret");
@@ -29,6 +36,18 @@ describe("kfyClient", () => {
     expect(tokenA).toBe("token");
     expect(tokenB).toBe("token");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [tokenUrl, tokenInit] = fetchMock.mock.calls[0]!;
+    expect(tokenUrl).toBe("https://example.com/oauth/token");
+    expect(tokenInit?.method).toBe("POST");
+    expect(tokenInit?.headers).toEqual({ "Content-Type": "application/x-www-form-urlencoded" });
+    expect(tokenInit?.body).toBeInstanceOf(URLSearchParams);
+    expect(Object.fromEntries((tokenInit?.body as URLSearchParams).entries())).toEqual({
+      grant_type: "client_credentials",
+      client_id: "client",
+      client_secret: "secret",
+      account_id: "account",
+    });
   });
 
   it("normaliza status e métodos de pagamento em listagem de pedidos", async () => {
@@ -63,5 +82,10 @@ describe("kfyClient", () => {
     expect(result.items[0].status).toBe("approved");
     expect(result.items[0].paymentMethod).toBe("card");
     expect(result.nextCursor).toBeNull();
+
+    const [, requestInit] = fetchMock.mock.calls[1]!;
+    const headers = requestInit?.headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer token");
+    expect(headers.get("x-kiwify-account-id")).toBe("account");
   });
 });

@@ -25,6 +25,8 @@ const envSchema = z.object({
   KIWIFY_CLIENT_SECRET: z.string().min(1, "KIWIFY_CLIENT_SECRET é obrigatório"),
   KIWIFY_ACCOUNT_ID: z.string().optional(),
   KIWIFY_API_URL: z.string().url().default("https://api.kiwify.com.br/v1"),
+  KIWIFY_API_SCOPE: z.string().optional(),
+  KIWIFY_API_AUDIENCE: z.string().optional(),
 });
 
 const parsedEnv = envSchema.safeParse({
@@ -62,19 +64,56 @@ const tokenCache = {
   expiresAt: 0,
 };
 
+const TOKEN_PATH_SUFFIX = "/oauth/token";
+
+const buildTokenUrl = (baseUrl: string) => {
+  const url = new URL(baseUrl);
+  url.search = "";
+  url.hash = "";
+
+  const segments = url.pathname
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+
+  if (segments.length > 0 && /^v\d+$/i.test(segments[segments.length - 1] ?? "")) {
+    segments.pop();
+  }
+
+  const basePath = segments.length > 0 ? `/${segments.join("/")}` : "";
+  url.pathname = `${basePath}${TOKEN_PATH_SUFFIX}`;
+
+  return url.toString();
+};
+
 async function requestNewToken(): Promise<{ access_token: string; expires_in: number }> {
   const env = requireEnv();
-  const response = await fetch(`${env.KIWIFY_API_URL}/oauth/token`, {
+  const tokenUrl = buildTokenUrl(env.KIWIFY_API_URL);
+
+  const payload = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: env.KIWIFY_CLIENT_ID,
+    client_secret: env.KIWIFY_CLIENT_SECRET,
+  });
+
+  if (env.KIWIFY_ACCOUNT_ID) {
+    payload.set("account_id", env.KIWIFY_ACCOUNT_ID);
+  }
+
+  if (env.KIWIFY_API_SCOPE) {
+    payload.set("scope", env.KIWIFY_API_SCOPE);
+  }
+
+  if (env.KIWIFY_API_AUDIENCE) {
+    payload.set("audience", env.KIWIFY_API_AUDIENCE);
+  }
+
+  const response = await fetch(tokenUrl, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify({
-      grant_type: "client_credentials",
-      client_id: env.KIWIFY_CLIENT_ID,
-      client_secret: env.KIWIFY_CLIENT_SECRET,
-      account_id: env.KIWIFY_ACCOUNT_ID,
-    }),
+    body: payload,
     cache: "no-store",
   });
 
@@ -105,6 +144,10 @@ async function fetchWithRetry<T>(path: string, options: FetchOptions = {}, attem
   const headers = new Headers(options.headers);
   headers.set("Authorization", `Bearer ${token}`);
   headers.set("Accept", "application/json");
+
+  if (env.KIWIFY_ACCOUNT_ID) {
+    headers.set("x-kiwify-account-id", env.KIWIFY_ACCOUNT_ID);
+  }
 
   const url = new URL(path, env.KIWIFY_API_URL);
   if (options.searchParams) {
