@@ -1,9 +1,71 @@
-import { formatISO } from "date-fns";
-
 import { JsonPreview } from "@/components/json-preview";
 import { hasKiwifyApiEnv } from "@/lib/env";
+import { kiwifyGET } from "@/lib/kiwify";
 import { formatKiwifyApiPath, KiwifyApiError } from "@/lib/kiwify/client";
-import { listAllSales } from "@/lib/kiwify/resources";
+
+const toISODate = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * Busca todas as vendas da Kiwify, em janelas de 90 dias e paginando até o final.
+ */
+export async function getAllSales(): Promise<any[]> {
+  const results: any[] = [];
+  const today = new Date();
+  let start = new Date("2020-01-01");
+  const MAX_WINDOW = 90;
+
+  while (start <= today) {
+    const end = new Date(start);
+    end.setDate(start.getDate() + (MAX_WINDOW - 1));
+    if (end > today) end.setTime(today.getTime());
+
+    let page_number = 1;
+    const page_size = 100;
+
+    while (true) {
+      const qs = {
+        start_date: toISODate(start),
+        end_date: toISODate(end),
+        page_size: String(page_size),
+        page_number: String(page_number),
+      };
+
+      console.log(
+        "[Kiwify][Sales] Janela:",
+        qs.start_date,
+        "→",
+        qs.end_date,
+        "Página:",
+        page_number,
+      );
+
+      const resp = await kiwifyGET("/v1/sales", qs);
+      const data = Array.isArray(resp)
+        ? resp
+        : resp.data ?? resp.items ?? resp.results ?? [];
+      const batch = data ?? [];
+      results.push(...batch);
+
+      const meta = resp.pagination ?? resp.meta ?? {};
+      const total_pages = Number(meta.total_pages ?? meta.totalPages ?? NaN);
+      const current_page = Number(meta.page_number ?? meta.page ?? page_number);
+
+      if (!Number.isNaN(total_pages) && total_pages > 0) {
+        if (current_page >= total_pages) break;
+      } else {
+        if (batch.length < page_size) break;
+      }
+
+      page_number++;
+    }
+
+    const next = new Date(end);
+    next.setDate(next.getDate() + 1);
+    start = next;
+  }
+
+  return results;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +82,8 @@ export default async function SalesPage() {
   let error: string | null = null;
 
   try {
-    const today = formatISO(new Date(), { representation: "date" });
-    sales = await listAllSales({ startDate: "2020-01-01", endDate: today });
+    const items = await getAllSales();
+    sales = { total: items.length, items };
   } catch (err) {
     console.error("Erro ao consultar vendas na Kiwify", err);
 
