@@ -112,7 +112,14 @@ export default async function SalesPage() {
   try {
     const items = await getAllSales();
     const grouped = groupSalesByStatus(items);
-    sales = { total: items.length, ...grouped };
+    sales = {
+      total: items.length,
+      totalPaid: grouped.paid.length,
+      totalRefused: grouped.refused.length,
+      totalRefunded: grouped.refunded.length,
+      totalPending: grouped.pending.length,
+      ...grouped,
+    };
   } catch (err) {
     console.error("Erro ao consultar vendas na Kiwify", err);
 
