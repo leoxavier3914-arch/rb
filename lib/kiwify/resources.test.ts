@@ -27,8 +27,8 @@ describe("kiwify/resources", () => {
     expect(kiwifyFetch).toHaveBeenCalledTimes(1);
     expect(kiwifyFetch).toHaveBeenCalledWith("custom/sales", {
       searchParams: {
-        page: 2,
-        per_page: 50,
+        page_number: 2,
+        page_size: 50,
         status: "approved",
         start_date: "2024-01-01",
         end_date: "2024-03-31",
@@ -70,8 +70,8 @@ describe("kiwify/resources", () => {
 
     expect(firstCall[1]).toEqual({
       searchParams: {
-        page: 1,
-        per_page: 1,
+        page_number: 1,
+        page_size: 1,
         status: undefined,
         start_date: "2024-01-01",
         end_date: "2024-03-30",
@@ -80,8 +80,8 @@ describe("kiwify/resources", () => {
 
     expect(secondCall[1]).toEqual({
       searchParams: {
-        page: 2,
-        per_page: 1,
+        page_number: 2,
+        page_size: 1,
         status: undefined,
         start_date: "2024-01-01",
         end_date: "2024-03-30",
@@ -90,8 +90,8 @@ describe("kiwify/resources", () => {
 
     expect(thirdCall[1]).toEqual({
       searchParams: {
-        page: 1,
-        per_page: 1,
+        page_number: 1,
+        page_size: 1,
         status: undefined,
         start_date: "2024-03-31",
         end_date: "2024-04-15",
