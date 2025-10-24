@@ -150,15 +150,26 @@ export async function listSales(options: {
   endDate: string;
   page?: number;
   perPage?: number;
+  pageNumber?: number;
+  pageSize?: number;
   status?: string;
   path?: string;
 }) {
-  const { path = "sales", page, perPage, status, startDate, endDate } = options;
+  const {
+    path = "sales",
+    page,
+    perPage,
+    pageNumber = page,
+    pageSize = perPage,
+    status,
+    startDate,
+    endDate,
+  } = options;
 
   return kiwifyFetch<unknown>(path, {
     searchParams: {
-      page,
-      per_page: perPage,
+      page_number: pageNumber,
+      page_size: pageSize,
       status,
       start_date: startDate,
       end_date: endDate,
@@ -238,8 +249,8 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
       const response = await listSales({
         startDate: interval.startDate,
         endDate: interval.endDate,
-        page,
-        perPage,
+        pageNumber: page,
+        pageSize: perPage,
         status,
         path,
       });
