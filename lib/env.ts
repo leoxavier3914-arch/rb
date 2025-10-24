@@ -44,8 +44,9 @@ const webhookEnvSchema = supabaseEnvBaseSchema
 
 const kiwifyApiEnvSchema = z.object({
   KIWIFY_API_BASE_URL: httpsUrlSchema,
-  KIWIFY_API_CLIENT_ID: z.string().min(1),
-  KIWIFY_API_CLIENT_SECRET: z.string().min(1),
+  KIWIFY_CLIENT_ID: z.string().min(1),
+  KIWIFY_CLIENT_SECRET: z.string().min(1),
+  KIWIFY_ACCOUNT_ID: z.string().min(1),
   KIWIFY_API_SCOPE: z.string().optional(),
   KIWIFY_API_AUDIENCE: z.string().optional(),
   KIWIFY_API_PATH_PREFIX: z.string().optional(),
@@ -158,8 +159,13 @@ const kiwifyWebhookEnvHelper = createEnvHelper<WebhookEnv>(
 
 const buildRawKiwifyApiEnv = () => ({
   KIWIFY_API_BASE_URL: normalizeEnvValue(process.env.KIWIFY_API_BASE_URL),
-  KIWIFY_API_CLIENT_ID: normalizeEnvValue(process.env.KIWIFY_API_CLIENT_ID),
-  KIWIFY_API_CLIENT_SECRET: normalizeEnvValue(process.env.KIWIFY_API_CLIENT_SECRET),
+  KIWIFY_CLIENT_ID: normalizeEnvValue(
+    process.env.KIWIFY_CLIENT_ID ?? process.env.KIWIFY_API_CLIENT_ID,
+  ),
+  KIWIFY_CLIENT_SECRET: normalizeEnvValue(
+    process.env.KIWIFY_CLIENT_SECRET ?? process.env.KIWIFY_API_CLIENT_SECRET,
+  ),
+  KIWIFY_ACCOUNT_ID: normalizeEnvValue(process.env.KIWIFY_ACCOUNT_ID),
   KIWIFY_API_SCOPE: (() => {
     const normalized = normalizeEnvValue(process.env.KIWIFY_API_SCOPE);
     return normalized || undefined;

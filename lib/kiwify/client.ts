@@ -1,5 +1,3 @@
-import { Buffer } from "node:buffer";
-
 import { getKiwifyApiEnv, hasKiwifyApiEnv } from "@/lib/env";
 
 const ABSOLUTE_URL_PATTERN = /^https?:\/\//i;
@@ -22,7 +20,6 @@ interface TokenCacheEntry {
   scope?: string;
   expiresAt: number;
   obtainedAt: number;
-  accountId?: string;
 }
 
 const globalCache = globalThis as typeof globalThis & {
@@ -85,16 +82,6 @@ const updateTokenCache = (updater: (entry: TokenCacheEntry) => TokenCacheEntry |
   } else {
     saveTokenCache(current);
   }
-};
-
-const clearCachedAccountId = (token?: TokenCacheEntry | null) => {
-  if (token) {
-    token.accountId = undefined;
-  }
-
-  updateTokenCache((entry) => {
-    entry.accountId = undefined;
-  });
 };
 
 const buildTokenPreview = (token: string) => {
@@ -195,18 +182,13 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
 
   const env = getKiwifyApiEnv();
 
-  const {
-    KIWIFY_API_CLIENT_ID,
-    KIWIFY_API_CLIENT_SECRET,
-    KIWIFY_API_SCOPE,
-    KIWIFY_API_AUDIENCE,
-  } = env;
+  const { KIWIFY_CLIENT_ID, KIWIFY_CLIENT_SECRET, KIWIFY_API_SCOPE, KIWIFY_API_AUDIENCE } = env;
 
   const createPayload = () => {
     const payload = new URLSearchParams({
       grant_type: "client_credentials",
-      client_id: KIWIFY_API_CLIENT_ID,
-      client_secret: KIWIFY_API_CLIENT_SECRET,
+      client_id: KIWIFY_CLIENT_ID,
+      client_secret: KIWIFY_CLIENT_SECRET,
     });
 
     if (KIWIFY_API_SCOPE) {
@@ -259,86 +241,7 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     token_type: string;
     expires_in: number;
     scope?: string;
-    account_id?: unknown;
-    account?: unknown;
-    user?: { account_id?: unknown; account?: unknown } | null;
   };
-
-  const resolveAccountId = (value: unknown): string | undefined => {
-    if (value === null || value === undefined) {
-      return undefined;
-    }
-
-    if (typeof value === "number") {
-      return String(value);
-    }
-
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : undefined;
-    }
-
-    if (typeof value === "object") {
-      const candidate =
-        (value as { id?: unknown }).id ??
-        (value as { account_id?: unknown }).account_id ??
-        (value as { accountId?: unknown }).accountId ??
-        (value as { value?: unknown }).value;
-
-      return resolveAccountId(candidate);
-    }
-
-    return undefined;
-  };
-
-  const decodeJwtPayload = (token: unknown): unknown => {
-    if (typeof token !== "string" || token.length === 0) {
-      return undefined;
-    }
-
-    const [, payload] = token.split(".");
-
-    if (!payload) {
-      return undefined;
-    }
-
-    try {
-      const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-      const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
-      const decoded = Buffer.from(padded, "base64").toString("utf8");
-      return JSON.parse(decoded);
-    } catch (error) {
-      console.warn("Não foi possível interpretar o payload do token JWT da Kiwify", error);
-      return undefined;
-    }
-  };
-
-  const resolveAccountIdFromJwt = (token: unknown): string | undefined => {
-    const payload = decodeJwtPayload(token);
-
-    if (!payload || typeof payload !== "object") {
-      return undefined;
-    }
-
-    const candidate =
-      (payload as { account_id?: unknown }).account_id ??
-      (payload as { account?: unknown }).account ??
-      (payload as { user?: { account_id?: unknown; account?: unknown } }).user?.account_id ??
-      (payload as { user?: { account_id?: unknown; account?: unknown } }).user?.account;
-
-    return resolveAccountId(candidate);
-  };
-
-  const resolvedAccountIdFromResponse =
-    resolveAccountId(tokenResponse.account_id) ??
-    // Fallbacks observed in the live OAuth token payload: a nested "account" object
-    // as well as the legacy "user.account_id" field exposed for backwards compatibility.
-    resolveAccountId(tokenResponse.account) ??
-    resolveAccountId(tokenResponse.user?.account_id) ??
-    resolveAccountId(tokenResponse.user?.account);
-
-  const resolvedAccountId =
-    resolvedAccountIdFromResponse ?? resolveAccountIdFromJwt(tokenResponse.access_token);
 
   const now = Date.now();
   const expiresAt = now + Math.max(0, (tokenResponse.expires_in - 60) * 1000);
@@ -348,7 +251,6 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     scope: tokenResponse.scope,
     obtainedAt: now,
     expiresAt,
-    accountId: resolvedAccountId,
   };
 
   saveTokenCache(entry);
@@ -459,17 +361,13 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
   if (partnerId && !headers.has("x-kiwify-partner-id")) {
     headers.set("x-kiwify-partner-id", partnerId);
   }
-
-  let token: TokenCacheEntry | null = null;
-
+  const accountId = env.KIWIFY_ACCOUNT_ID?.trim();
+  if (accountId && !headers.has(ACCOUNT_ID_HEADER)) {
+    headers.set(ACCOUNT_ID_HEADER, accountId);
+  }
   if (!skipAuth) {
-    token = await requestAccessToken();
+    const token = await requestAccessToken();
     headers.set("Authorization", `${token.tokenType} ${token.accessToken}`);
-    if (token.accountId) {
-      headers.set(ACCOUNT_ID_HEADER, token.accountId);
-    } else {
-      headers.delete(ACCOUNT_ID_HEADER);
-    }
   }
 
   const resolvedBody = await resolveBody(body, headers);
@@ -492,47 +390,10 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
 
   const response = await fetch(url, init);
 
-  const shouldRetryWithoutAccountHeader = (details: unknown) => {
-    if (!details || typeof details !== "object") {
-      return false;
-    }
-
-    const message = (() => {
-      if (typeof (details as { message?: unknown }).message === "string") {
-        return (details as { message: string }).message;
-      }
-
-      if (Array.isArray(details)) {
-        for (const item of details) {
-          if (item && typeof item === "object") {
-            const candidate = (item as { message?: unknown }).message;
-            if (typeof candidate === "string") {
-              return candidate;
-            }
-          }
-        }
-      }
-
-      return undefined;
-    })();
-
-    if (!message) {
-      return false;
-    }
-
-    return message.toLowerCase().includes("account_id mismatch");
-  };
-
   if (response.status === 401 && !skipAuth) {
     await invalidateCachedToken();
     const refreshedToken = await requestAccessToken(true);
-    token = refreshedToken;
     headers.set("Authorization", `${refreshedToken.tokenType} ${refreshedToken.accessToken}`);
-    if (refreshedToken.accountId) {
-      headers.set(ACCOUNT_ID_HEADER, refreshedToken.accountId);
-    } else {
-      headers.delete(ACCOUNT_ID_HEADER);
-    }
     const retryResponse = await fetch(url, {
       ...init,
       headers,
@@ -540,27 +401,6 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
 
     if (!retryResponse.ok) {
       const errorDetails = await safeParseBody(retryResponse);
-
-      if (shouldRetryWithoutAccountHeader(errorDetails) && headers.has(ACCOUNT_ID_HEADER)) {
-        headers.delete(ACCOUNT_ID_HEADER);
-        clearCachedAccountId(token);
-
-        const fallbackResponse = await fetch(url, {
-          ...init,
-          headers,
-        });
-
-        if (!fallbackResponse.ok) {
-          const fallbackErrorDetails = await safeParseBody(fallbackResponse);
-          throw new KiwifyApiError("Falha ao consultar a API da Kiwify.", fallbackResponse.status, {
-            method,
-            url: url.toString(),
-          }, fallbackErrorDetails);
-        }
-
-        return (await safeParseResponse<T>(fallbackResponse)) as T;
-      }
-
       throw new KiwifyApiError("Falha ao consultar a API da Kiwify.", retryResponse.status, {
         method,
         url: url.toString(),
@@ -572,26 +412,6 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
 
   if (!response.ok) {
     const errorDetails = await safeParseBody(response);
-
-    if (!skipAuth && shouldRetryWithoutAccountHeader(errorDetails) && headers.has(ACCOUNT_ID_HEADER)) {
-      headers.delete(ACCOUNT_ID_HEADER);
-      clearCachedAccountId(token);
-
-      const fallbackResponse = await fetch(url, {
-        ...init,
-        headers,
-      });
-
-      if (!fallbackResponse.ok) {
-        const fallbackErrorDetails = await safeParseBody(fallbackResponse);
-        throw new KiwifyApiError("Falha ao consultar a API da Kiwify.", fallbackResponse.status, {
-          method,
-          url: url.toString(),
-        }, fallbackErrorDetails);
-      }
-
-      return (await safeParseResponse<T>(fallbackResponse)) as T;
-    }
 
     throw new KiwifyApiError("Falha ao consultar a API da Kiwify.", response.status, {
       method,
