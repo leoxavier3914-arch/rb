@@ -269,18 +269,21 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
       return undefined;
     }
 
+    if (typeof value === "number") {
+      return String(value);
+    }
+
     if (typeof value === "string") {
       const trimmed = value.trim();
       return trimmed.length > 0 ? trimmed : undefined;
     }
 
-    if (typeof value === "number") {
-      return String(value);
-    }
-
     if (typeof value === "object") {
-      const candidate = (value as { id?: unknown; account_id?: unknown }).id ??
-        (value as { id?: unknown; account_id?: unknown }).account_id;
+      const candidate =
+        (value as { id?: unknown }).id ??
+        (value as { account_id?: unknown }).account_id ??
+        (value as { accountId?: unknown }).accountId ??
+        (value as { value?: unknown }).value;
 
       return resolveAccountId(candidate);
     }
