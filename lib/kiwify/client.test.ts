@@ -123,6 +123,35 @@ describe("kiwifyFetch", () => {
     expect(requestUrl).toBe("https://public-api.kiwify.com/v2/products");
   });
 
+  it("includes the partner id header when configured", async () => {
+    process.env.KIWIFY_PARTNER_ID = "partner-123";
+
+    await kiwifyFetch("products", { skipAuth: true });
+
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = new Headers((init?.headers ?? undefined) as HeadersInit | undefined);
+
+    expect(headers.get("x-kiwify-partner-id")).toBe("partner-123");
+  });
+
+  it("respects caller overrides for the partner id header", async () => {
+    process.env.KIWIFY_PARTNER_ID = "partner-123";
+
+    await kiwifyFetch("products", {
+      skipAuth: true,
+      headers: {
+        "x-kiwify-partner-id": "custom-partner",
+      },
+    });
+
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = new Headers((init?.headers ?? undefined) as HeadersInit | undefined);
+
+    expect(headers.get("x-kiwify-partner-id")).toBe("custom-partner");
+  });
+
   it("sends the kiwify account id header when authenticated", async () => {
     const fetchMock = vi
       .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()

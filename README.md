@@ -62,6 +62,7 @@ O painel principal concentra-se na rota `/webhooks`, que agrupa as subseções `
 - Os formulários de Produtos permitem criar (`POST {prefix}/products`) e atualizar (`PATCH {prefix}/products/:id`) itens enviando o JSON esperado pela documentação, onde `{prefix}` corresponde ao valor efetivo de `KIWIFY_API_PATH_PREFIX`.
 - Listagens de vendas, finanças, afiliados, webhooks e participantes usam a mesma estrutura de filtros (`page`, `per_page`, `status`, etc.) adotada pela API da Kiwify.
 - Todos os painéis expõem o payload bruto via `JsonPreview`, facilitando auditoria e comparações com os dados persistidos via webhooks.
+- Quando `KIWIFY_PARTNER_ID` é definido, o header `x-kiwify-partner-id` é anexado automaticamente às requisições feitas pelo cliente `kiwifyFetch`.
 
 ### Testes
 ```bash
