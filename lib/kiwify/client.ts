@@ -175,29 +175,49 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     KIWIFY_API_AUDIENCE,
   } = env;
 
-  const tokenUrl = buildKiwifyApiUrl("oauth/token", env, { includePrefix: false });
-  const payload = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: KIWIFY_API_CLIENT_ID,
-    client_secret: KIWIFY_API_CLIENT_SECRET,
-  });
+  const createPayload = () => {
+    const payload = new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: KIWIFY_API_CLIENT_ID,
+      client_secret: KIWIFY_API_CLIENT_SECRET,
+    });
 
-  if (KIWIFY_API_SCOPE) {
-    payload.set("scope", KIWIFY_API_SCOPE);
-  }
+    if (KIWIFY_API_SCOPE) {
+      payload.set("scope", KIWIFY_API_SCOPE);
+    }
 
-  if (KIWIFY_API_AUDIENCE) {
-    payload.set("audience", KIWIFY_API_AUDIENCE);
-  }
+    if (KIWIFY_API_AUDIENCE) {
+      payload.set("audience", KIWIFY_API_AUDIENCE);
+    }
 
-  const response = await fetch(tokenUrl, {
+    return payload;
+  };
+
+  let tokenUrl = buildKiwifyApiUrl("oauth/token", env, { includePrefix: false });
+  let response = await fetch(tokenUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: payload,
+    body: createPayload(),
     cache: "no-store",
   });
+
+  if (response.status === 404) {
+    const prefixedTokenUrl = buildKiwifyApiUrl("oauth/token", env);
+
+    if (prefixedTokenUrl.toString() !== tokenUrl.toString()) {
+      tokenUrl = prefixedTokenUrl;
+      response = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: createPayload(),
+        cache: "no-store",
+      });
+    }
+  }
 
   if (!response.ok) {
     const errorDetails = await safeParseBody(response);

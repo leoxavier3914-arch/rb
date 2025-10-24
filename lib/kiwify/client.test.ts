@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetEnvForTesting } from "@/lib/env";
 import {
   formatKiwifyApiPath,
+  getAccessTokenMetadata,
   getKiwifyApiPathPrefix,
   invalidateCachedToken,
   kiwifyFetch,
@@ -410,5 +411,62 @@ describe("kiwifyFetch", () => {
     await kiwifyFetch("products");
 
     expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe("requestAccessToken", () => {
+  beforeEach(async () => {
+    __resetEnvForTesting();
+    clearKiwifyEnv();
+    await invalidateCachedToken();
+    process.env.KIWIFY_API_BASE_URL = "https://public-api.kiwify.com";
+    process.env.KIWIFY_API_CLIENT_ID = "client";
+    process.env.KIWIFY_API_CLIENT_SECRET = "secret";
+  });
+
+  afterEach(async () => {
+    global.fetch = ORIGINAL_FETCH;
+    __resetEnvForTesting();
+    clearKiwifyEnv();
+    await invalidateCachedToken();
+  });
+
+  it("retries with the configured prefix when the root oauth endpoint is missing", async () => {
+    const firstResponse = new Response("Cannot POST /oauth/token", {
+      status: 404,
+      headers: { "Content-Type": "text/html" },
+    });
+    const secondResponse = new Response(
+      JSON.stringify({
+        access_token: "token",
+        token_type: "Bearer",
+        expires_in: 3600,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(firstResponse)
+      .mockResolvedValueOnce(secondResponse);
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const metadata = await getAccessTokenMetadata(true);
+
+    expect(metadata.preview).toBe("token");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const resolveUrl = (input: unknown) =>
+      input instanceof URL ? input.toString() : String(input);
+
+    const firstCallUrl = resolveUrl(fetchMock.mock.calls[0]?.[0]);
+    const secondCallUrl = resolveUrl(fetchMock.mock.calls[1]?.[0]);
+
+    expect(firstCallUrl).toBe("https://public-api.kiwify.com/oauth/token");
+    expect(secondCallUrl).toBe("https://public-api.kiwify.com/v1/oauth/token");
   });
 });
