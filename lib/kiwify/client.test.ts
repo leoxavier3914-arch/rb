@@ -400,6 +400,89 @@ describe("kiwifyFetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("switches to the JWT account id when the response identifier is rejected", async () => {
+    const jwt = createJwt({
+      account_id: "acc-from-jwt",
+    });
+
+    const createMismatchResponse = () =>
+      new Response(
+        JSON.stringify({
+          error: "auth_error",
+          message: "Invalid token: acces token account_id mismatch with x-kiwify-account-id header",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockImplementationOnce(async () =>
+        new Response(
+          JSON.stringify({
+            access_token: jwt,
+            token_type: "Bearer",
+            expires_in: 3600,
+            account_id: "acc-from-response",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-response");
+        expect(headers.get("authorization")).toBe(`Bearer ${jwt}`);
+        return createMismatchResponse();
+      })
+      .mockImplementationOnce(async () =>
+        new Response(
+          JSON.stringify({
+            access_token: jwt,
+            token_type: "Bearer",
+            expires_in: 3600,
+            account_id: "acc-from-response",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-response");
+        return createMismatchResponse();
+      })
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-jwt");
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      })
+      .mockImplementationOnce(async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        expect(headers.get("x-kiwify-account-id")).toBe("acc-from-jwt");
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(kiwifyFetch("products")).resolves.toEqual({ ok: true });
+    await expect(kiwifyFetch("products")).resolves.toEqual({ ok: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
   it("retries without the account id header when Kiwify rejects it", async () => {
     const createMismatchResponse = () =>
       new Response(

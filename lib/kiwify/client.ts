@@ -23,6 +23,7 @@ interface TokenCacheEntry {
   expiresAt: number;
   obtainedAt: number;
   accountId?: string;
+  alternativeAccountId?: string;
 }
 
 const globalCache = globalThis as typeof globalThis & {
@@ -90,10 +91,12 @@ const updateTokenCache = (updater: (entry: TokenCacheEntry) => TokenCacheEntry |
 const clearCachedAccountId = (token?: TokenCacheEntry | null) => {
   if (token) {
     token.accountId = undefined;
+    token.alternativeAccountId = undefined;
   }
 
   updateTokenCache((entry) => {
     entry.accountId = undefined;
+    entry.alternativeAccountId = undefined;
   });
 };
 
@@ -337,8 +340,17 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     resolveAccountId(tokenResponse.user?.account_id) ??
     resolveAccountId(tokenResponse.user?.account);
 
-  const resolvedAccountId =
-    resolvedAccountIdFromResponse ?? resolveAccountIdFromJwt(tokenResponse.access_token);
+  const resolvedAccountIdFromJwt = resolveAccountIdFromJwt(tokenResponse.access_token);
+
+  const accountIdCandidates = [
+    resolvedAccountIdFromResponse,
+    resolvedAccountIdFromJwt,
+  ].filter((candidate): candidate is string => typeof candidate === "string");
+
+  const primaryAccountId = accountIdCandidates[0];
+  const secondaryAccountId = accountIdCandidates.find(
+    (candidate) => candidate !== primaryAccountId,
+  );
 
   const now = Date.now();
   const expiresAt = now + Math.max(0, (tokenResponse.expires_in - 60) * 1000);
@@ -348,7 +360,8 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     scope: tokenResponse.scope,
     obtainedAt: now,
     expiresAt,
-    accountId: resolvedAccountId,
+    accountId: primaryAccountId,
+    alternativeAccountId: secondaryAccountId,
   };
 
   saveTokenCache(entry);
@@ -523,6 +536,59 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
     return message.toLowerCase().includes("account_id mismatch");
   };
 
+  const tryAlternativeAccountId = async () => {
+    if (!token) {
+      return null;
+    }
+
+    const currentAccountId = headers.get(ACCOUNT_ID_HEADER) ?? undefined;
+    const alternativeAccountId =
+      token.alternativeAccountId && token.alternativeAccountId !== currentAccountId
+        ? token.alternativeAccountId
+        : undefined;
+
+    if (!alternativeAccountId) {
+      return null;
+    }
+
+    headers.set(ACCOUNT_ID_HEADER, alternativeAccountId);
+
+    const alternativeResponse = await fetch(url, {
+      ...init,
+      headers,
+    });
+
+    if (alternativeResponse.ok) {
+      if (token) {
+        const previousAccountId = token.accountId;
+        token.accountId = alternativeAccountId;
+        token.alternativeAccountId =
+          previousAccountId && previousAccountId !== alternativeAccountId
+            ? previousAccountId
+            : undefined;
+      }
+
+      updateTokenCache((entry) => {
+        const previousAccountId = entry.accountId;
+        entry.accountId = alternativeAccountId;
+        entry.alternativeAccountId =
+          previousAccountId && previousAccountId !== alternativeAccountId
+            ? previousAccountId
+            : undefined;
+      });
+
+      return alternativeResponse;
+    }
+
+    if (currentAccountId) {
+      headers.set(ACCOUNT_ID_HEADER, currentAccountId);
+    } else {
+      headers.delete(ACCOUNT_ID_HEADER);
+    }
+
+    return alternativeResponse;
+  };
+
   if (response.status === 401 && !skipAuth) {
     await invalidateCachedToken();
     const refreshedToken = await requestAccessToken(true);
@@ -542,6 +608,12 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
       const errorDetails = await safeParseBody(retryResponse);
 
       if (shouldRetryWithoutAccountHeader(errorDetails) && headers.has(ACCOUNT_ID_HEADER)) {
+        const alternativeResponse = await tryAlternativeAccountId();
+
+        if (alternativeResponse && alternativeResponse.ok) {
+          return (await safeParseResponse<T>(alternativeResponse)) as T;
+        }
+
         headers.delete(ACCOUNT_ID_HEADER);
         clearCachedAccountId(token);
 
@@ -574,6 +646,12 @@ export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions =
     const errorDetails = await safeParseBody(response);
 
     if (!skipAuth && shouldRetryWithoutAccountHeader(errorDetails) && headers.has(ACCOUNT_ID_HEADER)) {
+      const alternativeResponse = await tryAlternativeAccountId();
+
+      if (alternativeResponse && alternativeResponse.ok) {
+        return (await safeParseResponse<T>(alternativeResponse)) as T;
+      }
+
       headers.delete(ACCOUNT_ID_HEADER);
       clearCachedAccountId(token);
 
