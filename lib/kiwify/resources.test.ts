@@ -9,45 +9,46 @@ const recordedCalls: Array<{
   page_size?: number;
 }> = [];
 
-vi.mock("@/lib/kiwify/client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/kiwify/client")>();
-
+vi.mock("@/lib/kiwify/http", () => {
   return {
-    ...actual,
-    kiwifyFetch: vi.fn(
-      async (_path: string, options: { searchParams?: Record<string, string | number> }) => {
-        const params = options.searchParams ?? {};
-        const pageNumber = Number(params.page_number ?? 1);
-        const pageSize = Number(params.page_size ?? 0) || undefined;
-        recordedCalls.push({
-          start_date: params.start_date as string | undefined,
-          end_date: params.end_date as string | undefined,
-          page_number: pageNumber,
-          page_size: pageSize,
-        });
+    kiwifyFetch: vi.fn(async (path: string) => {
+      const url = new URL(path, "https://public-api.kiwify.com");
+      const params = Object.fromEntries(url.searchParams.entries());
+      const pageNumber = Number(params.page_number ?? 1);
+      const pageSize = Number(params.page_size ?? 0) || undefined;
 
-        const startDate = params.start_date as string | undefined;
+      recordedCalls.push({
+        start_date: params.start_date,
+        end_date: params.end_date,
+        page_number: pageNumber,
+        page_size: pageSize,
+      });
 
-        if (startDate === "2024-01-01" && pageNumber === 1) {
-          return {
-            data: [{ id: "sale-1" }],
-            meta: { has_more: true },
-          };
-        }
+      const startDate = params.start_date;
 
-        if (startDate === "2024-01-01" && pageNumber === 2) {
-          return {
-            data: [{ id: "sale-2" }],
-            meta: { has_more: false },
-          };
-        }
-
-        return {
+      let payload;
+      if (startDate === "2024-01-01" && pageNumber === 1) {
+        payload = {
+          data: [{ id: "sale-1" }],
+          meta: { has_more: true },
+        };
+      } else if (startDate === "2024-01-01" && pageNumber === 2) {
+        payload = {
+          data: [{ id: "sale-2" }],
+          meta: { has_more: false },
+        };
+      } else {
+        payload = {
           data: [{ id: `sale-${startDate}-p${pageNumber}` }],
           meta: { has_more: false },
         };
-      },
-    ),
+      }
+
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }),
   };
 });
 

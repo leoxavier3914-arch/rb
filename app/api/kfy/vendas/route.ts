@@ -146,7 +146,7 @@ function encodeCursor(row: { created_at: string; id: number }) {
 }
 
 export async function GET(request: NextRequest) {
-  assertIsAdmin(request);
+  await assertIsAdmin(request);
   const parseResult = querySchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));
 
   if (!parseResult.success) {

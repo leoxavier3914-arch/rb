@@ -58,7 +58,7 @@ const metricHandlers = {
 type MetricKey = keyof typeof metricHandlers;
 
 export async function GET(request: NextRequest) {
-  assertIsAdmin(request);
+  await assertIsAdmin(request);
   const params = querySchema.parse(Object.fromEntries(request.nextUrl.searchParams.entries()));
 
   const dimensions = params.dimensions as DimensionKey[];

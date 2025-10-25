@@ -1,10 +1,7 @@
 import { addDays, formatISO, isAfter, parseISO } from "date-fns";
 
-import {
-  KiwifyApiError,
-  formatKiwifyApiPath,
-  kiwifyFetch,
-} from "@/lib/kiwify/client";
+import { KiwifyApiError, formatKiwifyApiPath } from "@/lib/kiwify/client";
+import { kiwifyFetch } from "@/lib/kiwify/http";
 import { buildSalesWindow } from "@/lib/kiwify/dateWindow";
 
 const MAX_SALES_RANGE_DAYS = 90;
@@ -39,6 +36,142 @@ const parseDateParam = (value: string, label: string): Date => {
   }
   return parsed;
 };
+
+type KiwifyRequestOptions = {
+  method?: string;
+  body?: BodyInit | Record<string, unknown> | null;
+  searchParams?: Record<string, string | number | boolean | null | undefined>;
+  signal?: AbortSignal;
+};
+
+const buildPathWithQuery = (
+  resourcePath: string,
+  searchParams?: Record<string, string | number | boolean | null | undefined>,
+) => {
+  const normalizedPath = formatKiwifyApiPath(resourcePath);
+  if (!searchParams) {
+    return normalizedPath;
+  }
+
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+    params.set(key, typeof value === "boolean" ? String(value) : String(value));
+  }
+
+  const query = params.toString();
+  return query ? `${normalizedPath}?${query}` : normalizedPath;
+};
+
+const buildAbsoluteUrl = (path: string) => {
+  try {
+    const base = process.env.KIWIFY_API_BASE_URL;
+    if (!base) {
+      return path;
+    }
+    return new URL(path, base).toString();
+  } catch {
+    return path;
+  }
+};
+
+const resolveRequestBody = (body: KiwifyRequestOptions["body"], headers: Headers) => {
+  if (body === null || body === undefined) {
+    return undefined;
+  }
+
+  if (typeof body === "string") {
+    return body;
+  }
+
+  if (typeof Blob !== "undefined" && body instanceof Blob) {
+    return body;
+  }
+
+  if (body instanceof ArrayBuffer) {
+    return body;
+  }
+
+  if (ArrayBuffer.isView(body)) {
+    return body as BodyInit;
+  }
+
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    return body;
+  }
+
+  if (body instanceof URLSearchParams) {
+    return body;
+  }
+
+  if (typeof ReadableStream !== "undefined" && body instanceof ReadableStream) {
+    return body as BodyInit;
+  }
+
+  headers.set("content-type", "application/json");
+  return JSON.stringify(body);
+};
+
+const shouldParseJson = (response: Response) => {
+  const contentType = response.headers.get("content-type") ?? "";
+  return contentType.includes("application/json");
+};
+
+const parseSuccessfulBody = async <T>(response: Response): Promise<T | undefined> => {
+  if (response.status === 204) {
+    return undefined;
+  }
+
+  if (shouldParseJson(response)) {
+    return (await response.json()) as T;
+  }
+
+  const text = await response.text();
+  return text === "" ? (undefined as T) : ((text as unknown) as T);
+};
+
+const parseErrorBody = async (response: Response) => {
+  try {
+    if (shouldParseJson(response)) {
+      return await response.json();
+    }
+    const text = await response.text();
+    return text ? { message: text } : null;
+  } catch (error) {
+    console.warn("Não foi possível interpretar a resposta da Kiwify", error);
+    return null;
+  }
+};
+
+async function fetchKiwifyJson<T>(resourcePath: string, options: KiwifyRequestOptions = {}) {
+  const { method = "GET", body, searchParams, signal } = options;
+  const path = buildPathWithQuery(resourcePath, searchParams);
+  const headers = new Headers();
+  const resolvedBody = resolveRequestBody(body ?? undefined, headers);
+
+  const response = await kiwifyFetch(path, {
+    method,
+    body: resolvedBody,
+    headers,
+    signal,
+  });
+
+  if (!response.ok) {
+    const details = await parseErrorBody(response);
+    const url = buildAbsoluteUrl(path);
+    console.error("Kiwify API request failed", {
+      method,
+      url,
+      status: response.status,
+      details: typeof details === "string" ? details : JSON.stringify(details ?? {}),
+    });
+    throw new KiwifyApiError("Falha ao consultar a API da Kiwify.", response.status, { method, url }, details);
+  }
+
+  return (await parseSuccessfulBody<T>(response)) as T;
+}
 
 type StructuredLogLevel = "info" | "warn" | "error";
 
@@ -309,7 +442,7 @@ export const shouldRequestNextPage = (
 };
 
 export async function fetchAccountOverview(path = "account") {
-  return kiwifyFetch<Record<string, unknown>>(path);
+  return fetchKiwifyJson<Record<string, unknown>>(path);
 }
 
 export async function listProducts(options: {
@@ -327,7 +460,7 @@ export async function listProducts(options: {
     pageSize = perPage,
   } = options;
 
-  return kiwifyFetch<unknown>(path, {
+  return fetchKiwifyJson<unknown>(path, {
     searchParams: {
       page_number: pageNumber,
       page_size: pageSize,
@@ -336,7 +469,7 @@ export async function listProducts(options: {
 }
 
 export async function createProduct(payload: Record<string, unknown>, path = "products") {
-  return kiwifyFetch<unknown>(path, {
+  return fetchKiwifyJson<unknown>(path, {
     method: "POST",
     body: payload,
   });
@@ -350,7 +483,7 @@ export async function updateProduct(
   const { path = "products" } = options;
   const resourcePath = `${path.replace(/\/$/, "")}/${productId}`;
 
-  return kiwifyFetch<unknown>(resourcePath, {
+  return fetchKiwifyJson<unknown>(resourcePath, {
     method: "PATCH",
     body: payload,
   });
@@ -360,7 +493,7 @@ export async function deleteProduct(productId: string, options: { path?: string 
   const { path = "products" } = options;
   const resourcePath = `${path.replace(/\/$/, "")}/${productId}`;
 
-  return kiwifyFetch<unknown>(resourcePath, {
+  return fetchKiwifyJson<unknown>(resourcePath, {
     method: "DELETE",
   });
 }
@@ -402,7 +535,7 @@ export async function listSales(options: {
     productId,
   });
 
-  return kiwifyFetch<unknown>(path, {
+  return fetchKiwifyJson<unknown>(path, {
     searchParams,
   });
 }
@@ -513,7 +646,7 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
       const logUrl = buildRequestLogUrl(path ?? "sales", searchParams);
       const response = await requestWithBackoff(
         () =>
-          kiwifyFetch<unknown>(path ?? "sales", {
+          fetchKiwifyJson<unknown>(path ?? "sales", {
             searchParams,
           }),
         {
@@ -601,7 +734,7 @@ export async function listAffiliates(options: {
 } = {}) {
   const { path = "affiliates", page, perPage } = options;
 
-  return kiwifyFetch<unknown>(path, {
+  return fetchKiwifyJson<unknown>(path, {
     searchParams: {
       page,
       per_page: perPage,
@@ -617,7 +750,7 @@ export async function listWebhooks(options: {
 } = {}) {
   const { path = "webhooks/events", page, perPage, eventType } = options;
 
-  return kiwifyFetch<unknown>(path, {
+  return fetchKiwifyJson<unknown>(path, {
     searchParams: {
       page,
       per_page: perPage,
@@ -636,7 +769,7 @@ export async function listParticipants(options: {
   const { productId, path = "products", page, perPage, status } = options;
   const resourcePath = `${path.replace(/\/$/, "")}/${productId}/participants`;
 
-  return kiwifyFetch<unknown>(resourcePath, {
+  return fetchKiwifyJson<unknown>(resourcePath, {
     searchParams: {
       page,
       per_page: perPage,
@@ -653,7 +786,7 @@ export async function listWebhooksDeliveries(options: {
 } = {}) {
   const { path = "webhooks/deliveries", page, perPage, status } = options;
 
-  return kiwifyFetch<unknown>(path, {
+  return fetchKiwifyJson<unknown>(path, {
     searchParams: {
       page,
       per_page: perPage,

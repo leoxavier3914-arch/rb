@@ -31,7 +31,7 @@ const querySchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  assertIsAdmin(request);
+  await assertIsAdmin(request);
   const params = querySchema.parse(Object.fromEntries(request.nextUrl.searchParams.entries()));
 
   if (!hasSupabaseConfig()) {

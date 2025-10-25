@@ -57,7 +57,7 @@ const mutationsEnabled =
   process.env.NEXT_PUBLIC_KIWIFY_ALLOW_PRODUCT_MUTATIONS === "true";
 
 export async function GET(request: NextRequest) {
-  assertIsAdmin(request);
+  await assertIsAdmin(request);
   const params = querySchema.parse(Object.fromEntries(request.nextUrl.searchParams.entries()));
   const cursor = decodeCursor(params.cursor);
 
@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  assertIsAdmin(request);
+  await assertIsAdmin(request);
   if (!mutationsEnabled) {
     return NextResponse.json(
       { ok: false, message: "Criação de produtos não disponível na API" },
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  assertIsAdmin(request);
+  await assertIsAdmin(request);
   if (!mutationsEnabled) {
     return NextResponse.json(
       { ok: false, message: "Atualização de produtos não disponível na API" },
@@ -161,7 +161,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  assertIsAdmin(request);
+  await assertIsAdmin(request);
   if (!mutationsEnabled) {
     return NextResponse.json(
       { ok: false, message: "Remoção de produtos não disponível na API" },

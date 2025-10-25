@@ -20,8 +20,20 @@ export function SyncPanel() {
         const message = await response.text();
         throw new Error(message);
       }
-      const payload = await response.json();
-      setStatus(`Sincronização concluída: ${JSON.stringify(payload.summary)}`);
+      const payload = (await response.json()) as {
+        ok: boolean;
+        summary?: unknown;
+        error?: string;
+        message?: string;
+      };
+      if (!payload.ok) {
+        throw new Error(payload.error || payload.message || "Falha ao executar sincronização");
+      }
+      if (payload.summary) {
+        setStatus(`Sincronização concluída: ${JSON.stringify(payload.summary)}`);
+      } else {
+        setStatus("Sincronização concluída");
+      }
     } catch (error) {
       console.error(error);
       setStatus("Falha ao executar sincronização");

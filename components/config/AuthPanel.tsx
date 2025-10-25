@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDateTime } from "@/lib/format";
 import { apiFetch } from "@/lib/apiFetch";
 
-type AuthStatus = {
+type AuthSummary = {
   authenticated: boolean;
   expiresAt: string | null;
 };
@@ -17,7 +17,7 @@ const STATUS_LABELS: Record<string, string> = {
   missing: "Sem token gerado",
 };
 
-function getStatusLabel(status: AuthStatus | null) {
+function getStatusLabel(status: AuthSummary | null) {
   if (!status) {
     return "Carregando…";
   }
@@ -44,10 +44,23 @@ function getStatusLabel(status: AuthStatus | null) {
 
 const STATUS_QUERY_KEY = ["kfy-auth"] as const;
 
+const extractPayload = async (response: Response) => {
+  const payload = (await response.json()) as {
+    ok: boolean;
+    summary?: AuthSummary | null;
+    error?: string;
+    message?: string;
+  };
+  if (!payload.ok) {
+    throw new Error(payload.error || payload.message || "Falha na requisição");
+  }
+  return payload.summary ?? { authenticated: false, expiresAt: null };
+};
+
 export function AuthPanel() {
   const queryClient = useQueryClient();
 
-  const statusQuery = useQuery<AuthStatus>({
+  const statusQuery = useQuery<AuthSummary>({
     queryKey: STATUS_QUERY_KEY,
     queryFn: async ({ signal }) => {
       const response = await apiFetch("/api/kfy/auth", { method: "GET", signal });
@@ -55,7 +68,7 @@ export function AuthPanel() {
         const message = await response.text();
         throw new Error(message || "Falha ao carregar status do token");
       }
-      return (await response.json()) as AuthStatus;
+      return extractPayload(response);
     },
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
@@ -68,7 +81,7 @@ export function AuthPanel() {
         const message = await response.text();
         throw new Error(message || "Falha ao renovar token");
       }
-      return (await response.json()) as { expiresAt: string | null };
+      return extractPayload(response);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
