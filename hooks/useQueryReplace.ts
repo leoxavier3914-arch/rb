@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useRef, useTransition } from "react";
+import { useCallback } from "react";
 
 type QueryPartial = Record<string, string | null>;
 
@@ -18,19 +18,13 @@ export function useQueryReplace() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [, startTransition] = useTransition();
-  const applyingRef = useRef(false);
 
   return useCallback(
     (partial: QueryPartial) => {
-      if (applyingRef.current) {
-        return;
-      }
-
       const currentParams = sortSearchParams(new URLSearchParams(searchParams.toString()));
       const currentString = currentParams.toString();
 
-      const nextParams = new URLSearchParams(searchParams.toString());
+      const nextParams = new URLSearchParams(currentParams.toString());
       Object.entries(partial).forEach(([key, value]) => {
         if (value === null || value === "") {
           nextParams.delete(key);
@@ -46,16 +40,9 @@ export function useQueryReplace() {
         return;
       }
 
-      applyingRef.current = true;
-      queueMicrotask(() => {
-        applyingRef.current = false;
-      });
-
-      startTransition(() => {
-        const target = nextString ? `${pathname}?${nextString}` : pathname;
-        router.replace(target, { scroll: false });
-      });
+      const target = nextString ? `${pathname}?${nextString}` : pathname;
+      router.replace(target, { scroll: false });
     },
-    [pathname, router, searchParams, startTransition],
+    [pathname, router, searchParams],
   );
 }
