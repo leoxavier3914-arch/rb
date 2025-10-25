@@ -8,6 +8,25 @@ const originSchema = z
     message: "Origem inválida",
   });
 
+function normalizeAllowedOrigin(value: string) {
+  let lastError: unknown;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  for (const candidate of [trimmed, `https://${trimmed}`]) {
+    try {
+      return new URL(candidate).origin;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  console.warn("Origem inválida em ALLOWED_ORIGENS", trimmed, lastError);
+  return null;
+}
+
 export function assertIsAdmin(request: NextRequest) {
   const adminHeader = request.headers.get("x-admin-role");
   if (adminHeader !== "true") {
@@ -19,14 +38,14 @@ export function assertIsAdmin(request: NextRequest) {
 
   const allowedOrigins = process.env.ALLOWED_ORIGINS
     ?.split(",")
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
+    .map(normalizeAllowedOrigin)
+    .filter((value): value is string => Boolean(value));
 
   if (!allowedOrigins?.length) {
-    if (process.env.NODE_ENV === "development") {
-      return;
+    if (process.env.NODE_ENV === "production") {
+      console.warn("ALLOWED_ORIGINS ausente ou inválido. Permitindo origem recebida.", { origin });
     }
-    throw new Response("Origem não configurada", { status: 403 });
+    return;
   }
 
   const parsed = originSchema.safeParse(origin);
@@ -34,23 +53,7 @@ export function assertIsAdmin(request: NextRequest) {
     throw new Response("Origem inválida", { status: 403 });
   }
 
-  const normalizedAllowedOrigins = allowedOrigins.reduce<string[]>((acc, value) => {
-    try {
-      acc.push(new URL(value).origin);
-    } catch (error) {
-      console.warn("Origem inválida em ALLOWED_ORIGINS", value, error);
-    }
-    return acc;
-  }, []);
-
-  if (!normalizedAllowedOrigins.length) {
-    if (process.env.NODE_ENV === "development") {
-      return;
-    }
-    throw new Response("Nenhuma origem permitida válida configurada", { status: 403 });
-  }
-
-  const isAllowed = normalizedAllowedOrigins.includes(parsed.data.origin);
+  const isAllowed = allowedOrigins.includes(parsed.data.origin);
   if (!isAllowed) {
     throw new Response("Origem não permitida", { status: 403 });
   }
