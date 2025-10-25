@@ -1,30 +1,16 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
+
+import { useQueryReplace } from "@/hooks/useQueryReplace";
 
 export function CustomerFiltersBar() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const replaceQuery = useQueryReplace();
 
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const activeOnly = useMemo(() => searchParams.get("active") === "true", [searchParams]);
-  const [, startTransition] = useTransition();
-
-  function sync(partial: Record<string, string | null>) {
-    const params = new URLSearchParams(searchParams.toString());
-    Object.entries(partial).forEach(([key, value]) => {
-      if (value === null) {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    });
-    startTransition(() => {
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    });
-  }
 
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-surface-accent/40 bg-surface/80 p-4">
@@ -33,18 +19,18 @@ export function CustomerFiltersBar() {
         placeholder="Buscar cliente"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
-        onBlur={() => sync({ search: search.trim() || null })}
+        onBlur={() => replaceQuery({ search: search.trim() || null })}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
-            sync({ search: search.trim() || null });
+            replaceQuery({ search: search.trim() || null });
           }
         }}
         className="flex-1 rounded-full border border-surface-accent/60 bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
       />
       <button
         type="button"
-        onClick={() => sync({ active: activeOnly ? null : "true" })}
+        onClick={() => replaceQuery({ active: activeOnly ? null : "true" })}
         className={`rounded-full px-4 py-2 text-xs transition ${activeOnly ? "bg-primary text-primary-foreground" : "bg-surface-accent/60 text-muted-foreground"}`}
       >
         Clientes ativos
