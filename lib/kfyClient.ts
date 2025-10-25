@@ -1,8 +1,8 @@
 import "server-only";
 
-import { cache } from "react";
 import { z } from "zod";
 
+import { kiwifyApiEnv } from "@/lib/env";
 import {
   kfyCouponSchema,
   kfyCustomerSchema,
@@ -27,6 +27,7 @@ const envSchema = z.object({
   KIWIFY_API_URL: z.string().url().default("https://public-api.kiwify.com/v1/"),
   KIWIFY_API_SCOPE: z.string().optional(),
   KIWIFY_API_AUDIENCE: z.string().optional(),
+  KIWIFY_PARTNER_ID: z.string().optional(),
 });
 
 const parsedEnv = envSchema.safeParse({
@@ -36,13 +37,151 @@ const parsedEnv = envSchema.safeParse({
   KIWIFY_API_URL: process.env.KIWIFY_API_URL,
   KIWIFY_API_SCOPE: process.env.KIWIFY_API_SCOPE,
   KIWIFY_API_AUDIENCE: process.env.KIWIFY_API_AUDIENCE,
+  KIWIFY_PARTNER_ID: process.env.KIWIFY_PARTNER_ID,
 });
 
-const requireEnv = () => {
+type LegacyEnv = z.infer<typeof envSchema>;
+
+type ApiConfig = {
+  clientId: string;
+  clientSecret: string;
+  accountId?: string;
+  scope?: string;
+  audience?: string;
+  partnerId?: string;
+  baseUrl: URL;
+  basePathSegments: string[];
+  prefixSegments: string[];
+};
+
+type TokenCacheState = {
+  value: string | null;
+  tokenType: string;
+  scope: string | null;
+  expiresAt: number;
+  obtainedAt: number | null;
+};
+
+type KiwifyRequestError = Error & {
+  status: number;
+  url: string;
+  body: string;
+};
+
+const globalState = globalThis as typeof globalThis & {
+  __kfyApiConfig?: ApiConfig | null;
+  __kfyTokenCache?: TokenCacheState | null;
+};
+
+const getTokenCache = (): TokenCacheState => {
+  if (!globalState.__kfyTokenCache) {
+    globalState.__kfyTokenCache = {
+      value: null,
+      tokenType: "Bearer",
+      scope: null,
+      expiresAt: 0,
+      obtainedAt: null,
+    } satisfies TokenCacheState;
+  }
+  return globalState.__kfyTokenCache;
+};
+
+const normalizeSegments = (value: string | undefined) => {
+  if (!value) {
+    return [] as string[];
+  }
+
+  return value
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+};
+
+const joinSegments = (segments: string[]) => {
+  if (segments.length === 0) {
+    return "/";
+  }
+
+  return `/${segments.join("/")}`;
+};
+
+const buildApiConfigFromLegacyEnv = (env: LegacyEnv): ApiConfig => {
+  const fullUrl = new URL(env.KIWIFY_API_URL);
+  fullUrl.search = "";
+  fullUrl.hash = "";
+
+  const baseUrl = new URL(`${fullUrl.protocol}//${fullUrl.host}`);
+  baseUrl.pathname = "/";
+  baseUrl.search = "";
+  baseUrl.hash = "";
+
+  const prefixSegments = normalizeSegments(fullUrl.pathname);
+
+  return {
+    clientId: env.KIWIFY_CLIENT_ID,
+    clientSecret: env.KIWIFY_CLIENT_SECRET,
+    accountId: env.KIWIFY_ACCOUNT_ID,
+    scope: env.KIWIFY_API_SCOPE,
+    audience: env.KIWIFY_API_AUDIENCE,
+    partnerId: env.KIWIFY_PARTNER_ID,
+    baseUrl,
+    basePathSegments: [],
+    prefixSegments,
+  } satisfies ApiConfig;
+};
+
+const buildApiConfigFromModernEnv = (): ApiConfig | null => {
+  const hasModernEnv = Boolean(process.env.KIWIFY_API_BASE_URL?.trim());
+
+  if (!hasModernEnv) {
+    return null;
+  }
+
+  const env = kiwifyApiEnv.maybe();
+
+  if (!env) {
+    return null;
+  }
+
+  const baseUrl = new URL(env.KIWIFY_API_BASE_URL);
+  baseUrl.search = "";
+  baseUrl.hash = "";
+
+  const basePathSegments = normalizeSegments(baseUrl.pathname);
+  baseUrl.pathname = "/";
+
+  return {
+    clientId: env.KIWIFY_CLIENT_ID,
+    clientSecret: env.KIWIFY_CLIENT_SECRET,
+    accountId: env.KIWIFY_ACCOUNT_ID,
+    scope: env.KIWIFY_API_SCOPE,
+    audience: env.KIWIFY_API_AUDIENCE,
+    partnerId: env.KIWIFY_PARTNER_ID,
+    baseUrl,
+    basePathSegments,
+    prefixSegments: normalizeSegments(env.KIWIFY_API_PATH_PREFIX),
+  } satisfies ApiConfig;
+};
+
+const getApiConfig = (): ApiConfig => {
+  if (globalState.__kfyApiConfig) {
+    return globalState.__kfyApiConfig;
+  }
+
+  const modernConfig = buildApiConfigFromModernEnv();
+
+  if (modernConfig) {
+    globalState.__kfyApiConfig = modernConfig;
+    return modernConfig;
+  }
+
   if (!parsedEnv.success) {
     throw new Error(`Variáveis da Kiwify ausentes: ${parsedEnv.error.message}`);
   }
-  return parsedEnv.data;
+
+  const legacyConfig = buildApiConfigFromLegacyEnv(parsedEnv.data);
+  globalState.__kfyApiConfig = legacyConfig;
+  return legacyConfig;
 };
 
 interface FetchOptions extends RequestInit {
@@ -61,87 +200,192 @@ interface SyncOptions {
   dateTo?: string;
 }
 
-const tokenCache = {
-  value: null as string | null,
-  expiresAt: 0,
+const splitRequestPathSegments = (path: string) => {
+  const [cleanPath] = path.split("?");
+  return normalizeSegments(cleanPath);
 };
 
-const withTrailingSlash = (value: string) => (value.endsWith("/") ? value : `${value}/`);
+const createRequestError = (
+  status: number,
+  url: string,
+  body: string,
+  message?: string,
+): KiwifyRequestError => {
+  const error = new Error(message ?? `Erro na API Kiwify (${status}): ${body}`) as KiwifyRequestError;
+  error.status = status;
+  error.url = url;
+  error.body = body;
+  return error;
+};
 
-const buildTokenUrlCandidates = (baseUrl: string) => {
-  const base = new URL(baseUrl);
-  base.search = "";
-  base.hash = "";
+const buildRequestUrl = (
+  config: ApiConfig,
+  pathSegments: string[],
+  searchParams?: Record<string, string | number | boolean | undefined>,
+) => {
+  const url = new URL(config.baseUrl.toString());
+  const segments = [...config.basePathSegments, ...pathSegments];
+  url.pathname = joinSegments(segments);
 
-  const cleanedPath = base.pathname.replace(/\/+$/, "");
-  const segments = cleanedPath.split("/").filter(Boolean);
-
-  const urls: string[] = [];
-
-  const withoutVersion = new URL(base.toString());
-  if (segments.length > 0) {
-    const prefixSegments = [...segments];
-    if (/^v\d+$/i.test(prefixSegments[prefixSegments.length - 1] ?? "")) {
-      prefixSegments.pop();
+  if (searchParams) {
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (value === undefined || value === null || value === "") {
+        continue;
+      }
+      url.searchParams.set(key, String(value));
     }
-    withoutVersion.pathname = `${prefixSegments.length > 0 ? `/${prefixSegments.join("/")}` : ""}/oauth/token`;
-  } else {
-    withoutVersion.pathname = "/oauth/token";
   }
 
-  urls.push(withoutVersion.toString());
+  return url;
+};
 
-  const withVersion = new URL(base.toString());
-  const versionPath = `${cleanedPath}/oauth/token`.replace(/\/+/g, "/");
-  withVersion.pathname = versionPath.startsWith("/") ? versionPath : `/${versionPath}`;
+const buildPrefixVariants = (prefixSegments: string[]) => {
+  const variants: string[][] = [];
+  const seen = new Set<string>();
 
-  if (!urls.includes(withVersion.toString())) {
-    urls.push(withVersion.toString());
+  const addVariant = (segments: string[]) => {
+    const key = segments.join("/");
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    variants.push(segments);
+  };
+
+  addVariant(prefixSegments);
+
+  for (let index = 1; index < prefixSegments.length; index += 1) {
+    addVariant(prefixSegments.slice(index));
+  }
+
+  for (let index = prefixSegments.length - 1; index >= 0; index -= 1) {
+    addVariant(prefixSegments.slice(0, index));
+  }
+
+  addVariant([]);
+  addVariant(["api", ...prefixSegments]);
+  if (prefixSegments.length > 0) {
+    addVariant(["api", ...prefixSegments.slice(1)]);
+  }
+  addVariant(["api"]);
+  addVariant(["v1"]);
+  addVariant(["api", "v1"]);
+
+  return variants;
+};
+
+const buildTokenUrlCandidates = (config: ApiConfig) => {
+  const variants: string[][] = [];
+  const baseVariants = buildPrefixVariants(config.prefixSegments);
+
+  for (const variant of baseVariants) {
+    variants.push([...config.basePathSegments, ...variant, "oauth", "token"]);
+    variants.push([...variant, "oauth", "token"]);
+  }
+
+  variants.push([...config.basePathSegments, "oauth", "token"]);
+  variants.push(["oauth", "token"]);
+
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
+  for (const segments of variants) {
+    const filtered = segments.filter((segment) => segment.length > 0);
+    const key = filtered.join("/");
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+
+    const url = new URL(config.baseUrl.toString());
+    url.pathname = joinSegments(filtered);
+    urls.push(url.toString());
   }
 
   return urls;
 };
 
-async function requestNewToken(): Promise<{ access_token: string; expires_in: number }> {
-  const env = requireEnv();
+const resetTokenCache = () => {
+  const cache = getTokenCache();
+  cache.value = null;
+  cache.tokenType = "Bearer";
+  cache.scope = null;
+  cache.expiresAt = 0;
+  cache.obtainedAt = null;
+};
+
+const isKiwifyRequestError = (error: unknown): error is KiwifyRequestError => {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof (error as { status?: unknown }).status === "number"
+  );
+};
+
+async function requestNewToken(): Promise<{
+  token: string;
+  tokenType: string;
+  expiresIn: number;
+  scope?: string;
+}> {
+  const config = getApiConfig();
   const payload = new URLSearchParams({
     grant_type: "client_credentials",
-    client_id: env.KIWIFY_CLIENT_ID,
-    client_secret: env.KIWIFY_CLIENT_SECRET,
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
   });
 
-  if (env.KIWIFY_ACCOUNT_ID) {
-    payload.set("account_id", env.KIWIFY_ACCOUNT_ID);
+  if (config.accountId) {
+    payload.set("account_id", config.accountId);
   }
 
-  if (env.KIWIFY_API_SCOPE) {
-    payload.set("scope", env.KIWIFY_API_SCOPE);
+  if (config.scope) {
+    payload.set("scope", config.scope);
   }
 
-  if (env.KIWIFY_API_AUDIENCE) {
-    payload.set("audience", env.KIWIFY_API_AUDIENCE);
+  if (config.audience) {
+    payload.set("audience", config.audience);
   }
 
-  const tokenUrls = buildTokenUrlCandidates(env.KIWIFY_API_URL);
-  let lastError: { status: number; body: string; url: string } | null = null;
+  const tokenUrls = buildTokenUrlCandidates(config);
+  let lastError: KiwifyRequestError | null = null;
 
   for (const tokenUrl of tokenUrls) {
-    const body = new URLSearchParams(payload);
     const response = await fetch(tokenUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body,
+      body: new URLSearchParams(payload),
       cache: "no-store",
     });
 
     if (response.ok) {
-      return response.json();
+      const tokenResponse = (await response.json()) as {
+        access_token: string;
+        token_type?: string;
+        expires_in: number;
+        scope?: string;
+      };
+
+      return {
+        token: tokenResponse.access_token,
+        tokenType: tokenResponse.token_type ?? "Bearer",
+        expiresIn: tokenResponse.expires_in,
+        scope: tokenResponse.scope,
+      };
     }
 
     const errorText = await response.text();
-    lastError = { status: response.status, body: errorText, url: tokenUrl };
+    lastError = createRequestError(
+      response.status,
+      tokenUrl,
+      errorText,
+      `Erro ao obter token da Kiwify (${response.status}): ${errorText}`,
+    );
 
     if (response.status !== 404) {
       break;
@@ -149,72 +393,120 @@ async function requestNewToken(): Promise<{ access_token: string; expires_in: nu
   }
 
   if (lastError) {
-    throw new Error(
-      `Erro ao obter token da Kiwify (${lastError.url}): ${lastError.status} ${lastError.body}`,
-    );
+    throw lastError;
   }
 
   throw new Error("Erro ao obter token da Kiwify: caminho do token não encontrado");
 }
 
-export const getAccessToken = cache(async () => {
-  if (tokenCache.value && Date.now() < tokenCache.expiresAt - 60_000) {
-    return tokenCache.value;
+export async function getAccessToken(forceRefresh = false): Promise<string> {
+  const cache = getTokenCache();
+
+  if (!forceRefresh && cache.value && Date.now() < cache.expiresAt - 60_000) {
+    return cache.value;
   }
 
-  const { access_token, expires_in } = await requestNewToken();
-  tokenCache.value = access_token;
-  tokenCache.expiresAt = Date.now() + expires_in * 1000;
-  return access_token;
-});
+  const { token, tokenType, expiresIn, scope } = await requestNewToken();
+  const now = Date.now();
 
-async function fetchWithRetry<T>(path: string, options: FetchOptions = {}, attempt = 0): Promise<T> {
+  cache.value = token;
+  cache.tokenType = tokenType || "Bearer";
+  cache.scope = scope ?? null;
+  cache.expiresAt = now + expiresIn * 1000;
+  cache.obtainedAt = now;
+
+  return token;
+}
+
+async function performRequest<T>(
+  config: ApiConfig,
+  pathSegments: string[],
+  options: FetchOptions,
+  attempt: number,
+): Promise<T> {
   const token = await getAccessToken();
-
-  const env = requireEnv();
-
+  const cache = getTokenCache();
   const headers = new Headers(options.headers);
-  headers.set("Authorization", `Bearer ${token}`);
+
+  headers.set("Authorization", `${cache.tokenType || "Bearer"} ${token}`);
   headers.set("Accept", "application/json");
 
-  if (env.KIWIFY_ACCOUNT_ID) {
-    headers.set("x-kiwify-account-id", env.KIWIFY_ACCOUNT_ID);
+  if (config.accountId) {
+    headers.set("x-kiwify-account-id", config.accountId);
   }
 
-  const baseUrl = withTrailingSlash(env.KIWIFY_API_URL);
-  const normalizedPath = path.replace(/^\/+/, "");
-  const url = new URL(normalizedPath, baseUrl);
-  if (options.searchParams) {
-    Object.entries(options.searchParams).forEach(([key, value]) => {
-      if (value === undefined || value === null || value === "") return;
-      url.searchParams.set(key, String(value));
-    });
+  if (config.partnerId) {
+    headers.set("x-kiwify-partner-id", config.partnerId);
   }
 
-  const response = await fetch(url, {
-    ...options,
+  const url = buildRequestUrl(config, pathSegments, options.searchParams);
+
+  const { searchParams: _ignored, ...init } = options;
+  const requestInit: RequestInit = {
+    ...init,
     headers,
-    cache: "no-store",
-  });
+    cache: init.cache ?? "no-store",
+  };
+
+  const response = await fetch(url, requestInit);
 
   if (response.status === 401 && attempt < 2) {
-    tokenCache.value = null;
-    await getAccessToken();
-    return fetchWithRetry(path, options, attempt + 1);
+    resetTokenCache();
+    await getAccessToken(true);
+    return performRequest(config, pathSegments, options, attempt + 1);
   }
 
   if ([429, 500, 502, 503].includes(response.status) && attempt < 5) {
     const backoff = Math.min(1000 * 2 ** attempt, 10_000);
     await new Promise((resolve) => setTimeout(resolve, backoff));
-    return fetchWithRetry(path, options, attempt + 1);
+    return performRequest(config, pathSegments, options, attempt + 1);
   }
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Erro na API Kiwify (${response.status}): ${errorText}`);
+    throw createRequestError(response.status, url.toString(), errorText);
   }
 
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    return (await response.json()) as T;
+  }
+
+  const text = await response.text();
+  return (text === "" ? (undefined as T) : ((text as unknown) as T)) as T;
+}
+
+async function fetchWithRetry<T>(path: string, options: FetchOptions = {}, attempt = 0): Promise<T> {
+  const config = getApiConfig();
+  const requestSegments = splitRequestPathSegments(path);
+  const prefixVariants = buildPrefixVariants(config.prefixSegments);
+  let lastNotFound: KiwifyRequestError | null = null;
+
+  for (const variant of prefixVariants) {
+    const combinedSegments = [...variant, ...requestSegments];
+
+    try {
+      return await performRequest<T>(config, combinedSegments, options, attempt);
+    } catch (error) {
+      if (isKiwifyRequestError(error) && error.status === 404) {
+        lastNotFound = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastNotFound) {
+    throw lastNotFound;
+  }
+
+  const fallbackUrl = buildRequestUrl(config, requestSegments, options.searchParams);
+  throw createRequestError(404, fallbackUrl.toString(), "", `Erro na API Kiwify (404): recurso ${path} não encontrado`);
 }
 
 async function fetchPaginated<T>(path: string, options: SyncOptions = {}): Promise<PaginatedResponse<T>> {
@@ -424,8 +716,18 @@ export async function syncAllResources(
 }
 
 export function getAccessTokenMetadata() {
+  const cache = getTokenCache();
+
   return {
-    hasToken: Boolean(tokenCache.value),
-    expiresAt: tokenCache.expiresAt ? new Date(tokenCache.expiresAt).toISOString() : null,
+    hasToken: Boolean(cache.value),
+    expiresAt: cache.expiresAt ? new Date(cache.expiresAt).toISOString() : null,
+    obtainedAt: cache.obtainedAt ? new Date(cache.obtainedAt).toISOString() : null,
+    tokenType: cache.tokenType,
+    scope: cache.scope,
   };
+}
+
+export function __resetKfyClientStateForTesting() {
+  globalState.__kfyApiConfig = null;
+  globalState.__kfyTokenCache = null;
 }
