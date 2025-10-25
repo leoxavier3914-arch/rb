@@ -1,7 +1,9 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+
+import { useQueryReplace } from "@/hooks/useQueryReplace";
 
 const statusOptions = [
   { label: "Aprovadas", value: "approved" },
@@ -21,9 +23,8 @@ function toggleValue(current: string[], value: string) {
 }
 
 export function SalesFiltersBar() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const replaceQuery = useQueryReplace();
 
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const status = useMemo(() => searchParams.get("status")?.split(",").filter(Boolean) ?? [], [searchParams]);
@@ -33,7 +34,6 @@ export function SalesFiltersBar() {
     () => searchParams.get("productId")?.split(",").filter(Boolean) ?? [],
     [searchParams],
   );
-  const [, startTransition] = useTransition();
 
   useEffect(() => {
     let cancelled = false;
@@ -62,20 +62,6 @@ export function SalesFiltersBar() {
     };
   }, []);
 
-  function syncParams(partial: Record<string, string | null>) {
-    const params = new URLSearchParams(searchParams.toString());
-    Object.entries(partial).forEach(([key, value]) => {
-      if (value === null || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    });
-    startTransition(() => {
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    });
-  }
-
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-surface-accent/40 bg-surface/80 p-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -84,11 +70,11 @@ export function SalesFiltersBar() {
           placeholder="Buscar cliente ou pedido"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          onBlur={() => syncParams({ search: search.trim() || null })}
+          onBlur={() => replaceQuery({ search: search.trim() || null })}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              syncParams({ search: search.trim() || null });
+              replaceQuery({ search: search.trim() || null });
             }
           }}
           className="flex-1 rounded-full border border-surface-accent/60 bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
@@ -97,7 +83,7 @@ export function SalesFiltersBar() {
           type="button"
           onClick={() => {
             setSearch("");
-            syncParams({ search: null });
+            replaceQuery({ search: null });
           }}
           className="rounded-full border border-surface-accent/60 px-4 py-2 text-sm text-muted-foreground hover:border-primary hover:text-primary"
         >
@@ -113,7 +99,7 @@ export function SalesFiltersBar() {
               <button
                 key={option.value}
                 type="button"
-                onClick={() => syncParams({ status: toggleValue(status, option.value).join(",") || null })}
+                onClick={() => replaceQuery({ status: toggleValue(status, option.value).join(",") || null })}
                 className={`rounded-full px-4 py-1 text-xs transition ${active ? "bg-primary text-primary-foreground" : "bg-surface-accent/60 text-muted-foreground"}`}
               >
                 {option.label}
@@ -129,7 +115,7 @@ export function SalesFiltersBar() {
               <button
                 key={option.value}
                 type="button"
-                onClick={() => syncParams({ paymentMethod: toggleValue(payment, option.value).join(",") || null })}
+                onClick={() => replaceQuery({ paymentMethod: toggleValue(payment, option.value).join(",") || null })}
                 className={`rounded-full px-4 py-1 text-xs transition ${active ? "bg-primary text-primary-foreground" : "bg-surface-accent/60 text-muted-foreground"}`}
               >
                 {option.label}
@@ -144,7 +130,7 @@ export function SalesFiltersBar() {
             value={selectedProducts}
             onChange={(event) => {
               const values = Array.from(event.target.selectedOptions).map((option) => option.value);
-              syncParams({ productId: values.join(",") || null });
+              replaceQuery({ productId: values.join(",") || null });
             }}
             className="min-w-[220px] rounded-lg border border-surface-accent/60 bg-background px-3 py-2 text-sm text-white"
           >

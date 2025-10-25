@@ -1,8 +1,10 @@
 "use client";
 
 import { endOfMonth, endOfToday, formatISO, startOfMonth, startOfToday, subDays } from "date-fns";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+
+import { useQueryReplace } from "@/hooks/useQueryReplace";
 
 const STORAGE_KEY = "kiwify-dashboard:date-range";
 
@@ -70,9 +72,8 @@ function restoreRange(): { preset: PresetValue; from: string; to: string } | nul
 }
 
 export function DateRangeFilter() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const replaceQuery = useQueryReplace();
 
   const initial = useMemo(() => {
     const fromParam = searchParams.get("from");
@@ -92,8 +93,6 @@ export function DateRangeFilter() {
   const [preset, setPreset] = useState<PresetValue>(initial.preset);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
-  const [, startTransition] = useTransition();
-
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -107,13 +106,8 @@ export function DateRangeFilter() {
       return;
     }
 
-    params.set("from", from);
-    params.set("to", to);
-
-    startTransition(() => {
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    });
-  }, [from, to, preset, pathname, router, startTransition]);
+    replaceQuery({ from, to });
+  }, [from, to, preset, replaceQuery]);
 
   function handlePresetChange(value: PresetValue) {
     setPreset(value);

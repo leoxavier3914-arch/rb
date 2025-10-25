@@ -1,7 +1,9 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { useMemo } from "react";
+
+import { useQueryReplace } from "@/hooks/useQueryReplace";
 
 const statusOptions = [
   { label: "Ativos", value: "approved" },
@@ -14,23 +16,9 @@ function toggle(values: string[], value: string) {
 }
 
 export function ProductFiltersBar() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const replaceQuery = useQueryReplace();
   const status = useMemo(() => searchParams.get("status")?.split(",").filter(Boolean) ?? [], [searchParams]);
-  const [, startTransition] = useTransition();
-
-  function sync(values: string[]) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (values.length) {
-      params.set("status", values.join(","));
-    } else {
-      params.delete("status");
-    }
-    startTransition(() => {
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    });
-  }
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-surface-accent/40 bg-surface/80 p-4 text-xs text-muted-foreground">
@@ -41,7 +29,7 @@ export function ProductFiltersBar() {
           <button
             key={option.value}
             type="button"
-            onClick={() => sync(toggle(status, option.value))}
+            onClick={() => replaceQuery({ status: toggle(status, option.value).join(",") || null })}
             className={`rounded-full px-4 py-1 transition ${active ? "bg-primary text-primary-foreground" : "bg-surface-accent/60 text-muted-foreground"}`}
           >
             {option.label}

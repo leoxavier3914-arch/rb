@@ -1,7 +1,9 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
+
+import { useQueryReplace } from "@/hooks/useQueryReplace";
 
 const statusOptions = [
   { label: "Processados", value: "approved" },
@@ -14,27 +16,11 @@ function toggleValue(values: string[], value: string) {
 }
 
 export function RefundFiltersBar() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const replaceQuery = useQueryReplace();
 
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const status = useMemo(() => searchParams.get("status")?.split(",").filter(Boolean) ?? [], [searchParams]);
-  const [, startTransition] = useTransition();
-
-  function syncParams(partial: Record<string, string | null>) {
-    const params = new URLSearchParams(searchParams.toString());
-    Object.entries(partial).forEach(([key, value]) => {
-      if (!value) {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    });
-    startTransition(() => {
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    });
-  }
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-surface-accent/40 bg-surface/80 p-4">
@@ -44,11 +30,11 @@ export function RefundFiltersBar() {
           placeholder="Buscar reembolso"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          onBlur={() => syncParams({ search: search.trim() || null })}
+          onBlur={() => replaceQuery({ search: search.trim() || null })}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              syncParams({ search: search.trim() || null });
+              replaceQuery({ search: search.trim() || null });
             }
           }}
           className="flex-1 rounded-full border border-surface-accent/60 bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
@@ -57,7 +43,7 @@ export function RefundFiltersBar() {
           type="button"
           onClick={() => {
             setSearch("");
-            syncParams({ search: null });
+            replaceQuery({ search: null });
           }}
           className="rounded-full border border-surface-accent/60 px-4 py-2 text-sm text-muted-foreground hover:border-primary hover:text-primary"
         >
@@ -72,7 +58,7 @@ export function RefundFiltersBar() {
             <button
               key={option.value}
               type="button"
-              onClick={() => syncParams({ status: toggleValue(status, option.value).join(",") || null })}
+              onClick={() => replaceQuery({ status: toggleValue(status, option.value).join(",") || null })}
               className={`rounded-full px-4 py-1 text-xs transition ${active ? "bg-primary text-primary-foreground" : "bg-surface-accent/60 text-muted-foreground"}`}
             >
               {option.label}
