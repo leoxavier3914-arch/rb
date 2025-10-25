@@ -1,16 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { formatDateTime } from "@/lib/format";
+import { apiFetch } from "@/lib/apiFetch";
 
 type AuthStatus = {
   authenticated: boolean;
   expiresAt: string | null;
-};
-
-const ADMIN_HEADERS = {
-  "x-admin-role": "true",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -44,11 +42,41 @@ function getStatusLabel(status: AuthStatus | null) {
   return STATUS_LABELS.active;
 }
 
+const STATUS_QUERY_KEY = ["kfy-auth"] as const;
+
 export function AuthPanel() {
-  const [status, setStatus] = useState<AuthStatus | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const statusQuery = useQuery<AuthStatus>({
+    queryKey: STATUS_QUERY_KEY,
+    queryFn: async ({ signal }) => {
+      const response = await apiFetch("/api/kfy/auth", { method: "GET", signal });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Falha ao carregar status do token");
+      }
+      return (await response.json()) as AuthStatus;
+    },
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const renewMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiFetch("/api/kfy/auth", { method: "POST" });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Falha ao renovar token");
+      }
+      return (await response.json()) as { expiresAt: string | null };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
+    },
+  });
+
+  const status = statusQuery.data ?? null;
+  const errorMessage = (statusQuery.error as Error | undefined)?.message ?? (renewMutation.error as Error | undefined)?.message;
 
   const expiresLabel = useMemo(() => {
     if (!status?.expiresAt) {
@@ -63,62 +91,7 @@ export function AuthPanel() {
     }
   }, [status?.expiresAt]);
 
-  const fetchStatus = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/kfy/auth", {
-        method: "GET",
-        headers: ADMIN_HEADERS,
-      });
-
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || "Falha ao carregar status do token");
-      }
-
-      const payload = (await response.json()) as AuthStatus;
-      setStatus(payload);
-    } catch (error) {
-      console.error(error);
-      setError("Não foi possível verificar o token de acesso.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const refreshToken = useCallback(async () => {
-    setRefreshing(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/kfy/auth", {
-        method: "POST",
-        headers: ADMIN_HEADERS,
-      });
-
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || "Falha ao renovar token");
-      }
-
-      const payload = (await response.json()) as { expiresAt: string | null };
-      setStatus({
-        authenticated: true,
-        expiresAt: payload.expiresAt,
-      });
-    } catch (error) {
-      console.error(error);
-      setError("Não foi possível renovar o token de acesso.");
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchStatus();
-  }, [fetchStatus]);
-
-  const busy = loading || refreshing;
+  const busy = statusQuery.isFetching || renewMutation.isPending;
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-surface-accent/40 bg-surface/80 p-4">
@@ -126,7 +99,7 @@ export function AuthPanel() {
         <button
           type="button"
           className="rounded-full border border-primary/60 px-5 py-2 text-sm font-medium text-primary transition hover:bg-primary hover:text-primary-foreground disabled:cursor-not-allowed"
-          onClick={refreshToken}
+          onClick={() => renewMutation.mutate()}
           disabled={busy}
         >
           Renovar token de acesso
@@ -134,13 +107,15 @@ export function AuthPanel() {
         <button
           type="button"
           className="rounded-full border border-primary/20 px-5 py-2 text-sm text-primary transition hover:border-primary hover:text-primary disabled:cursor-not-allowed"
-          onClick={fetchStatus}
+          onClick={() => statusQuery.refetch()}
           disabled={busy}
         >
           Atualizar status
         </button>
-        {(loading || refreshing) && (
-          <span className="text-xs text-muted-foreground">{refreshing ? "Renovando token…" : "Atualizando…"}</span>
+        {busy && (
+          <span className="text-xs text-muted-foreground">
+            {renewMutation.isPending ? "Renovando token…" : "Atualizando…"}
+          </span>
         )}
       </div>
 
@@ -155,7 +130,7 @@ export function AuthPanel() {
         </div>
       </dl>
 
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {errorMessage ? <p className="text-xs text-destructive">{errorMessage}</p> : null}
     </div>
   );
 }

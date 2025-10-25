@@ -6,7 +6,9 @@ import { assertIsAdmin } from "@/lib/auth";
 import {
   extractCollection,
   fetchAllSalesByWindow,
+  buildRequestLogUrl,
   listProducts,
+  requestWithBackoff,
   shouldRequestNextPage,
 } from "@/lib/kiwify/resources";
 import { normalizeProduct, normalizeSale, type NormalizedSaleRecord } from "@/lib/kiwify/normalizers";
@@ -179,9 +181,24 @@ function resolveSyncRange(window: SyncWindow) {
 async function fetchAllProducts(pageSize = PRODUCT_PAGE_SIZE) {
   const productMap = new Map<string, KfyProduct>();
   let page = 1;
+  const resourcePath = "products";
 
   while (true) {
-    const response = await listProducts({ pageNumber: page, pageSize });
+    const searchParams = {
+      page_number: page,
+      page_size: pageSize,
+    } as const;
+
+    const response = await requestWithBackoff(
+      () => listProducts({ pageNumber: page, pageSize }),
+      {
+        method: "GET",
+        url: buildRequestLogUrl(resourcePath, searchParams),
+        range: null,
+        page,
+        cursor: { resource: "products" },
+      },
+    );
     const records = extractCollection(response);
 
     for (const record of records) {
@@ -296,3 +313,5 @@ export async function POST(request: NextRequest) {
     },
   });
 }
+export const dynamic = "force-dynamic";
+export const revalidate = 0;

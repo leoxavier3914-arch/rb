@@ -33,23 +33,113 @@ const customerSummarySchema = z.object({
   email: z.string().nullable(),
 });
 
-const querySchema = z.object({
-  limit: z.coerce.number().min(1).max(100).default(50),
-  cursor: z.string().optional(),
-  status: z.string().optional(),
-  paymentMethod: z.string().optional(),
-  productId: z.string().optional(),
-  search: z.string().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-});
+const dateParamSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  },
+  z
+    .string()
+    .regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/u, "Data inválida (use YYYY-MM-DD)"),
+);
 
-function decodeCursor(cursor: string | undefined) {
-  if (!cursor) return null;
-  const [createdAt, id] = cursor.split("::");
-  if (!createdAt || !id) return null;
-  return { createdAt, id };
-}
+const commaSeparatedStrings = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const tokens = value
+      .split(",")
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0);
+    return tokens.length ? tokens : undefined;
+  },
+  z.array(z.string()).optional(),
+);
+
+const commaSeparatedNumbers = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const tokens = value
+      .split(",")
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0);
+    if (!tokens.length) {
+      return undefined;
+    }
+    return tokens.map((token) => Number.parseInt(token, 10));
+  },
+  z
+    .array(
+      z
+        .number({ invalid_type_error: "IDs de produto devem ser numéricos" })
+        .int("IDs de produto devem ser inteiros")
+        .nonnegative("IDs de produto devem ser positivos"),
+    )
+    .optional(),
+);
+
+const searchSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  },
+  z.string().max(200, "Busca muito longa").optional(),
+);
+
+const cursorSchema = z
+  .string()
+  .transform((value, ctx) => {
+    const [createdAt, idPart] = value.split("::");
+    if (!createdAt || !idPart) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Cursor inválido",
+      });
+      return z.NEVER;
+    }
+
+    const parsed = Number.parseInt(idPart, 10);
+    if (!Number.isFinite(parsed)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Cursor inválido",
+      });
+      return z.NEVER;
+    }
+
+    return { createdAt, id: parsed };
+  })
+  .optional();
+
+const querySchema = z
+  .object({
+    limit: z.coerce.number().min(1).max(100).default(50),
+    cursor: cursorSchema,
+    status: commaSeparatedStrings,
+    paymentMethod: commaSeparatedStrings,
+    productId: commaSeparatedNumbers,
+    search: searchSchema,
+    from: dateParamSchema,
+    to: dateParamSchema,
+  })
+  .superRefine((data, ctx) => {
+    if (data.from && data.to && data.from > data.to) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '"to" deve ser maior ou igual a "from"',
+        path: ["to"],
+      });
+    }
+  });
 
 function encodeCursor(row: { created_at: string; id: number }) {
   return `${row.created_at}::${row.id}`;
@@ -57,8 +147,19 @@ function encodeCursor(row: { created_at: string; id: number }) {
 
 export async function GET(request: NextRequest) {
   assertIsAdmin(request);
-  const params = querySchema.parse(Object.fromEntries(request.nextUrl.searchParams.entries()));
-  const cursor = decodeCursor(params.cursor);
+  const parseResult = querySchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));
+
+  if (!parseResult.success) {
+    return NextResponse.json(
+      {
+        error: "Parâmetros inválidos",
+        details: parseResult.error.flatten().fieldErrors,
+      },
+      { status: 400 },
+    );
+  }
+
+  const params = parseResult.data;
 
   let customerFilter: number[] | undefined;
   if (params.search) {
@@ -87,19 +188,13 @@ export async function GET(request: NextRequest) {
     .limit(params.limit + 1);
 
   if (params.status) {
-    query = query.in("status", params.status.split(","));
+    query = query.in("status", params.status);
   }
   if (params.paymentMethod) {
-    query = query.in("payment_method", params.paymentMethod.split(","));
+    query = query.in("payment_method", params.paymentMethod);
   }
   if (params.productId) {
-    const ids = params.productId
-      .split(",")
-      .map((value) => Number.parseInt(value, 10))
-      .filter((value) => Number.isFinite(value));
-    if (ids.length) {
-      query = query.in("product_id", ids);
-    }
+    query = query.in("product_id", params.productId);
   }
   if (params.from) {
     query = query.gte("created_at", new Date(params.from).toISOString());
@@ -111,9 +206,9 @@ export async function GET(request: NextRequest) {
   if (customerFilter?.length) {
     query = query.in("customer_id", customerFilter);
   }
-  if (cursor) {
+  if (params.cursor) {
     query = query.or(
-      `and(created_at.lt.${cursor.createdAt}),and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+      `and(created_at.lt.${params.cursor.createdAt}),and(created_at.eq.${params.cursor.createdAt},id.lt.${params.cursor.id})`,
     );
   }
 
@@ -166,3 +261,5 @@ export async function GET(request: NextRequest) {
     nextCursor: hasNextPage && rows.length ? encodeCursor(rows[rows.length - 1]) : null,
   });
 }
+export const dynamic = "force-dynamic";
+export const revalidate = 0;

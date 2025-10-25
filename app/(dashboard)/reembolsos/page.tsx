@@ -4,14 +4,35 @@ import { DateRangeFilter } from "@/components/filters/DateRange";
 import { RefundFiltersBar } from "@/components/filters/RefundFiltersBar";
 import { RefundsTable, type RefundFilters } from "@/components/tables/RefundsTable";
 
+const DEFAULT_RANGE = {
+  from: formatISO(addDays(new Date(), -6), { representation: "date" }),
+  to: formatISO(new Date(), { representation: "date" }),
+};
+
+const splitParam = (value: string | string[] | undefined) => {
+  if (!value) {
+    return [] as string[];
+  }
+  const normalized = Array.isArray(value) ? value : [value];
+  return normalized
+    .flatMap((entry) => entry.split(","))
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+};
+
 function buildFilters(searchParams: Record<string, string | string[] | undefined>): RefundFilters {
-  const from = typeof searchParams.from === "string" ? searchParams.from : formatISO(addDays(new Date(), -6), { representation: "date" });
-  const to = typeof searchParams.to === "string" ? searchParams.to : formatISO(new Date(), { representation: "date" });
+  const fromParam = typeof searchParams.from === "string" ? searchParams.from.trim() : "";
+  const toParam = typeof searchParams.to === "string" ? searchParams.to.trim() : "";
+  const from = fromParam || DEFAULT_RANGE.from;
+  const to = toParam || DEFAULT_RANGE.to;
+  const status = splitParam(searchParams.status);
+  const search = typeof searchParams.search === "string" ? searchParams.search.trim() : undefined;
+
   return {
     from,
     to,
-    status: typeof searchParams.status === "string" ? searchParams.status.split(",").filter(Boolean) : undefined,
-    search: typeof searchParams.search === "string" ? searchParams.search : undefined,
+    status: status.length ? status : undefined,
+    search: search || undefined,
   };
 }
 

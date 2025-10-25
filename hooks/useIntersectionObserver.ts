@@ -2,11 +2,19 @@
 
 import { useEffect, useRef } from "react";
 
-export function useIntersectionObserver(callback: () => void, options?: IntersectionObserverInit) {
+export function useIntersectionObserver(
+  callback: () => void,
+  options?: IntersectionObserverInit,
+  enabled = true,
+) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!ref.current) return;
+    if (!enabled || !ref.current) {
+      return;
+    }
+
+    const target = ref.current;
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
@@ -15,12 +23,13 @@ export function useIntersectionObserver(callback: () => void, options?: Intersec
       });
     }, options);
 
-    observer.observe(ref.current);
+    observer.observe(target);
 
     return () => {
+      observer.unobserve(target);
       observer.disconnect();
     };
-  }, [callback, options]);
+  }, [callback, enabled, options]);
 
   return ref;
 }

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { supabaseAdmin } from "@/lib/supabase";
+import { apiFetch } from "@/lib/apiFetch";
 import { z } from "zod";
 
 const customerSchema = z.object({
@@ -48,8 +49,7 @@ async function getCustomer(id: number): Promise<Customer | null> {
 async function getEnrollments(customerId: number) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
   const url = baseUrl ? `${baseUrl}/api/kfy/alunas?customerId=${customerId}` : `/api/kfy/alunas?customerId=${customerId}`;
-  const response = await fetch(url, {
-    headers: { "x-admin-role": "true" },
+  const response = await apiFetch(url, {
     cache: "no-store",
   });
   if (!response.ok) {
