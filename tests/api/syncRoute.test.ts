@@ -94,6 +94,8 @@ vi.mock("@/lib/kiwify/resources", () => ({
   },
   shouldRequestNextPage: () => false,
   fetchAllSalesByWindow: vi.fn(async () => saleResponse),
+  requestWithBackoff: async <T>(perform: () => Promise<T>) => perform(),
+  buildRequestLogUrl: () => "/mocked",
 }));
 
 // Import after mocks

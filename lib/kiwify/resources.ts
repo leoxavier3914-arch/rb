@@ -1,11 +1,20 @@
 import { addDays, formatISO, isAfter, parseISO } from "date-fns";
 
-import { kiwifyFetch } from "@/lib/kiwify/client";
+import {
+  KiwifyApiError,
+  formatKiwifyApiPath,
+  kiwifyFetch,
+} from "@/lib/kiwify/client";
 import { buildSalesWindow } from "@/lib/kiwify/dateWindow";
 
 const MAX_SALES_RANGE_DAYS = 90;
 
 const MAX_SALES_PAGE_SIZE = 100;
+
+const PAGE_REQUEST_CONCURRENCY = 3;
+const MAX_REQUEST_RETRIES = 4;
+const BACKOFF_BASE_DELAY_MS = 500;
+const MAX_BACKOFF_DELAY_MS = 10_000;
 
 const formatDateParam = (date: Date) => formatISO(date, { representation: "date" });
 
@@ -29,6 +38,191 @@ const parseDateParam = (value: string, label: string): Date => {
     throw new Error(`Invalid ${label}: expected an ISO date string (yyyy-mm-dd)`);
   }
   return parsed;
+};
+
+type StructuredLogLevel = "info" | "warn" | "error";
+
+export type RequestLogContext = {
+  method: string;
+  url: string;
+  range?: { startDate: string; endDate: string } | null;
+  page?: number;
+  cursor?: Record<string, unknown> | null;
+};
+
+type AttemptLogContext = RequestLogContext & {
+  status: number | null;
+  elapsedMs: number;
+  attempt: number;
+  error?: string;
+};
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const logStructuredRequest = (level: StructuredLogLevel, context: AttemptLogContext) => {
+  const payload: AttemptLogContext = {
+    range: context.range ?? null,
+    cursor: context.cursor ?? null,
+    ...context,
+  };
+
+  // eslint-disable-next-line no-console
+  console[level]("[kfy-sync] request", payload);
+};
+
+const shouldRetryStatus = (status: number | null | undefined) => {
+  if (status === 429) {
+    return true;
+  }
+
+  if (typeof status === "number" && status >= 500 && status < 600) {
+    return true;
+  }
+
+  return false;
+};
+
+export async function requestWithBackoff<T>(
+  perform: () => Promise<T>,
+  context: RequestLogContext,
+): Promise<T> {
+  let attempt = 0;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const startedAt = Date.now();
+    try {
+      const result = await perform();
+      const elapsedMs = Date.now() - startedAt;
+
+      logStructuredRequest("info", {
+        ...context,
+        status: 200,
+        elapsedMs,
+        attempt: attempt + 1,
+      });
+
+      return result;
+    } catch (error) {
+      const status = error instanceof KiwifyApiError ? error.status : null;
+      const elapsedMs = Date.now() - startedAt;
+      const shouldRetry = shouldRetryStatus(status);
+
+      logStructuredRequest(shouldRetry ? "warn" : "error", {
+        ...context,
+        status,
+        elapsedMs,
+        attempt: attempt + 1,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      if (!shouldRetry || attempt >= MAX_REQUEST_RETRIES - 1) {
+        throw error;
+      }
+
+      const backoffDelay = Math.min(BACKOFF_BASE_DELAY_MS * 2 ** attempt, MAX_BACKOFF_DELAY_MS);
+      attempt += 1;
+      await delay(backoffDelay);
+    }
+  }
+}
+
+export const buildRequestLogUrl = (
+  path: string,
+  searchParams: Record<string, string | number | undefined>,
+) => {
+  const normalizedPath = formatKiwifyApiPath(path);
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+
+    params.set(key, String(value));
+  }
+
+  const query = params.toString();
+  return query ? `${normalizedPath}?${query}` : normalizedPath;
+};
+
+const createConcurrencyLimiter = (concurrency: number) => {
+  if (!Number.isInteger(concurrency) || concurrency <= 0) {
+    throw new Error("Concurrency must be a positive integer");
+  }
+
+  let activeCount = 0;
+  const queue: Array<() => void> = [];
+
+  const next = () => {
+    activeCount = Math.max(0, activeCount - 1);
+
+    if (queue.length === 0) {
+      return;
+    }
+
+    const task = queue.shift();
+    if (task) {
+      task();
+    }
+  };
+
+  const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
+    return new Promise<T>((resolve, reject) => {
+      const run = () => {
+        activeCount += 1;
+
+        Promise.resolve()
+          .then(task)
+          .then(
+            (value) => {
+              resolve(value);
+              next();
+            },
+            (error) => {
+              reject(error);
+              next();
+            },
+          );
+      };
+
+      if (activeCount < concurrency) {
+        run();
+      } else {
+        queue.push(run);
+      }
+    });
+  };
+
+  return enqueue;
+};
+
+type SalesSearchParamsOptions = {
+  startDate: string;
+  endDate?: string;
+  pageNumber: number;
+  pageSize: number;
+  status?: string;
+  productId?: string;
+};
+
+const buildSalesSearchParams = (options: SalesSearchParamsOptions) => {
+  const { startDate, endDate, pageNumber, pageSize, status, productId } = options;
+  const window = buildSalesWindow(startDate, endDate);
+
+  const searchParams: Record<string, string | number | undefined> = {
+    page_number: pageNumber,
+    page_size: pageSize,
+    status,
+    start_date: window.startDate,
+    end_date: window.endDate,
+  };
+
+  if (productId) {
+    searchParams.product_id = productId;
+  }
+
+  return searchParams;
 };
 
 export const extractCollection = (payload: unknown): unknown[] => {
@@ -199,17 +393,14 @@ export async function listSales(options: {
 
   const window = buildSalesWindow(startDate, endDate);
 
-  const searchParams: Record<string, string | number | undefined> = {
-    page_number: resolvedPageNumber,
-    page_size: resolvedPageSize,
+  const searchParams = buildSalesSearchParams({
+    startDate: window.startDate,
+    endDate: window.endDate,
+    pageNumber: resolvedPageNumber,
+    pageSize: resolvedPageSize,
     status,
-    start_date: window.startDate,
-    end_date: window.endDate,
-  };
-
-  if (productId) {
-    searchParams.product_id = productId;
-  }
+    productId,
+  });
 
   return kiwifyFetch<unknown>(path, {
     searchParams,
@@ -287,49 +478,84 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
     cursor = chunkEndExclusive;
   }
 
-  const aggregatedSales: unknown[] = [];
-  const aggregatedRequests: ListAllSalesResult["requests"] = [];
+  const intervalStates = intervals.map((interval) => {
+    const requestStart = formatDateParam(interval.start);
+    const exclusiveEnd = interval.endExclusive;
+    const requestEndExclusive = formatDateParam(exclusiveEnd);
+    const inclusiveEnd = formatDateParam(addDays(exclusiveEnd, -1));
+
+    return {
+      requestStart,
+      requestEndExclusive,
+      inclusiveEnd,
+      pages: new Map<number, unknown>(),
+      records: new Map<number, unknown[]>(),
+    };
+  });
+
+  const limit = createConcurrencyLimiter(PAGE_REQUEST_CONCURRENCY);
+
   let totalPages = 0;
 
-  for (const interval of intervals) {
-    const pages: unknown[] = [];
-    let page = 1;
+  const processInterval = async (intervalIndex: number, page: number): Promise<void> => {
+    const state = intervalStates[intervalIndex];
 
-    const requestStart = formatDateParam(interval.start);
-    const requestEnd = formatDateParam(interval.endExclusive);
-
-    while (true) {
-      const response = await listSales({
-        startDate: requestStart,
-        endDate: requestEnd,
+    await limit(async () => {
+      const searchParams = buildSalesSearchParams({
+        startDate: state.requestStart,
+        endDate: state.requestEndExclusive,
         pageNumber: page,
         pageSize: perPage,
         status,
         productId,
-        path,
       });
 
-      pages.push(response);
-      totalPages += 1;
+      const logUrl = buildRequestLogUrl(path ?? "sales", searchParams);
+      const response = await requestWithBackoff(
+        () =>
+          kiwifyFetch<unknown>(path ?? "sales", {
+            searchParams,
+          }),
+        {
+          method: "GET",
+          url: logUrl,
+          range: { startDate: state.requestStart, endDate: state.inclusiveEnd },
+          page,
+          cursor: { intervalIndex },
+        },
+      );
+
+      state.pages.set(page, response);
 
       const records = extractCollection(response);
-      aggregatedSales.push(...records);
+      state.records.set(page, records);
+      totalPages += 1;
 
-      if (!shouldRequestNextPage(response, records.length, perPage, page)) {
-        break;
+      if (shouldRequestNextPage(response, records.length, perPage, page)) {
+        await processInterval(intervalIndex, page + 1);
       }
+    });
+  };
 
-      page += 1;
-    }
+  await Promise.all(intervalStates.map((_, index) => processInterval(index, 1)));
+
+  const aggregatedSales: unknown[] = [];
+  const aggregatedRequests: ListAllSalesResult["requests"] = [];
+
+  intervalStates.forEach((state) => {
+    const orderedPages = Array.from(state.pages.keys()).sort((a, b) => a - b);
+    const pagesPayload = orderedPages.map((pageNumber) => state.pages.get(pageNumber)!);
 
     aggregatedRequests.push({
-      range: {
-        startDate: requestStart,
-        endDate: formatDateParam(addDays(interval.endExclusive, -1)),
-      },
-      pages,
+      range: { startDate: state.requestStart, endDate: state.inclusiveEnd },
+      pages: pagesPayload,
     });
-  }
+
+    orderedPages.forEach((pageNumber) => {
+      const records = state.records.get(pageNumber) ?? [];
+      aggregatedSales.push(...records);
+    });
+  });
 
   return {
     summary: {

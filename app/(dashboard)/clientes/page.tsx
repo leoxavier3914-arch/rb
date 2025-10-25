@@ -4,13 +4,20 @@ import { CustomerFiltersBar } from "@/components/filters/CustomerFiltersBar";
 import { DateRangeFilter } from "@/components/filters/DateRange";
 import { CustomersTable, type CustomerFilters } from "@/components/tables/CustomersTable";
 
+const DEFAULT_RANGE = {
+  from: formatISO(addDays(new Date(), -30), { representation: "date" }),
+  to: formatISO(new Date(), { representation: "date" }),
+};
+
 function buildFilters(searchParams: Record<string, string | string[] | undefined>): CustomerFilters {
-  const from = typeof searchParams.from === "string" ? searchParams.from : formatISO(addDays(new Date(), -30), { representation: "date" });
-  const to = typeof searchParams.to === "string" ? searchParams.to : formatISO(new Date(), { representation: "date" });
+  const fromParam = typeof searchParams.from === "string" ? searchParams.from.trim() : "";
+  const toParam = typeof searchParams.to === "string" ? searchParams.to.trim() : "";
+  const search = typeof searchParams.search === "string" ? searchParams.search.trim() : undefined;
+
   return {
-    from,
-    to,
-    search: typeof searchParams.search === "string" ? searchParams.search : undefined,
+    from: fromParam || DEFAULT_RANGE.from,
+    to: toParam || DEFAULT_RANGE.to,
+    search: search || undefined,
     activeOnly: searchParams.active === "true",
   };
 }

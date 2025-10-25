@@ -6,6 +6,8 @@ import { ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack
 import { formatDateTime } from "@/lib/format";
 import { useInfiniteResource } from "@/hooks/useInfiniteResource";
 import { useIntersectionObserver } from "@/hooks/useIntersectionObserver";
+import { apiFetch } from "@/lib/apiFetch";
+import { TableState } from "@/components/tables/TableState";
 
 interface EnrollmentRow {
   id: number;
@@ -24,27 +26,39 @@ export interface EnrollmentFilters {
   customerId?: string;
 }
 
-async function fetchEnrollments(filters: EnrollmentFilters, cursor?: string | null) {
+async function fetchEnrollments(filters: EnrollmentFilters, cursor: string | null, signal: AbortSignal) {
   const params = new URLSearchParams();
   if (filters.status?.length) params.set("status", filters.status.join(","));
   if (filters.customerId) params.set("customerId", filters.customerId);
   if (cursor) params.set("cursor", cursor);
 
-  const response = await fetch(`/api/kfy/alunas?${params.toString()}`, {
-    headers: { "x-admin-role": "true" },
-  });
+  const response = await apiFetch(`/api/kfy/alunas?${params.toString()}`, { signal });
 
   if (!response.ok) {
-    throw new Error("Não foi possível carregar matrículas");
+    const message = await response.text();
+    throw new Error(message || "Não foi possível carregar matrículas");
   }
 
-  return response.json();
+  return (await response.json()) as { items: EnrollmentRow[]; nextCursor: string | null };
 }
 
 export function EnrollmentsTable({ filters }: { filters: EnrollmentFilters }) {
-  const { items, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteResource<EnrollmentRow>(
-    ["enrollments", filters],
-    ({ pageParam }) => fetchEnrollments(filters, pageParam ?? undefined),
+  const {
+    items,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useInfiniteResource<EnrollmentRow>(
+    [
+      "enrollments",
+      filters.status?.join(",") ?? "",
+      filters.customerId ?? "",
+    ],
+    ({ pageParam, signal }) => fetchEnrollments(filters, pageParam ?? null, signal),
   );
 
   const columns = useMemo<ColumnDef<EnrollmentRow>[]>(
@@ -97,11 +111,37 @@ export function EnrollmentsTable({ filters }: { filters: EnrollmentFilters }) {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  const sentinelRef = useIntersectionObserver(() => {
-    if (hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  });
+  const sentinelRef = useIntersectionObserver(
+    () => {
+      if (hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    },
+    undefined,
+    hasNextPage,
+  );
+
+  if (isError) {
+    return (
+      <TableState
+        title="Não foi possível carregar matrículas"
+        description={(error as Error | undefined)?.message ?? "Tente novamente em instantes."}
+        onAction={() => refetch()}
+      />
+    );
+  }
+
+  if (!items.length) {
+    return isLoading ? (
+      <TableState title="Carregando matrículas…" />
+    ) : (
+      <TableState
+        title="Nenhuma matrícula encontrada"
+        description="Ajuste os filtros e tente novamente."
+        onAction={() => refetch()}
+      />
+    );
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -110,7 +150,10 @@ export function EnrollmentsTable({ filters }: { filters: EnrollmentFilters }) {
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <th key={header.id} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <th
+                  key={header.id}
+                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
                   {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                 </th>
               ))}

@@ -49,8 +49,6 @@ const kiwifyApiEnvSchema = z.object({
   KIWIFY_ACCOUNT_ID: z.string().min(1),
   KIWIFY_API_SCOPE: z.string().optional(),
   KIWIFY_API_AUDIENCE: z.string().optional(),
-  KIWIFY_API_PATH_PREFIX: z.string().optional(),
-  KIWIFY_PARTNER_ID: z.string().optional(),
 });
 
 type SupabaseEnv = z.infer<typeof supabaseEnvSchema>;
@@ -159,12 +157,8 @@ const kiwifyWebhookEnvHelper = createEnvHelper<WebhookEnv>(
 
 const buildRawKiwifyApiEnv = () => ({
   KIWIFY_API_BASE_URL: normalizeEnvValue(process.env.KIWIFY_API_BASE_URL),
-  KIWIFY_CLIENT_ID: normalizeEnvValue(
-    process.env.KIWIFY_CLIENT_ID ?? process.env.KIWIFY_API_CLIENT_ID,
-  ),
-  KIWIFY_CLIENT_SECRET: normalizeEnvValue(
-    process.env.KIWIFY_CLIENT_SECRET ?? process.env.KIWIFY_API_CLIENT_SECRET,
-  ),
+  KIWIFY_CLIENT_ID: normalizeEnvValue(process.env.KIWIFY_CLIENT_ID),
+  KIWIFY_CLIENT_SECRET: normalizeEnvValue(process.env.KIWIFY_CLIENT_SECRET),
   KIWIFY_ACCOUNT_ID: normalizeEnvValue(process.env.KIWIFY_ACCOUNT_ID),
   KIWIFY_API_SCOPE: (() => {
     const normalized = normalizeEnvValue(process.env.KIWIFY_API_SCOPE);
@@ -172,14 +166,6 @@ const buildRawKiwifyApiEnv = () => ({
   })(),
   KIWIFY_API_AUDIENCE: (() => {
     const normalized = normalizeEnvValue(process.env.KIWIFY_API_AUDIENCE);
-    return normalized || undefined;
-  })(),
-  KIWIFY_API_PATH_PREFIX: (() => {
-    const normalized = normalizeEnvValue(process.env.KIWIFY_API_PATH_PREFIX);
-    return normalized || undefined;
-  })(),
-  KIWIFY_PARTNER_ID: (() => {
-    const normalized = normalizeEnvValue(process.env.KIWIFY_PARTNER_ID);
     return normalized || undefined;
   })(),
 });

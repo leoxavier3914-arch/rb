@@ -3,6 +3,8 @@
 import { formatCurrency } from "@/lib/format";
 import { useInfiniteResource } from "@/hooks/useInfiniteResource";
 import { useIntersectionObserver } from "@/hooks/useIntersectionObserver";
+import { apiFetch } from "@/lib/apiFetch";
+import { TableState } from "@/components/tables/TableState";
 
 interface ProductRow {
   id: number;
@@ -20,33 +22,67 @@ export interface ProductFilters {
   status?: string[];
 }
 
-async function fetchProducts(filters: ProductFilters, cursor?: string | null) {
+async function fetchProducts(filters: ProductFilters, cursor: string | null, signal: AbortSignal) {
   const params = new URLSearchParams();
   if (filters.status?.length) params.set("status", filters.status.join(","));
   if (cursor) params.set("cursor", cursor);
 
-  const response = await fetch(`/api/kfy/produtos?${params.toString()}`, {
-    headers: { "x-admin-role": "true" },
-  });
+  const response = await apiFetch(`/api/kfy/produtos?${params.toString()}`, { signal });
   if (!response.ok) {
-    throw new Error("Não foi possível carregar produtos");
+    const message = await response.text();
+    throw new Error(message || "Não foi possível carregar produtos");
   }
-  return response.json();
+  return (await response.json()) as { items: ProductRow[]; nextCursor: string | null };
 }
 
 const mutationsEnabled = process.env.NEXT_PUBLIC_KIWIFY_ALLOW_PRODUCT_MUTATIONS === "true";
 
 export function ProductGrid({ filters }: { filters: ProductFilters }) {
-  const { items, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteResource<ProductRow>(
-    ["products", filters],
-    ({ pageParam }) => fetchProducts(filters, pageParam ?? undefined),
+  const {
+    items,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useInfiniteResource<ProductRow>(
+    ["products", filters.status?.join(",") ?? ""],
+    ({ pageParam, signal }) => fetchProducts(filters, pageParam ?? null, signal),
   );
 
-  const sentinelRef = useIntersectionObserver(() => {
-    if (hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  });
+  const sentinelRef = useIntersectionObserver(
+    () => {
+      if (hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    },
+    undefined,
+    hasNextPage,
+  );
+
+  if (isError) {
+    return (
+      <TableState
+        title="Não foi possível carregar produtos"
+        description={(error as Error | undefined)?.message ?? "Tente novamente em instantes."}
+        onAction={() => refetch()}
+      />
+    );
+  }
+
+  if (!items.length) {
+    return isLoading ? (
+      <TableState title="Carregando produtos…" />
+    ) : (
+      <TableState
+        title="Nenhum produto encontrado"
+        description="Ajuste os filtros e tente novamente."
+        onAction={() => refetch()}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-8">

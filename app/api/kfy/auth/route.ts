@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertIsAdmin } from "@/lib/auth";
 import { getAccessToken, getAccessTokenMetadata } from "@/lib/kiwify/client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
   assertIsAdmin(request);
   let metadata = await getAccessTokenMetadata();
