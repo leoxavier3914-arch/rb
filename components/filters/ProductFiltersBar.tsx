@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useTransition } from "react";
 
 const statusOptions = [
   { label: "Ativos", value: "approved" },
@@ -18,6 +18,7 @@ export function ProductFiltersBar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const status = useMemo(() => searchParams.get("status")?.split(",").filter(Boolean) ?? [], [searchParams]);
+  const [, startTransition] = useTransition();
 
   function sync(values: string[]) {
     const params = new URLSearchParams(searchParams.toString());
@@ -26,7 +27,9 @@ export function ProductFiltersBar() {
     } else {
       params.delete("status");
     }
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    startTransition(() => {
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    });
   }
 
   return (
