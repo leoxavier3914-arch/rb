@@ -494,7 +494,7 @@ describe("/api/kiwify/webhook", () => {
     } satisfies Record<string, unknown>;
 
     const response = await callWebhook(payload, { signature: null });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "Assinatura ausente" });
     expect(operations.approved_sales).toBeUndefined();
   });
@@ -511,7 +511,7 @@ describe("/api/kiwify/webhook", () => {
     } satisfies Record<string, unknown>;
 
     const response = await callWebhook(payload, { signature: "assinatura-invalida" });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "Assinatura inválida" });
     expect(operations.approved_sales).toBeUndefined();
   });

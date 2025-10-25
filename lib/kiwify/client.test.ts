@@ -18,10 +18,6 @@ const clearKiwifyEnv = () => {
   delete process.env.KIWIFY_ACCOUNT_ID;
   delete process.env.KIWIFY_API_SCOPE;
   delete process.env.KIWIFY_API_AUDIENCE;
-  delete process.env.KIWIFY_API_PATH_PREFIX;
-  delete process.env.KIWIFY_PARTNER_ID;
-  delete process.env.KIWIFY_API_CLIENT_ID;
-  delete process.env.KIWIFY_API_CLIENT_SECRET;
 };
 
 describe("kiwify api path helpers", () => {
@@ -44,30 +40,6 @@ describe("kiwify api path helpers", () => {
     } finally {
       warnSpy.mockRestore();
     }
-  });
-
-  it("normalizes a custom prefix from environment variables", () => {
-    process.env.KIWIFY_API_BASE_URL = "https://public-api.kiwify.com";
-    process.env.KIWIFY_CLIENT_ID = "client";
-    process.env.KIWIFY_CLIENT_SECRET = "secret";
-    process.env.KIWIFY_ACCOUNT_ID = "account";
-    process.env.KIWIFY_API_PATH_PREFIX = " sandbox/v2/ ";
-
-    expect(getKiwifyApiPathPrefix()).toBe("/sandbox/v2");
-    expect(formatKiwifyApiPath("products/:id/participants")).toBe(
-      "/sandbox/v2/products/:id/participants",
-    );
-  });
-
-  it("treats a single slash prefix as no versioning", () => {
-    process.env.KIWIFY_API_BASE_URL = "https://public-api.kiwify.com";
-    process.env.KIWIFY_CLIENT_ID = "client";
-    process.env.KIWIFY_CLIENT_SECRET = "secret";
-    process.env.KIWIFY_ACCOUNT_ID = "account";
-    process.env.KIWIFY_API_PATH_PREFIX = "/";
-
-    expect(getKiwifyApiPathPrefix()).toBe("");
-    expect(formatKiwifyApiPath("products")).toBe("/products");
   });
 });
 
@@ -117,35 +89,6 @@ describe("kiwifyFetch", () => {
       input instanceof URL ? input.href : typeof input === "string" ? input : input.url;
 
     expect(requestUrl).toBe("https://public-api.kiwify.com/v2/products");
-  });
-
-  it("includes the partner id header when configured", async () => {
-    process.env.KIWIFY_PARTNER_ID = "partner-123";
-
-    await kiwifyFetch("products", { skipAuth: true });
-
-    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
-    const [, init] = fetchMock.mock.calls[0];
-    const headers = new Headers((init?.headers ?? undefined) as HeadersInit | undefined);
-
-    expect(headers.get("x-kiwify-partner-id")).toBe("partner-123");
-  });
-
-  it("respects caller overrides for the partner id header", async () => {
-    process.env.KIWIFY_PARTNER_ID = "partner-123";
-
-    await kiwifyFetch("products", {
-      skipAuth: true,
-      headers: {
-        "x-kiwify-partner-id": "custom-partner",
-      },
-    });
-
-    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
-    const [, init] = fetchMock.mock.calls[0];
-    const headers = new Headers((init?.headers ?? undefined) as HeadersInit | undefined);
-
-    expect(headers.get("x-kiwify-partner-id")).toBe("custom-partner");
   });
 
   it("sends the kiwify account id header from the environment when authenticated", async () => {

@@ -2,8 +2,18 @@ import { ProductFiltersBar } from "@/components/filters/ProductFiltersBar";
 import { ProductGrid, type ProductFilters } from "@/components/tables/ProductGrid";
 
 function buildFilters(searchParams: Record<string, string | string[] | undefined>): ProductFilters {
+  const statusRaw = Array.isArray(searchParams.status)
+    ? searchParams.status
+    : typeof searchParams.status === "string"
+      ? [searchParams.status]
+      : [];
+  const status = statusRaw
+    .flatMap((entry) => entry.split(","))
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
   return {
-    status: typeof searchParams.status === "string" ? searchParams.status.split(",").filter(Boolean) : undefined,
+    status: status.length ? status : undefined,
   };
 }
 

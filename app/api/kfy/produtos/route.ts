@@ -174,3 +174,5 @@ export async function DELETE(request: NextRequest) {
   await deleteProduct(externalId);
   return NextResponse.json({ ok: true });
 }
+export const dynamic = "force-dynamic";
+export const revalidate = 0;

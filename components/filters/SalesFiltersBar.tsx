@@ -2,8 +2,10 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { useQueryReplace } from "@/hooks/useQueryReplace";
+import { apiFetchJson } from "@/lib/apiFetch";
 
 const statusOptions = [
   { label: "Aprovadas", value: "approved" },
@@ -22,45 +24,34 @@ function toggleValue(current: string[], value: string) {
   return current.includes(value) ? current.filter((item) => item !== value) : [...current, value];
 }
 
+function parseList(value: string | null) {
+  return value?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
+}
+
 export function SalesFiltersBar() {
   const searchParams = useSearchParams();
   const replaceQuery = useQueryReplace();
-
-  const [search, setSearch] = useState(searchParams.get("search") ?? "");
-  const status = useMemo(() => searchParams.get("status")?.split(",").filter(Boolean) ?? [], [searchParams]);
-  const payment = useMemo(() => searchParams.get("paymentMethod")?.split(",").filter(Boolean) ?? [], [searchParams]);
-  const [products, setProducts] = useState<{ id: string; title: string }[]>([]);
-  const selectedProducts = useMemo(
-    () => searchParams.get("productId")?.split(",").filter(Boolean) ?? [],
-    [searchParams],
-  );
+  const searchValue = searchParams.get("search") ?? "";
+  const status = useMemo(() => parseList(searchParams.get("status")), [searchParams]);
+  const payment = useMemo(() => parseList(searchParams.get("paymentMethod")), [searchParams]);
+  const selectedProducts = useMemo(() => parseList(searchParams.get("productId")), [searchParams]);
+  const [inputValue, setInputValue] = useState(searchValue);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadProducts() {
-      try {
-        const response = await fetch("/api/kfy/produtos?limit=50", {
-          headers: { "x-admin-role": "true" },
-        });
-        if (!response.ok) return;
-        const payload = await response.json();
-        if (!cancelled) {
-          setProducts(
-            (payload.items as { id: number; title: string }[]).map((item) => ({
-              id: String(item.id),
-              title: item.title,
-            })),
-          );
-        }
-      } catch (error) {
-        console.error("Falha ao carregar produtos", error);
-      }
-    }
-    loadProducts();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setInputValue(searchValue);
+  }, [searchValue]);
+
+  const { data: products = [] } = useQuery({
+    queryKey: ["kfy", "products", "filters"],
+    queryFn: async ({ signal }) => {
+      const payload = await apiFetchJson<{ items: { id: number; title: string }[] }>(
+        "/api/kfy/produtos?limit=50",
+        { signal },
+      );
+      return payload.items.map((item) => ({ id: String(item.id), title: item.title ?? `Produto #${item.id}` }));
+    },
+    staleTime: 5 * 60_000,
+  });
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-surface-accent/40 bg-surface/80 p-4">
@@ -68,13 +59,17 @@ export function SalesFiltersBar() {
         <input
           type="search"
           placeholder="Buscar cliente ou pedido"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          onBlur={() => replaceQuery({ search: search.trim() || null })}
+          value={inputValue}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setInputValue(nextValue);
+            replaceQuery({ search: nextValue || null }, { throttleMs: 200 });
+          }}
+          onBlur={() => replaceQuery({ search: inputValue || null })}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              replaceQuery({ search: search.trim() || null });
+              replaceQuery({ search: inputValue || null });
             }
           }}
           className="flex-1 rounded-full border border-surface-accent/60 bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
@@ -82,7 +77,7 @@ export function SalesFiltersBar() {
         <button
           type="button"
           onClick={() => {
-            setSearch("");
+            setInputValue("");
             replaceQuery({ search: null });
           }}
           className="rounded-full border border-surface-accent/60 px-4 py-2 text-sm text-muted-foreground hover:border-primary hover:text-primary"
@@ -99,7 +94,7 @@ export function SalesFiltersBar() {
               <button
                 key={option.value}
                 type="button"
-                onClick={() => replaceQuery({ status: toggleValue(status, option.value).join(",") || null })}
+                onClick={() => replaceQuery({ status: toggleValue(status, option.value) })}
                 className={`rounded-full px-4 py-1 text-xs transition ${active ? "bg-primary text-primary-foreground" : "bg-surface-accent/60 text-muted-foreground"}`}
               >
                 {option.label}
@@ -115,7 +110,7 @@ export function SalesFiltersBar() {
               <button
                 key={option.value}
                 type="button"
-                onClick={() => replaceQuery({ paymentMethod: toggleValue(payment, option.value).join(",") || null })}
+                onClick={() => replaceQuery({ paymentMethod: toggleValue(payment, option.value) })}
                 className={`rounded-full px-4 py-1 text-xs transition ${active ? "bg-primary text-primary-foreground" : "bg-surface-accent/60 text-muted-foreground"}`}
               >
                 {option.label}
@@ -130,7 +125,7 @@ export function SalesFiltersBar() {
             value={selectedProducts}
             onChange={(event) => {
               const values = Array.from(event.target.selectedOptions).map((option) => option.value);
-              replaceQuery({ productId: values.join(",") || null });
+              replaceQuery({ productId: values.length ? values : null });
             }}
             className="min-w-[220px] rounded-lg border border-surface-accent/60 bg-background px-3 py-2 text-sm text-white"
           >

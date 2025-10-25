@@ -9,40 +9,47 @@ const recordedCalls: Array<{
   page_size?: number;
 }> = [];
 
-vi.mock("@/lib/kiwify/client", () => ({
-  kiwifyFetch: vi.fn(async (_path: string, options: { searchParams?: Record<string, string | number> }) => {
-    const params = options.searchParams ?? {};
-    const pageNumber = Number(params.page_number ?? 1);
-    const pageSize = Number(params.page_size ?? 0) || undefined;
-    recordedCalls.push({
-      start_date: params.start_date as string | undefined,
-      end_date: params.end_date as string | undefined,
-      page_number: pageNumber,
-      page_size: pageSize,
-    });
+vi.mock("@/lib/kiwify/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/kiwify/client")>();
 
-    const startDate = params.start_date as string | undefined;
+  return {
+    ...actual,
+    kiwifyFetch: vi.fn(
+      async (_path: string, options: { searchParams?: Record<string, string | number> }) => {
+        const params = options.searchParams ?? {};
+        const pageNumber = Number(params.page_number ?? 1);
+        const pageSize = Number(params.page_size ?? 0) || undefined;
+        recordedCalls.push({
+          start_date: params.start_date as string | undefined,
+          end_date: params.end_date as string | undefined,
+          page_number: pageNumber,
+          page_size: pageSize,
+        });
 
-    if (startDate === "2024-01-01" && pageNumber === 1) {
-      return {
-        data: [{ id: "sale-1" }],
-        meta: { has_more: true },
-      };
-    }
+        const startDate = params.start_date as string | undefined;
 
-    if (startDate === "2024-01-01" && pageNumber === 2) {
-      return {
-        data: [{ id: "sale-2" }],
-        meta: { has_more: false },
-      };
-    }
+        if (startDate === "2024-01-01" && pageNumber === 1) {
+          return {
+            data: [{ id: "sale-1" }],
+            meta: { has_more: true },
+          };
+        }
 
-    return {
-      data: [{ id: `sale-${startDate}-p${pageNumber}` }],
-      meta: { has_more: false },
-    };
-  }),
-}));
+        if (startDate === "2024-01-01" && pageNumber === 2) {
+          return {
+            data: [{ id: "sale-2" }],
+            meta: { has_more: false },
+          };
+        }
+
+        return {
+          data: [{ id: `sale-${startDate}-p${pageNumber}` }],
+          meta: { has_more: false },
+        };
+      },
+    ),
+  };
+});
 
 describe("fetchAllSalesByWindow", () => {
   it("divide o período em blocos de até 90 dias com paginação", async () => {

@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Papa from "papaparse";
 
+import { apiFetch } from "@/lib/apiFetch";
+
 const dimensionOptions = [
   { label: "Dia", value: "day" },
   { label: "Produto", value: "product" },
@@ -26,18 +28,17 @@ export function ReportBuilder({ from, to }: { from: string; to: string }) {
 
   const query = useQuery({
     queryKey: ["reports", { from, to, dimensions, metrics }],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams({
         from,
         to,
         dimensions: dimensions.join(","),
         metrics: metrics.join(","),
       });
-      const response = await fetch(`/api/kfy/relatorios?${params.toString()}`, {
-        headers: { "x-admin-role": "true" },
-      });
+      const response = await apiFetch(`/api/kfy/relatorios?${params.toString()}`, { signal });
       if (!response.ok) {
-        throw new Error("Não foi possível gerar relatório");
+        const message = await response.text();
+        throw new Error(message || "Não foi possível gerar relatório");
       }
       return (await response.json()) as { items: ReportRow[] };
     },

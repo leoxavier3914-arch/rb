@@ -21,6 +21,9 @@ import {
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { kiwifyWebhookEnv } from "@/lib/env";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type JsonRecord = Record<string, unknown>;
 
 type NormalizedByKind = {
@@ -230,11 +233,12 @@ export async function POST(request: Request) {
   const rawBody = await request.text();
 
   if (!providedSignature) {
-    return NextResponse.json({ error: "Assinatura ausente" }, { status: 400 });
+    return NextResponse.json({ error: "Assinatura ausente" }, { status: 401 });
   }
 
   if (!isSignatureValid(rawBody, providedSignature, env.KIWIFY_WEBHOOK_SECRET)) {
-    return NextResponse.json({ error: "Assinatura inválida" }, { status: 400 });
+    console.warn("Webhook da Kiwify rejeitado: assinatura inválida");
+    return NextResponse.json({ error: "Assinatura inválida" }, { status: 401 });
   }
 
   const payload = parseBody(rawBody);

@@ -124,3 +124,5 @@ export async function GET(request: NextRequest) {
     nextCursor: hasNextPage && rows.length ? encodeCursor(rows[rows.length - 1]) : null,
   });
 }
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
