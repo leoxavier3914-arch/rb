@@ -1,8 +1,30 @@
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
+const numberFormatters = new Map<string, Intl.NumberFormat>();
+
+function serializeOptions(options: Intl.NumberFormatOptions) {
+  return Object.entries(options)
+    .filter(([, value]) => value !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}:${String(value)}`)
+    .join("|");
+}
+
+function getNumberFormatter(locale: string, options: Intl.NumberFormatOptions) {
+  const cacheKey = `${locale}-${serializeOptions(options)}`;
+  let formatter = numberFormatters.get(cacheKey);
+
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale, options);
+    numberFormatters.set(cacheKey, formatter);
+  }
+
+  return formatter;
+}
+
 export function formatCurrency(valueInCents: number, currency = "BRL") {
-  return new Intl.NumberFormat("pt-BR", {
+  return getNumberFormatter("pt-BR", {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
@@ -10,10 +32,13 @@ export function formatCurrency(valueInCents: number, currency = "BRL") {
 }
 
 export function formatPercentage(value: number, options: Intl.NumberFormatOptions = {}) {
-  return new Intl.NumberFormat("pt-BR", {
+  const { maximumFractionDigits, minimumFractionDigits, ...rest } = options;
+
+  return getNumberFormatter("pt-BR", {
     style: "percent",
-    maximumFractionDigits: options.maximumFractionDigits ?? 1,
-    minimumFractionDigits: options.minimumFractionDigits ?? 0,
+    maximumFractionDigits: maximumFractionDigits ?? 1,
+    minimumFractionDigits: minimumFractionDigits ?? 0,
+    ...rest,
   }).format(value);
 }
 
