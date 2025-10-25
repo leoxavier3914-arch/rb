@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 
 export function CustomerFiltersBar() {
   const router = useRouter();
@@ -10,6 +10,7 @@ export function CustomerFiltersBar() {
 
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const activeOnly = useMemo(() => searchParams.get("active") === "true", [searchParams]);
+  const [, startTransition] = useTransition();
 
   function sync(partial: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -20,7 +21,9 @@ export function CustomerFiltersBar() {
         params.set(key, value);
       }
     });
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    startTransition(() => {
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    });
   }
 
   return (

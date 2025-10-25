@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 
 const statusOptions = [
   { label: "Processados", value: "approved" },
@@ -20,6 +20,7 @@ export function RefundFiltersBar() {
 
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const status = useMemo(() => searchParams.get("status")?.split(",").filter(Boolean) ?? [], [searchParams]);
+  const [, startTransition] = useTransition();
 
   function syncParams(partial: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -30,7 +31,9 @@ export function RefundFiltersBar() {
         params.set(key, value);
       }
     });
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    startTransition(() => {
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    });
   }
 
   return (

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 const statusOptions = [
   { label: "Aprovadas", value: "approved" },
@@ -33,6 +33,7 @@ export function SalesFiltersBar() {
     () => searchParams.get("productId")?.split(",").filter(Boolean) ?? [],
     [searchParams],
   );
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +71,9 @@ export function SalesFiltersBar() {
         params.set(key, value);
       }
     });
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    startTransition(() => {
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    });
   }
 
   return (

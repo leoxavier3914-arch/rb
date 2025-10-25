@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useTransition } from "react";
 
 const statusOptions = [
   { label: "Ativas", value: "approved" },
@@ -19,6 +19,7 @@ export function EnrollmentFiltersBar() {
   const searchParams = useSearchParams();
 
   const status = useMemo(() => searchParams.get("status")?.split(",").filter(Boolean) ?? [], [searchParams]);
+  const [, startTransition] = useTransition();
 
   function sync(values: string[]) {
     const params = new URLSearchParams(searchParams.toString());
@@ -27,7 +28,9 @@ export function EnrollmentFiltersBar() {
     } else {
       params.delete("status");
     }
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    startTransition(() => {
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    });
   }
 
   return (
