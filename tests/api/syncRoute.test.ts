@@ -1,118 +1,69 @@
-import { NextRequest } from "next/server";
-import { describe, expect, it, vi } from "vitest";
+import { NextRequest } from 'next/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock("@/lib/auth", () => ({
+vi.mock('@/lib/auth', () => ({
   assertIsAdmin: vi.fn(),
 }));
 
-const upsertMock = vi.fn().mockResolvedValue({ error: null });
+const runSyncMock = vi.fn();
+const getCursorMock = vi.fn();
+const setCursorMock = vi.fn();
 
-vi.mock("@/lib/supabase", () => {
-  const chain = {
-    upsert: upsertMock,
-    select: vi.fn(() => ({
-      in: vi.fn(async () => ({ data: [], error: null })),
-    })),
-    in: vi.fn(() => ({ select: vi.fn(async () => ({ data: [], error: null })) })),
-    eq: vi.fn(() => chain),
-    order: vi.fn(() => chain),
-    limit: vi.fn(() => chain),
-    maybeSingle: vi.fn(async () => ({ data: null, error: null })),
-  };
-
-  return {
-    supabaseAdmin: {
-      from: vi.fn(() => chain),
-    },
-  };
-});
-
-const productResponse = {
-  data: [
-    {
-      id: "prod-1",
-      title: "Produto",
-      description: null,
-      price_cents: 1000,
-      currency: "BRL",
-      status: "approved",
-      created_at: "2024-01-01T00:00:00Z",
-      updated_at: "2024-01-01T00:00:00Z",
-    },
-  ],
-};
-
-const saleResponse = {
-  sales: [
-    {
-      id: "sale-1",
-      product_id: "prod-1",
-      customer_id: "cust-1",
-      status: "approved",
-      payment_method: "pix",
-      amount_gross: 1000,
-      amount_fee: 100,
-      amount_net: 900,
-      amount_commission: 50,
-      currency: "BRL",
-      created_at: "2024-01-01T00:00:00Z",
-      updated_at: "2024-01-01T01:00:00Z",
-      approved_at: "2024-01-01T00:30:00Z",
-      customer: {
-        id: "cust-1",
-        name: "Cliente",
-        email: "cliente@example.com",
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
-      },
-      product: {
-        id: "prod-1",
-        title: "Produto",
-        price_cents: 1000,
-        currency: "BRL",
-        status: "approved",
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
-      },
-    },
-  ],
-  summary: {
-    range: { startDate: "2024-01-01", endDate: "2024-01-31" },
-    totalIntervals: 1,
-    totalPages: 1,
-    totalSales: 1,
-  },
-};
-
-vi.mock("@/lib/kiwify/resources", () => ({
-  listProducts: vi.fn(async () => productResponse),
-  extractCollection: (payload: unknown) => {
-    if (payload && typeof payload === "object" && "data" in (payload as Record<string, unknown>)) {
-      return (payload as { data: unknown[] }).data;
-    }
-    return Array.isArray(payload) ? payload : [];
-  },
-  shouldRequestNextPage: () => false,
-  fetchAllSalesByWindow: vi.fn(async () => saleResponse),
-  requestWithBackoff: async <T>(perform: () => Promise<T>) => perform(),
-  buildRequestLogUrl: () => "/mocked",
+vi.mock('@/lib/kiwify/syncEngine', () => ({
+  runSync: (...args: unknown[]) => runSyncMock(...args),
 }));
 
-// Import after mocks
-const { POST } = await import("@/app/api/kfy/sync/route");
+vi.mock('@/lib/kiwify/syncState', () => ({
+  getSyncCursor: () => getCursorMock(),
+  setSyncCursor: (...args: unknown[]) => setCursorMock(...args),
+}));
 
-describe("sync route", () => {
-  it("retorna resumo de sincronização usando API pública", async () => {
-    const request = new NextRequest("http://localhost/api/kfy/sync");
-    const response = await POST(request);
+beforeEach(() => {
+  runSyncMock.mockReset();
+  getCursorMock.mockReset();
+  setCursorMock.mockReset();
+});
 
-    expect(response.status).toBe(200);
+describe('sync route', () => {
+  it('retorna estado persistido no GET', async () => {
+    getCursorMock.mockResolvedValue({ cursor: { resource: 'sales' }, lastRunAt: '2024-01-01T00:00:00Z' });
+
+    const { GET } = await import('@/app/api/kfy/sync/route');
+    const request = new NextRequest('http://localhost/api/kfy/sync');
+    const response = await GET(request);
     const body = await response.json();
 
-    expect(body.summary.products).toBe(1);
-    expect(body.summary.customers).toBe(1);
-    expect(body.summary.orders).toBe(1);
-    expect(body.summary.sales).toBe(1);
-    expect(upsertMock).toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(body.state).toEqual({ cursor: { resource: 'sales' }, lastRunAt: '2024-01-01T00:00:00Z' });
+  });
+
+  it('usa cursor persistido quando persist=true', async () => {
+    getCursorMock.mockResolvedValue({ cursor: { resource: 'products', page: 2 } });
+    runSyncMock.mockResolvedValue({
+      ok: true,
+      done: false,
+      nextCursor: { resource: 'sales', page: 1 },
+      stats: { pagesFetched: 1 },
+      logs: [],
+    });
+
+    const { POST } = await import('@/app/api/kfy/sync/route');
+    const request = new NextRequest('http://localhost/api/kfy/sync', {
+      method: 'POST',
+      body: JSON.stringify({ persist: true }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(runSyncMock).toHaveBeenCalledWith({
+      full: undefined,
+      range: null,
+      cursor: { resource: 'products', page: 2 },
+    }, expect.any(Number));
+    expect(setCursorMock).toHaveBeenCalledWith({ resource: 'sales', page: 1 }, { pagesFetched: 1 });
+    expect(body.nextCursor).toEqual({ resource: 'sales', page: 1 });
   });
 });
+
