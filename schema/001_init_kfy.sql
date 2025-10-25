@@ -91,6 +91,16 @@ create table if not exists kfy_events (
   constraint kfy_events_unique_event unique (type, external_id)
 );
 
+create table if not exists kfy_tokens (
+  id text primary key,
+  token text not null,
+  token_type text default 'Bearer',
+  scope text,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
 create index if not exists idx_kfy_orders_created_status on kfy_orders (created_at desc, status);
 create index if not exists idx_kfy_orders_approved_at on kfy_orders (approved_at desc);
 create index if not exists idx_kfy_orders_customer on kfy_orders (customer_id);
