@@ -47,7 +47,7 @@ function encodeCursor(row: { created_at: string; id: number }) {
 }
 
 export async function GET(request: NextRequest) {
-  assertIsAdmin(request);
+  await assertIsAdmin(request);
   const params = querySchema.parse(Object.fromEntries(request.nextUrl.searchParams.entries()));
   const cursor = decodeCursor(params.cursor);
 

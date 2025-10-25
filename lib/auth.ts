@@ -1,60 +1,74 @@
-import { NextRequest } from "next/server";
-import { z } from "zod";
-
-const originSchema = z
-  .string()
-  .transform((value) => new URL(value))
-  .refine((url) => url.protocol.startsWith("http"), {
-    message: "Origem inválida",
-  });
-
-function normalizeAllowedOrigin(value: string) {
-  let lastError: unknown;
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  for (const candidate of [trimmed, `https://${trimmed}`]) {
-    try {
-      return new URL(candidate).origin;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  console.warn("Origem inválida em ALLOWED_ORIGENS", trimmed, lastError);
-  return null;
+export function isAdminFromHeaders(req: Request) {
+  return req.headers.get('x-admin-role') === 'true';
 }
 
-export function assertIsAdmin(request: NextRequest) {
-  const adminHeader = request.headers.get("x-admin-role");
-  if (adminHeader !== "true") {
-    throw new Response("Usuário não autorizado", { status: 401 });
+const parseAllowed = (raw: string | undefined): string[] =>
+  (raw ?? '')
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+
+const matchWildcard = (host: string, pattern: string) => {
+  const norm = pattern.replace(/^https?:\/\//, '');
+  if (norm.startsWith('*.')) {
+    const base = norm.slice(2);
+    return host === base || host.endsWith('.' + base);
+  }
+  return host === norm;
+};
+
+const hostFromOriginLike = (value: string): string | null => {
+  try {
+    const url = value.includes('://') ? new URL(value) : new URL(`https://${value}`);
+    return url.host.toLowerCase();
+  } catch {
+    return value?.toLowerCase() || null;
+  }
+};
+
+const isOriginAllowed = (originHdr: string | null, hostHdr: string | null, allowedRaw: string | undefined) => {
+  const allowed = parseAllowed(allowedRaw);
+  if (!allowed.length) return true;
+
+  const checkHost = (h: string | null) => {
+    if (!h) return false;
+    const host = h.toLowerCase();
+    return allowed.some(p => matchWildcard(host, p));
+  };
+
+  if (originHdr) {
+    const originHost = hostFromOriginLike(originHdr);
+    if (originHost && checkHost(originHost)) return true;
+  }
+  if (!originHdr && hostHdr && checkHost(hostHdr)) return true;
+
+  return false;
+};
+
+export async function assertIsAdmin(req: Request) {
+  const origin = req.headers.get('origin');
+  const host = req.headers.get('host');
+  const internalKey = req.headers.get('x-internal-key');
+
+  if (!isAdminFromHeaders(req)) {
+    console.warn('401 NO_ADMIN', { origin, host });
+    throw new Response(JSON.stringify({ error: 'not_authorized', code: 'NO_ADMIN' }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    });
   }
 
-  const origin = request.headers.get("origin");
-  if (!origin) return;
-
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ?.split(",")
-    .map(normalizeAllowedOrigin)
-    .filter((value): value is string => Boolean(value));
-
-  if (!allowedOrigins?.length) {
-    if (process.env.NODE_ENV === "production") {
-      console.warn("ALLOWED_ORIGINS ausente ou inválido. Permitindo origem recebida.", { origin });
-    }
+  if (internalKey && process.env.INTERNAL_API_KEY && internalKey === process.env.INTERNAL_API_KEY) {
     return;
   }
 
-  const parsed = originSchema.safeParse(origin);
-  if (!parsed.success) {
-    throw new Response("Origem inválida", { status: 403 });
-  }
-
-  const isAllowed = allowedOrigins.includes(parsed.data.origin);
-  if (!isAllowed) {
-    throw new Response("Origem não permitida", { status: 403 });
+  const allowedRaw = process.env.ALLOWED_ORIGINS;
+  const ok = isOriginAllowed(origin, host, allowedRaw);
+  if (!ok) {
+    console.warn('403 BAD_ORIGIN', { origin, host, allowed: allowedRaw });
+    throw new Response(JSON.stringify({ error: 'forbidden_origin', code: 'BAD_ORIGIN' }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' },
+    });
   }
 }

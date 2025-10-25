@@ -15,6 +15,9 @@ Crie um arquivo `.env.local` (ou configure diretamente no ambiente) com os valor
 ```bash
 SUPABASE_URL="https://<sua-instancia>.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="<service-role>"
+ALLOWED_ORIGINS="*.vercel.app,http://localhost:3000,https://seu-dominio.com"
+INTERNAL_API_KEY="<opcional-para-rotas-internas>"
+KIWIFY_API_BASE_URL="https://public-api.kiwify.com"
 KIWIFY_CLIENT_ID="<client-id>"
 KIWIFY_CLIENT_SECRET="<client-secret>"
 KIWIFY_ACCOUNT_ID="<account-id>"
@@ -103,6 +106,7 @@ O arquivo `app/api/kiwify/webhook/route.ts` permanece intacto. A nova rota `/api
 ## Notas
 
 - Todas as rotas internas exigem header `x-admin-role: true` e validam origem opcional (`ALLOWED_ORIGINS`).
+- Use curingas em `ALLOWED_ORIGINS` (ex.: `*.vercel.app`) para liberar previews da Vercel sem alterar o `.env` a cada branch.
 - O cliente Kiwify (`lib/kfyClient.ts`) implementa cache in-memory do token, backoff exponencial, paginação por cursor e normalização de status/método.
 - Os filtros usam timezone `America/Sao_Paulo` para converter datas (inclusão automática de 23:59:59 no limite superior).
 - Para habilitar mutações de produto diretamente via API oficial, defina `NEXT_PUBLIC_KIWIFY_ALLOW_PRODUCT_MUTATIONS=true` e revise a documentação da Kiwify antes de liberar em produção.

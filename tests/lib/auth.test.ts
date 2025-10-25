@@ -1,13 +1,11 @@
-import { describe, expect, afterEach, beforeEach, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { assertIsAdmin } from "@/lib/auth";
 
 const ORIGINAL_ENV = { ...process.env };
 
 function buildRequest(headers: Record<string, string>) {
-  return {
-    headers: new Headers(headers),
-  } as unknown as Parameters<typeof assertIsAdmin>[0];
+  return new Request("https://example.com", { headers });
 }
 
 describe("assertIsAdmin", () => {
@@ -19,41 +17,60 @@ describe("assertIsAdmin", () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  it("permite requisições em produção quando ALLOWED_ORIGINS não está configurado", () => {
-    process.env.NODE_ENV = "production";
+  it("permite quando ALLOWED_ORIGINS está vazio", async () => {
     delete process.env.ALLOWED_ORIGINS;
 
     const request = buildRequest({
       "x-admin-role": "true",
-      origin: "https://rb-sigma.vercel.app",
+      origin: "https://rb.localhost",
     });
 
-    expect(() => assertIsAdmin(request)).not.toThrow();
+    await expect(assertIsAdmin(request)).resolves.toBeUndefined();
   });
 
-  it("aceita origens sem protocolo na variável de ambiente", () => {
-    process.env.NODE_ENV = "production";
-    process.env.ALLOWED_ORIGINS = "rb-sigma.vercel.app";
+  it("aceita hostname sozinho", async () => {
+    process.env.ALLOWED_ORIGINS = "rb.vercel.app";
 
     const request = buildRequest({
       "x-admin-role": "true",
-      origin: "https://rb-sigma.vercel.app",
+      origin: "https://rb.vercel.app",
     });
 
-    expect(() => assertIsAdmin(request)).not.toThrow();
+    await expect(assertIsAdmin(request)).resolves.toBeUndefined();
   });
 
-  it("rejeita origens não listadas", () => {
-    process.env.NODE_ENV = "production";
-    process.env.ALLOWED_ORIGINS = "https://permitido.com";
+  it("aceita wildcard de subdomínio", async () => {
+    process.env.ALLOWED_ORIGINS = "*.vercel.app";
 
     const request = buildRequest({
       "x-admin-role": "true",
-      origin: "https://negado.com",
+      origin: "https://preview-rb.vercel.app",
     });
 
-    expect(() => assertIsAdmin(request)).toThrow(
-      expect.objectContaining({ status: 403 }),
-    );
+    await expect(assertIsAdmin(request)).resolves.toBeUndefined();
+  });
+
+  it("usa host como fallback quando origin está ausente", async () => {
+    process.env.ALLOWED_ORIGINS = "localhost:3000";
+
+    const request = buildRequest({
+      "x-admin-role": "true",
+      host: "localhost:3000",
+    });
+
+    await expect(assertIsAdmin(request)).resolves.toBeUndefined();
+  });
+
+  it("rejeita origem desconhecida", async () => {
+    process.env.ALLOWED_ORIGINS = "rb.vercel.app";
+
+    const request = buildRequest({
+      "x-admin-role": "true",
+      origin: "https://malicioso.com",
+    });
+
+    await expect(assertIsAdmin(request)).rejects.toMatchObject({
+      status: 403,
+    });
   });
 });

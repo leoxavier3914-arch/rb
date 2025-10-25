@@ -41,18 +41,6 @@ export interface KiwifyAccessTokenMetadata {
   hasToken: boolean;
 }
 
-export interface KiwifyFetchOptions {
-  method?: string;
-  headers?: HeadersInit;
-  body?: BodyInit | Record<string, unknown> | null;
-  searchParams?: Record<string, string | number | boolean | null | undefined>;
-  cache?: RequestCache;
-  next?: NextFetchRequestConfig;
-  revalidate?: number;
-  signal?: AbortSignal;
-  skipAuth?: boolean;
-}
-
 export class KiwifyApiError extends Error {
   readonly status: number;
   readonly details: unknown;
@@ -375,43 +363,6 @@ async function safeParseBody(response: Response): Promise<unknown> {
   }
 }
 
-async function resolveBody(body: KiwifyFetchOptions["body"], headers: Headers) {
-  if (!body) {
-    return undefined;
-  }
-
-  if (typeof body === "string") {
-    return body;
-  }
-
-  if (typeof Blob !== "undefined" && body instanceof Blob) {
-    return body;
-  }
-
-  if (body instanceof ArrayBuffer) {
-    return body;
-  }
-
-  if (ArrayBuffer.isView(body)) {
-    return body as BodyInit;
-  }
-
-  if (typeof FormData !== "undefined" && body instanceof FormData) {
-    return body;
-  }
-
-  if (body instanceof URLSearchParams) {
-    return body;
-  }
-
-  if (typeof ReadableStream !== "undefined" && body instanceof ReadableStream) {
-    return body as BodyInit;
-  }
-
-  headers.set("Content-Type", "application/json");
-  return JSON.stringify(body);
-}
-
 export async function getAccessTokenMetadata(forceRefresh = false): Promise<KiwifyAccessTokenMetadata> {
   if (forceRefresh) {
     const entry = await requestAccessToken(true);
@@ -437,115 +388,6 @@ export async function getAccessToken(forceRefresh = false): Promise<string> {
   return entry.accessToken;
 }
 
-export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions = {}): Promise<T> {
-  if (!hasKiwifyApiEnv()) {
-    throw new Error("As variáveis de ambiente da API da Kiwify não estão configuradas.");
-  }
-
-  const {
-    method = "GET",
-    headers: customHeaders,
-    body,
-    searchParams,
-    cache,
-    next,
-    revalidate,
-    signal,
-    skipAuth = false,
-  } = options;
-
-  const env = getKiwifyApiEnv();
-  const url = buildKiwifyApiUrl(path, env);
-
-  if (searchParams) {
-    for (const [key, value] of Object.entries(searchParams)) {
-      if (value === null || value === undefined) {
-        continue;
-      }
-      url.searchParams.set(key, String(value));
-    }
-  }
-
-  const headers = new Headers(customHeaders);
-  const accountId = env.KIWIFY_ACCOUNT_ID?.trim();
-  if (accountId && !headers.has(ACCOUNT_ID_HEADER)) {
-    headers.set(ACCOUNT_ID_HEADER, accountId);
-  }
-  if (!skipAuth) {
-    const token = await requestAccessToken();
-    headers.set("Authorization", `${token.tokenType} ${token.accessToken}`);
-  }
-
-  const resolvedBody = await resolveBody(body, headers);
-  const init: RequestInit & { next?: NextFetchRequestConfig } = {
-    method,
-    headers,
-    cache,
-    signal,
-  };
-
-  if (resolvedBody !== undefined) {
-    init.body = resolvedBody;
-  }
-
-  if (revalidate !== undefined) {
-    init.next = { ...(next ?? {}), revalidate };
-  } else if (next) {
-    init.next = next;
-  }
-
-  const response = await fetch(url, init);
-
-  if (response.status === 401 && !skipAuth) {
-    await invalidateCachedToken();
-    const refreshedToken = await requestAccessToken(true);
-    headers.set("Authorization", `${refreshedToken.tokenType} ${refreshedToken.accessToken}`);
-
-    const retryResponse = await fetch(url, {
-      ...init,
-      headers,
-    });
-
-    if (!retryResponse.ok) {
-      const errorDetails = await safeParseBody(retryResponse);
-      logKiwifyError(method, url, retryResponse.status, errorDetails);
-      throw new KiwifyApiError("Falha ao consultar a API da Kiwify.", retryResponse.status, {
-        method,
-        url: url.toString(),
-      }, errorDetails);
-    }
-
-    return (await safeParseResponse<T>(retryResponse)) as T;
-  }
-
-  if (!response.ok) {
-    const errorDetails = await safeParseBody(response);
-    logKiwifyError(method, url, response.status, errorDetails);
-
-    throw new KiwifyApiError("Falha ao consultar a API da Kiwify.", response.status, {
-      method,
-      url: url.toString(),
-    }, errorDetails);
-  }
-
-  return (await safeParseResponse<T>(response)) as T;
-}
-
-async function safeParseResponse<T>(response: Response): Promise<T | undefined> {
-  if (response.status === 204) {
-    return undefined;
-  }
-
-  const contentType = response.headers.get("content-type") ?? "";
-
-  if (contentType.includes("application/json")) {
-    return (await response.json()) as T;
-  }
-
-  const text = await response.text();
-  return text === "" ? (undefined as T) : ((text as unknown) as T);
-}
-
 export function getKiwifyApiPathPrefix() {
   return DEFAULT_API_PATH_PREFIX;
 }
@@ -559,12 +401,3 @@ export function formatKiwifyApiPath(resource: string) {
   return joinPathSegments(segments);
 }
 
-function logKiwifyError(method: string, url: URL, status: number, details: unknown) {
-  const summary = typeof details === "string" ? details : JSON.stringify(details ?? {});
-  console.error("Kiwify API request failed", {
-    method,
-    url: url.toString(),
-    status,
-    details: summary?.slice(0, 300),
-  });
-}

@@ -240,78 +240,113 @@ async function collectSales(start: string, end: string) {
   return { sales, summary: result.summary };
 }
 
-export async function POST(request: NextRequest) {
-  assertIsAdmin(request);
-
-  const url = new URL(request.url);
-  const query = querySchema.parse(Object.fromEntries(url.searchParams.entries()));
-  const window: SyncWindow = {
-    full: query.full === "true" || (!query.from && !query.to),
-    from: query.from ?? undefined,
-    to: query.to ?? undefined,
-  };
-
-  const range = resolveSyncRange(window);
-
-  const [apiProducts, { sales, summary: salesSummary }] = await Promise.all([
-    fetchAllProducts(),
-    collectSales(range.start, range.end),
-  ]);
-
-  const productMap = new Map<string, KfyProduct>();
-  apiProducts.forEach((product) => productMap.set(product.externalId, product));
-
-  const customerMap = new Map<string, KfyCustomer>();
-  const orderMap = new Map<string, KfyOrder>();
-
-  sales.forEach((sale) => {
-    if (sale.product?.externalId) {
-      productMap.set(sale.product.externalId, sale.product);
+async function ensureAdminResponse(request: NextRequest) {
+  try {
+    await assertIsAdmin(request);
+    return null;
+  } catch (error) {
+    if (error instanceof Response) {
+      const text = await error.text();
+      let payload: Record<string, unknown> = {};
+      try {
+        payload = JSON.parse(text || "{}") as Record<string, unknown>;
+      } catch {
+        payload = { error: text || "not_authorized" };
+      }
+      const body = JSON.stringify({ ok: false, ...payload });
+      return new NextResponse(body, {
+        status: error.status,
+        headers: { "content-type": "application/json" },
+      });
     }
-    customerMap.set(sale.customer.externalId, sale.customer);
-    orderMap.set(sale.order.externalId, sale.order);
-  });
-
-  const products = Array.from(productMap.values());
-  const customers = Array.from(customerMap.values());
-  const orders = Array.from(orderMap.values());
-
-  const productRows = products.length ? mapProducts(products) : [];
-  const customerRows = customers.length ? mapCustomers(customers) : [];
-  const mappedOrders = orders.length ? await mapOrders(orders) : [];
-
-  if (productRows.length) {
-    await chunkedUpsert("kfy_products", productRows);
+    throw error;
   }
-  if (customerRows.length) {
-    await chunkedUpsert("kfy_customers", customerRows);
-  }
-  if (mappedOrders.length) {
-    await chunkedUpsert("kfy_orders", mappedOrders);
+}
+
+export async function POST(request: NextRequest) {
+  const adminError = await ensureAdminResponse(request);
+  if (adminError) {
+    return adminError;
   }
 
-  const events = [
-    ...buildEventPayload("product", productRows),
-    ...buildEventPayload("customer", customerRows),
-    ...buildEventPayload("order", mappedOrders as Record<string, unknown>[]),
-  ];
+  try {
+    const url = new URL(request.url);
+    const query = querySchema.parse(Object.fromEntries(url.searchParams.entries()));
+    const window: SyncWindow = {
+      full: query.full === "true" || (!query.from && !query.to),
+      from: query.from ?? undefined,
+      to: query.to ?? undefined,
+    };
 
-  if (events.length) {
-    await chunkedInsert("kfy_events", events);
+    const range = resolveSyncRange(window);
+
+    const [apiProducts, { sales, summary: salesSummary }] = await Promise.all([
+      fetchAllProducts(),
+      collectSales(range.start, range.end),
+    ]);
+
+    const productMap = new Map<string, KfyProduct>();
+    apiProducts.forEach((product) => productMap.set(product.externalId, product));
+
+    const customerMap = new Map<string, KfyCustomer>();
+    const orderMap = new Map<string, KfyOrder>();
+
+    sales.forEach((sale) => {
+      if (sale.product?.externalId) {
+        productMap.set(sale.product.externalId, sale.product);
+      }
+      customerMap.set(sale.customer.externalId, sale.customer);
+      orderMap.set(sale.order.externalId, sale.order);
+    });
+
+    const products = Array.from(productMap.values());
+    const customers = Array.from(customerMap.values());
+    const orders = Array.from(orderMap.values());
+
+    const productRows = products.length ? mapProducts(products) : [];
+    const customerRows = customers.length ? mapCustomers(customers) : [];
+    const mappedOrders = orders.length ? await mapOrders(orders) : [];
+
+    if (productRows.length) {
+      await chunkedUpsert("kfy_products", productRows);
+    }
+    if (customerRows.length) {
+      await chunkedUpsert("kfy_customers", customerRows);
+    }
+    if (mappedOrders.length) {
+      await chunkedUpsert("kfy_orders", mappedOrders);
+    }
+
+    const events = [
+      ...buildEventPayload("product", productRows),
+      ...buildEventPayload("customer", customerRows),
+      ...buildEventPayload("order", mappedOrders as Record<string, unknown>[]),
+    ];
+
+    if (events.length) {
+      await chunkedInsert("kfy_events", events);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      summary: {
+        range,
+        products: products.length,
+        customers: customers.length,
+        orders: orders.length,
+        sales: sales.length,
+        salesWindows: salesSummary.totalIntervals,
+        salesPages: salesSummary.totalPages,
+      },
+    });
+  } catch (error) {
+    console.error("[kfy-sync] Falha ao executar sincronização", error);
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      { ok: false, code: "INTERNAL_ERROR", error: message },
+      { status: 500 },
+    );
   }
-
-  return NextResponse.json({
-    ok: true,
-    summary: {
-      range,
-      products: products.length,
-      customers: customers.length,
-      orders: orders.length,
-      sales: sales.length,
-      salesWindows: salesSummary.totalIntervals,
-      salesPages: salesSummary.totalPages,
-    },
-  });
 }
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
