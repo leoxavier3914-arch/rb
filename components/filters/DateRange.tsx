@@ -95,15 +95,24 @@ export function DateRangeFilter() {
   const [, startTransition] = useTransition();
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ preset, from, to }));
+
     const params = new URLSearchParams(window.location.search);
+    const currentFrom = params.get("from");
+    const currentTo = params.get("to");
+
+    if (currentFrom === from && currentTo === to) {
+      return;
+    }
+
     params.set("from", from);
     params.set("to", to);
+
     startTransition(() => {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     });
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ preset, from, to }));
-    }
   }, [from, to, preset, pathname, router, startTransition]);
 
   function handlePresetChange(value: PresetValue) {
