@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchAllSalesByWindow } from "@/lib/kiwify/resources";
+import { fetchAllSalesByWindow, listSales } from "@/lib/kiwify/resources";
 
 const recordedCalls: Array<{
   start_date?: string;
@@ -62,23 +62,36 @@ describe("fetchAllSalesByWindow", () => {
 
     expect(firstInterval[0]).toMatchObject({
       start_date: "2024-01-01",
-      end_date: "2024-03-30",
+      end_date: "2024-03-31",
       page_number: 1,
       page_size: 50,
     });
 
     expect(firstInterval[1]).toMatchObject({
       start_date: "2024-01-01",
-      end_date: "2024-03-30",
+      end_date: "2024-03-31",
       page_number: 2,
       page_size: 50,
     });
 
     expect(secondInterval[0]).toMatchObject({
       start_date: "2024-03-31",
-      end_date: "2024-04-15",
+      end_date: "2024-04-16",
       page_number: 1,
       page_size: 50,
+    });
+  });
+
+  it("ajusta janela diária quando endDate é omitido", async () => {
+    recordedCalls.length = 0;
+
+    await listSales({ startDate: "2025-10-25" });
+
+    expect(recordedCalls).toHaveLength(1);
+    expect(recordedCalls[0]).toMatchObject({
+      start_date: "2025-10-25",
+      end_date: "2025-10-26",
+      page_number: 1,
     });
   });
 });

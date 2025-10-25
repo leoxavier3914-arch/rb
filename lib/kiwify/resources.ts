@@ -1,6 +1,7 @@
 import { addDays, formatISO, isAfter, parseISO } from "date-fns";
 
 import { kiwifyFetch } from "@/lib/kiwify/client";
+import { buildSalesWindow } from "@/lib/kiwify/dateWindow";
 
 const MAX_SALES_RANGE_DAYS = 90;
 
@@ -172,7 +173,7 @@ export async function deleteProduct(productId: string, options: { path?: string 
 
 export async function listSales(options: {
   startDate: string;
-  endDate: string;
+  endDate?: string;
   page?: number;
   perPage?: number;
   pageNumber?: number;
@@ -196,12 +197,14 @@ export async function listSales(options: {
   const resolvedPageNumber = toPositiveInteger(pageNumber, 1);
   const resolvedPageSize = normalizeSalesPageSize(pageSize ?? perPage ?? MAX_SALES_PAGE_SIZE);
 
+  const window = buildSalesWindow(startDate, endDate);
+
   const searchParams: Record<string, string | number | undefined> = {
     page_number: resolvedPageNumber,
     page_size: resolvedPageSize,
     status,
-    start_date: startDate,
-    end_date: endDate,
+    start_date: window.startDate,
+    end_date: window.endDate,
   };
 
   if (productId) {
@@ -260,27 +263,28 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
 
   const rangeStart = parseDateParam(startDate, "startDate");
   const today = new Date();
-  const rangeEnd = endDate
+  const inclusiveRangeEnd = endDate
     ? parseDateParam(endDate, "endDate")
     : parseDateParam(formatDateParam(today), "endDate");
 
-  if (isAfter(rangeStart, rangeEnd)) {
+  if (isAfter(rangeStart, inclusiveRangeEnd)) {
     throw new Error("startDate must be before or equal to endDate");
   }
 
-  const intervals: { startDate: string; endDate: string }[] = [];
+  const exclusiveRangeEnd = addDays(inclusiveRangeEnd, 1);
+
+  const intervals: { start: Date; endExclusive: Date }[] = [];
   let cursor = rangeStart;
 
-  while (!isAfter(cursor, rangeEnd)) {
-    const chunkEnd = addDays(cursor, MAX_SALES_RANGE_DAYS - 1);
-    const boundedEnd = isAfter(chunkEnd, rangeEnd) ? rangeEnd : chunkEnd;
+  while (cursor < exclusiveRangeEnd) {
+    const chunkEndExclusiveCandidate = addDays(cursor, MAX_SALES_RANGE_DAYS);
+    const chunkEndExclusive = isAfter(chunkEndExclusiveCandidate, exclusiveRangeEnd)
+      ? exclusiveRangeEnd
+      : chunkEndExclusiveCandidate;
 
-    intervals.push({
-      startDate: formatDateParam(cursor),
-      endDate: formatDateParam(boundedEnd),
-    });
+    intervals.push({ start: cursor, endExclusive: chunkEndExclusive });
 
-    cursor = addDays(boundedEnd, 1);
+    cursor = chunkEndExclusive;
   }
 
   const aggregatedSales: unknown[] = [];
@@ -291,10 +295,13 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
     const pages: unknown[] = [];
     let page = 1;
 
+    const requestStart = formatDateParam(interval.start);
+    const requestEnd = formatDateParam(interval.endExclusive);
+
     while (true) {
       const response = await listSales({
-        startDate: interval.startDate,
-        endDate: interval.endDate,
+        startDate: requestStart,
+        endDate: requestEnd,
         pageNumber: page,
         pageSize: perPage,
         status,
@@ -316,7 +323,10 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
     }
 
     aggregatedRequests.push({
-      range: interval,
+      range: {
+        startDate: requestStart,
+        endDate: formatDateParam(addDays(interval.endExclusive, -1)),
+      },
       pages,
     });
   }
@@ -324,8 +334,12 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
   return {
     summary: {
       range: {
-        startDate: intervals[0]?.startDate ?? formatDateParam(rangeStart),
-        endDate: intervals.at(-1)?.endDate ?? formatDateParam(rangeEnd),
+        startDate: intervals[0]
+          ? formatDateParam(intervals[0].start)
+          : formatDateParam(rangeStart),
+        endDate: intervals.at(-1)
+          ? formatDateParam(addDays(intervals.at(-1)!.endExclusive, -1))
+          : formatDateParam(inclusiveRangeEnd),
       },
       totalIntervals: intervals.length,
       totalPages,
