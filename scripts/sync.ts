@@ -1,3 +1,5 @@
+import { apiFetch } from "../lib/apiFetch";
+
 const baseUrl = process.env.SYNC_BASE_URL ?? "http://localhost:3000";
 
 async function triggerSync(full: boolean, from?: string, to?: string) {
@@ -9,11 +11,8 @@ async function triggerSync(full: boolean, from?: string, to?: string) {
     url.searchParams.set("to", to);
   }
 
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: "POST",
-    headers: {
-      "x-admin-role": "true",
-    },
   });
 
   if (!response.ok) {

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { apiFetch } from "@/lib/apiFetch";
+
 export function SyncPanel() {
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -11,9 +13,8 @@ export function SyncPanel() {
     setStatus(null);
     try {
       const params = full ? "?full=true" : "";
-      const response = await fetch(`/api/kfy/sync${params}`, {
+      const response = await apiFetch(`/api/kfy/sync${params}`, {
         method: "POST",
-        headers: { "x-admin-role": "true" },
       });
       if (!response.ok) {
         const message = await response.text();

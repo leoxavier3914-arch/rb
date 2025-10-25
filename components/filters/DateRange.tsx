@@ -2,7 +2,7 @@
 
 import { endOfMonth, endOfToday, formatISO, startOfMonth, startOfToday, subDays } from "date-fns";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useQueryReplace } from "@/hooks/useQueryReplace";
 
@@ -52,6 +52,8 @@ const presets: readonly PresetConfig[] = [
 
 type PresetValue = PresetConfig["value"];
 
+type StoredRange = { preset: PresetValue; from: string; to: string };
+
 function serializeRange(range: { from: Date; to: Date }) {
   return {
     from: formatISO(range.from, { representation: "date" }),
@@ -59,7 +61,7 @@ function serializeRange(range: { from: Date; to: Date }) {
   };
 }
 
-function restoreRange(): { preset: PresetValue; from: string; to: string } | null {
+function restoreRange(): StoredRange | null {
   if (typeof window === "undefined") return null;
   const stored = window.localStorage.getItem(STORAGE_KEY);
   if (!stored) return null;
@@ -75,49 +77,75 @@ export function DateRangeFilter() {
   const searchParams = useSearchParams();
   const replaceQuery = useQueryReplace();
 
-  const initial = useMemo(() => {
-    const fromParam = searchParams.get("from");
-    const toParam = searchParams.get("to");
-    if (fromParam && toParam) {
-      return { preset: "custom" as PresetValue, from: fromParam, to: toParam };
-    }
-    const restored = restoreRange();
-    if (restored) {
-      return restored;
-    }
+  const defaultRange = useMemo(() => {
     const fallback = presets[0];
     const range = serializeRange(fallback.resolve?.() ?? { from: startOfToday(), to: endOfToday() });
-    return { preset: fallback.value, ...range };
-  }, [searchParams]);
+    return { preset: fallback.value, ...range } satisfies StoredRange;
+  }, []);
 
-  const [preset, setPreset] = useState<PresetValue>(initial.preset);
-  const [from, setFrom] = useState(initial.from);
-  const [to, setTo] = useState(initial.to);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  const [persistedRange, setPersistedRange] = useState<StoredRange>(() => restoreRange() ?? defaultRange);
 
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ preset, from, to }));
+  const fromParam = searchParams.get("from");
+  const toParam = searchParams.get("to");
+  const urlRange = useMemo(() => {
+    if (fromParam && toParam) {
+      return { from: fromParam, to: toParam };
+    }
+    return null;
+  }, [fromParam, toParam]);
 
-    const params = new URLSearchParams(window.location.search);
-    const currentFrom = params.get("from");
-    const currentTo = params.get("to");
+  const inferredPreset = useMemo(() => {
+    if (urlRange) {
+      const match = presets.find((preset) => {
+        if (!preset.resolve) {
+          return false;
+        }
+        const range = serializeRange(preset.resolve());
+        return range.from === urlRange.from && range.to === urlRange.to;
+      });
+      return match?.value ?? "custom";
+    }
+    return persistedRange.preset;
+  }, [persistedRange.preset, urlRange]);
 
-    if (currentFrom === from && currentTo === to) {
+  const activeRange: StoredRange = urlRange
+    ? { preset: inferredPreset, ...urlRange }
+    : persistedRange;
+
+  const persistRange = (range: StoredRange) => {
+    setPersistedRange(range);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(range));
+    }
+  };
+
+  const applyRange = (range: StoredRange) => {
+    persistRange(range);
+    replaceQuery({ from: range.from, to: range.to });
+  };
+
+  const handlePresetChange = (value: PresetValue) => {
+    if (value === "custom") {
+      persistRange({ ...activeRange, preset: "custom" });
       return;
     }
 
-    replaceQuery({ from, to });
-  }, [from, to, preset, replaceQuery]);
-
-  function handlePresetChange(value: PresetValue) {
-    setPreset(value);
     const presetConfig = presets.find((item) => item.value === value);
-    if (presetConfig?.resolve) {
-      const range = serializeRange(presetConfig.resolve());
-      setFrom(range.from);
-      setTo(range.to);
+    if (!presetConfig?.resolve) {
+      return;
     }
-  }
+    const range = serializeRange(presetConfig.resolve());
+    applyRange({ preset: value, ...range });
+  };
+
+  const handleCustomChange = (partial: Partial<Pick<StoredRange, "from" | "to">>) => {
+    const next = {
+      preset: "custom" as const,
+      from: partial.from ?? activeRange.from,
+      to: partial.to ?? activeRange.to,
+    } satisfies StoredRange;
+    applyRange(next);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -127,20 +155,20 @@ export function DateRangeFilter() {
             key={item.value}
             type="button"
             onClick={() => handlePresetChange(item.value)}
-            className={`rounded-full px-4 py-2 text-sm transition ${preset === item.value ? "bg-primary text-primary-foreground" : "bg-surface-accent/60 text-muted-foreground"}`}
+            className={`rounded-full px-4 py-2 text-sm transition ${inferredPreset === item.value ? "bg-primary text-primary-foreground" : "bg-surface-accent/60 text-muted-foreground"}`}
           >
             {item.label}
           </button>
         ))}
       </div>
-      {preset === "custom" ? (
+      {inferredPreset === "custom" ? (
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
           <label className="flex items-center gap-2">
             De
             <input
               type="date"
-              value={from}
-              onChange={(event) => setFrom(event.target.value)}
+              value={activeRange.from}
+              onChange={(event) => handleCustomChange({ from: event.target.value })}
               className="rounded-lg border border-surface-accent/50 bg-background px-3 py-2 text-white"
             />
           </label>
@@ -148,8 +176,8 @@ export function DateRangeFilter() {
             Até
             <input
               type="date"
-              value={to}
-              onChange={(event) => setTo(event.target.value)}
+              value={activeRange.to}
+              onChange={(event) => handleCustomChange({ to: event.target.value })}
               className="rounded-lg border border-surface-accent/50 bg-background px-3 py-2 text-white"
             />
           </label>
