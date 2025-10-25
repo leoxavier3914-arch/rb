@@ -15,19 +15,23 @@ Crie um arquivo `.env.local` (ou configure diretamente no ambiente) com os valor
 ```bash
 SUPABASE_URL="https://<sua-instancia>.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="<service-role>"
-ALLOWED_ORIGINS="*.vercel.app,http://localhost:3000,https://seu-dominio.com"
+ALLOWED_ORIGINS="rb-sigma.vercel.app,*.vercel.app,http://localhost:3000"
 INTERNAL_API_KEY="<opcional-para-rotas-internas>"
+BASIC_AUTH_USER="<usuario-forte>"
+BASIC_AUTH_PASS="<senha-forte>"
 KIWIFY_API_BASE_URL="https://public-api.kiwify.com"
 KIWIFY_CLIENT_ID="<client-id>"
 KIWIFY_CLIENT_SECRET="<client-secret>"
 KIWIFY_ACCOUNT_ID="<account-id>"
 KIWIFY_WEBHOOK_SECRET="<secret-usado-no-webhook>"
+SYNC_BUDGET_MS="20000"
+KFY_PAGE_SIZE="100"
+DB_UPSERT_BATCH="500"
+MAX_WRITE_MS="25000"
 NEXT_PUBLIC_APP_TIMEZONE="America/Sao_Paulo"
-# Opcional para mutações de produtos diretamente pela API
-NEXT_PUBLIC_KIWIFY_ALLOW_PRODUCT_MUTATIONS="false"
 ```
 
-Defina também `NEXT_PUBLIC_APP_URL` quando publicar para que os fetches server-side usem domínio absoluto.
+Defina também `NEXT_PUBLIC_APP_URL` quando publicar para que os fetches server-side usem domínio absoluto. Se o ambiente exigir uma origem explícita com protocolo, adicione `https://rb-sigma.vercel.app` a `ALLOWED_ORIGINS`.
 
 ## Estrutura
 

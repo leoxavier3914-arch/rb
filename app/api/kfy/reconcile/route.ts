@@ -7,18 +7,18 @@ import { getSyncCursor, setSyncCursor } from '@/lib/kiwify/syncState';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-export async function GET(request: NextRequest) {
-  await assertIsAdmin(request);
-  try {
-    const state = await getSyncCursor();
-    return NextResponse.json({ ok: true, state });
-  } catch (error) {
-    console.error('Falha ao obter estado de sincronização', error);
-    return NextResponse.json({ ok: false, error: 'sync_state_unavailable' }, { status: 500 });
-  }
-}
+const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 
-type SyncBody = {
+const defaultRange = () => {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const past = new Date(now);
+  past.setDate(now.getDate() - 30);
+  return { startDate: formatDate(past), endDate: formatDate(tomorrow) };
+};
+
+type ReconcileBody = {
   full?: boolean;
   range?: { startDate: string; endDate: string } | null;
   cursor?: SyncCursor | null;
@@ -28,9 +28,9 @@ type SyncBody = {
 export async function POST(request: NextRequest) {
   await assertIsAdmin(request);
 
-  let body: SyncBody = {};
+  let body: ReconcileBody = {};
   try {
-    body = (await request.json()) as SyncBody;
+    body = (await request.json()) as ReconcileBody;
   } catch {
     body = {};
   }
@@ -44,15 +44,16 @@ export async function POST(request: NextRequest) {
       cursor = state?.cursor ?? null;
     }
   } catch (error) {
-    console.warn('Não foi possível carregar cursor persistido', error);
+    console.warn('Não foi possível carregar cursor persistido para reconcile', error);
   }
 
   const budget = Number(process.env.SYNC_BUDGET_MS) || 20000;
 
   try {
+    const range = body.range ?? defaultRange();
     const result = await runSync({
       full: body.full,
-      range: body.range ?? null,
+      range,
       cursor,
     }, budget);
 
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
       try {
         await setSyncCursor(result.nextCursor ?? { done: true }, result.stats);
       } catch (error) {
-        console.warn('Falha ao persistir cursor do sync', error);
+        console.warn('Falha ao persistir cursor do reconcile', error);
       }
     }
 
@@ -72,8 +73,8 @@ export async function POST(request: NextRequest) {
       logs: result.logs ?? [],
     });
   } catch (error) {
-    console.error('Erro ao executar sincronização', error);
-    return NextResponse.json({ ok: false, error: 'sync_failed' }, { status: 500 });
+    console.error('Erro ao executar reconcile', error);
+    return NextResponse.json({ ok: false, error: 'reconcile_failed' }, { status: 500 });
   }
 }
 
