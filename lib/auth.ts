@@ -31,20 +31,16 @@ export function assertIsAdmin(request: NextRequest, options: AdminAssertionOptio
 
   const normalizedOrigin = normalizeOrigin(originHeader ?? hostHeader ?? '');
   if (!normalizedOrigin) {
-    throw createAuthError(403, 'BAD_ORIGIN', 'forbidden_origin', {
-      origin: originHeader,
-      host: hostHeader,
-      allowed
-    });
+    const meta = { origin: originHeader, host: hostHeader, allowed };
+    logForbidden(meta);
+    throw createAuthError(403, 'BAD_ORIGIN', 'forbidden_origin', meta);
   }
 
   const isAllowed = allowed.some((entry) => matchesOrigin(entry, normalizedOrigin));
   if (!isAllowed) {
-    throw createAuthError(403, 'BAD_ORIGIN', 'forbidden_origin', {
-      origin: normalizedOrigin,
-      host: hostHeader,
-      allowed
-    });
+    const meta = { origin: normalizedOrigin, host: hostHeader, allowed };
+    logForbidden(meta);
+    throw createAuthError(403, 'BAD_ORIGIN', 'forbidden_origin', meta);
   }
 }
 
@@ -83,23 +79,33 @@ function matchesOrigin(entry: string, origin: string): boolean {
   return origin === domain || origin.endsWith(`.${domain}`);
 }
 
-function createAuthError(status: number, code: string, error: string, meta?: Record<string, unknown>): never {
-  const responseBody = {
+function logForbidden(meta: Record<string, unknown>): void {
+  console.error(
+    JSON.stringify({
+      level: 'warn',
+      event: 'auth_denied',
+      code: 'BAD_ORIGIN',
+      ...meta
+    })
+  );
+}
+
+export function createAuthError(
+  status: number,
+  code: string,
+  error: string,
+  meta?: Record<string, unknown>
+): never {
+  const responseBody: Record<string, unknown> = {
     ok: false,
     code,
     error
-  } as Record<string, unknown>;
+  };
+
   if (meta) {
     responseBody.meta = meta;
-    console.error(
-      JSON.stringify({
-        level: 'warn',
-        event: 'auth_denied',
-        code,
-        ...meta
-      })
-    );
   }
+
   throw new Response(JSON.stringify(responseBody), {
     status,
     headers: { 'content-type': 'application/json' }

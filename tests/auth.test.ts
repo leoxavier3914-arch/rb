@@ -14,10 +14,20 @@ describe('assertIsAdmin', () => {
     expect(() => assertIsAdmin(request)).not.toThrow();
   });
 
-  it('bloqueia quando admin ausente', () => {
+  it('bloqueia quando admin ausente', async () => {
     const request = buildRequest({});
-    expect(() => assertIsAdmin(request)).toThrowErrorMatchingInlineSnapshot(
-      `"Response "`
-    );
+    try {
+      assertIsAdmin(request);
+      throw new Error('Expected assertIsAdmin to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(Response);
+      const response = error as Response;
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        ok: false,
+        code: 'NO_ADMIN',
+        error: 'not_authorized'
+      });
+    }
   });
 });
