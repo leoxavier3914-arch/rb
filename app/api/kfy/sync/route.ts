@@ -1,24 +1,17 @@
+import { addDays, formatISO, isAfter, parseISO } from "date-fns";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { assertIsAdmin } from "@/lib/auth";
 import {
-  listCoupons,
-  listCustomers,
-  listEnrollments,
-  listOrders,
+  extractCollection,
+  fetchAllSalesByWindow,
   listProducts,
-  listRefunds,
-} from "@/lib/kfyClient";
+  shouldRequestNextPage,
+} from "@/lib/kiwify/resources";
+import { normalizeProduct, normalizeSale, type NormalizedSaleRecord } from "@/lib/kiwify/normalizers";
 import { supabaseAdmin } from "@/lib/supabase";
-import type {
-  KfyCoupon,
-  KfyCustomer,
-  KfyEnrollment,
-  KfyOrder,
-  KfyProduct,
-  KfyRefund,
-} from "@/types/kfy";
+import type { KfyCustomer, KfyOrder, KfyProduct } from "@/types/kfy";
 
 const querySchema = z.object({
   full: z.string().optional(),
@@ -27,6 +20,7 @@ const querySchema = z.object({
 });
 
 const MAX_CHUNK = 500;
+const PRODUCT_PAGE_SIZE = 100;
 
 type SyncWindow = {
   full: boolean;
@@ -61,27 +55,6 @@ async function chunkedInsert<T>(table: string, rows: T[]) {
       throw new Error(`Erro ao registrar eventos ${table}: ${error.message}`);
     }
   }
-}
-
-async function collectAll<T>(
-  fetcher: (options: { cursor?: string | null; dateFrom?: string; dateTo?: string }) => Promise<{
-    items: T[];
-    nextCursor: string | null;
-  }>,
-  options: SyncWindow,
-): Promise<T[]> {
-  const accumulator: T[] = [];
-  let cursor: string | null | undefined = null;
-  do {
-    const { items, nextCursor } = await fetcher({
-      cursor,
-      dateFrom: options.full ? undefined : options.from,
-      dateTo: options.full ? undefined : options.to,
-    });
-    accumulator.push(...items);
-    cursor = nextCursor;
-  } while (cursor);
-  return accumulator;
 }
 
 async function buildIdMap(table: string, externalIds: string[]) {
@@ -163,73 +136,6 @@ async function mapOrders(orders: KfyOrder[]) {
     .filter(Boolean);
 }
 
-async function mapRefunds(refunds: KfyRefund[]) {
-  const orderIds = await buildIdMap(
-    "kfy_orders",
-    refunds.map((refund) => refund.orderExternalId),
-  );
-
-  return refunds
-    .map((refund) => {
-      const orderId = orderIds.get(refund.orderExternalId);
-      if (!orderId) return null;
-      return {
-        external_id: refund.externalId,
-        order_id: orderId,
-        reason: refund.reason,
-        amount_cents: refund.amountCents,
-        status: refund.status,
-        created_at: refund.createdAt.toISOString(),
-        processed_at: refund.processedAt?.toISOString() ?? null,
-        raw: refund.raw ?? {},
-      };
-    })
-    .filter(Boolean);
-}
-
-async function mapEnrollments(enrollments: KfyEnrollment[]) {
-  const productIds = await buildIdMap(
-    "kfy_products",
-    enrollments.map((enrollment) => enrollment.productExternalId),
-  );
-  const customerIds = await buildIdMap(
-    "kfy_customers",
-    enrollments.map((enrollment) => enrollment.customerExternalId),
-  );
-
-  return enrollments
-    .map((enrollment) => {
-      const productId = productIds.get(enrollment.productExternalId);
-      const customerId = customerIds.get(enrollment.customerExternalId);
-      if (!productId || !customerId) return null;
-      return {
-        external_id: enrollment.externalId,
-        product_id: productId,
-        customer_id: customerId,
-        status: enrollment.status,
-        started_at: enrollment.startedAt?.toISOString() ?? null,
-        expires_at: enrollment.expiresAt?.toISOString() ?? null,
-        created_at: enrollment.createdAt.toISOString(),
-        updated_at: enrollment.updatedAt.toISOString(),
-        raw: enrollment.raw ?? {},
-      };
-    })
-    .filter(Boolean);
-}
-
-function mapCoupons(coupons: KfyCoupon[]) {
-  return coupons.map((coupon) => ({
-    external_id: coupon.externalId,
-    code: coupon.code,
-    type: coupon.type,
-    value_cents_or_percent: coupon.value,
-    active: coupon.active,
-    created_at: coupon.createdAt.toISOString(),
-    updated_at: coupon.updatedAt.toISOString(),
-    raw: coupon.raw ?? {},
-  }));
-}
-
 function buildEventPayload(type: string, payload: Record<string, unknown>[]) {
   return payload.map((row) => ({
     type,
@@ -237,6 +143,84 @@ function buildEventPayload(type: string, payload: Record<string, unknown>[]) {
     payload: row,
     occurred_at: row.updated_at ?? row.created_at ?? new Date().toISOString(),
   }));
+}
+
+function resolveSyncRange(window: SyncWindow) {
+  if (window.full) {
+    const end = formatISO(new Date(), { representation: "date" });
+    const start = formatISO(addDays(new Date(), -90), { representation: "date" });
+    return { start, end };
+  }
+
+  if (!window.from) {
+    throw new Error("Parâmetro 'from' é obrigatório para sincronização incremental");
+  }
+
+  const from = parseISO(window.from);
+  if (Number.isNaN(from.getTime())) {
+    throw new Error("Parâmetro 'from' inválido: use o formato yyyy-mm-dd");
+  }
+
+  const to = window.to ? parseISO(window.to) : from;
+  if (Number.isNaN(to.getTime())) {
+    throw new Error("Parâmetro 'to' inválido: use o formato yyyy-mm-dd");
+  }
+
+  if (isAfter(from, to)) {
+    throw new Error("O parâmetro 'from' deve ser anterior ou igual a 'to'");
+  }
+
+  return {
+    start: formatISO(from, { representation: "date" }),
+    end: formatISO(to, { representation: "date" }),
+  };
+}
+
+async function fetchAllProducts(pageSize = PRODUCT_PAGE_SIZE) {
+  const productMap = new Map<string, KfyProduct>();
+  let page = 1;
+
+  while (true) {
+    const response = await listProducts({ pageNumber: page, pageSize });
+    const records = extractCollection(response);
+
+    for (const record of records) {
+      try {
+        const product = normalizeProduct(record);
+        if (product.externalId) {
+          productMap.set(product.externalId, product);
+        }
+      } catch (error) {
+        console.warn("[kfy-sync] Produto inválido ignorado", error);
+      }
+    }
+
+    if (!shouldRequestNextPage(response, records.length, pageSize, page)) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return Array.from(productMap.values());
+}
+
+async function collectSales(start: string, end: string) {
+  const result = await fetchAllSalesByWindow(start, end);
+  const sales: NormalizedSaleRecord[] = [];
+
+  for (const raw of result.sales) {
+    try {
+      const normalized = normalizeSale(raw);
+      if (normalized) {
+        sales.push(normalized);
+      }
+    } catch (error) {
+      console.warn("[kfy-sync] Venda inválida ignorada", error);
+    }
+  }
+
+  return { sales, summary: result.summary };
 }
 
 export async function POST(request: NextRequest) {
@@ -250,39 +234,49 @@ export async function POST(request: NextRequest) {
     to: query.to ?? undefined,
   };
 
-  const [products, customers] = await Promise.all([
-    collectAll(listProducts, window),
-    collectAll(listCustomers, window),
+  const range = resolveSyncRange(window);
+
+  const [apiProducts, { sales, summary: salesSummary }] = await Promise.all([
+    fetchAllProducts(),
+    collectSales(range.start, range.end),
   ]);
 
-  await chunkedUpsert("kfy_products", mapProducts(products));
-  await chunkedUpsert("kfy_customers", mapCustomers(customers));
+  const productMap = new Map<string, KfyProduct>();
+  apiProducts.forEach((product) => productMap.set(product.externalId, product));
 
-  const [orders, refunds, enrollments, coupons] = await Promise.all([
-    collectAll(listOrders, window),
-    collectAll(listRefunds, window),
-    collectAll(listEnrollments, window),
-    collectAll(listCoupons, window),
-  ]);
+  const customerMap = new Map<string, KfyCustomer>();
+  const orderMap = new Map<string, KfyOrder>();
 
-  const mappedOrders = await mapOrders(orders);
-  await chunkedUpsert("kfy_orders", mappedOrders);
+  sales.forEach((sale) => {
+    if (sale.product?.externalId) {
+      productMap.set(sale.product.externalId, sale.product);
+    }
+    customerMap.set(sale.customer.externalId, sale.customer);
+    orderMap.set(sale.order.externalId, sale.order);
+  });
 
-  const mappedRefunds = await mapRefunds(refunds);
-  await chunkedUpsert("kfy_refunds", mappedRefunds);
+  const products = Array.from(productMap.values());
+  const customers = Array.from(customerMap.values());
+  const orders = Array.from(orderMap.values());
 
-  const mappedEnrollments = await mapEnrollments(enrollments);
-  await chunkedUpsert("kfy_enrollments", mappedEnrollments);
+  const productRows = products.length ? mapProducts(products) : [];
+  const customerRows = customers.length ? mapCustomers(customers) : [];
+  const mappedOrders = orders.length ? await mapOrders(orders) : [];
 
-  await chunkedUpsert("kfy_coupons", mapCoupons(coupons));
+  if (productRows.length) {
+    await chunkedUpsert("kfy_products", productRows);
+  }
+  if (customerRows.length) {
+    await chunkedUpsert("kfy_customers", customerRows);
+  }
+  if (mappedOrders.length) {
+    await chunkedUpsert("kfy_orders", mappedOrders);
+  }
 
   const events = [
-    ...buildEventPayload("product", mapProducts(products)),
-    ...buildEventPayload("customer", mapCustomers(customers)),
-    ...buildEventPayload("order", mappedOrders as any),
-    ...buildEventPayload("refund", mappedRefunds as any),
-    ...buildEventPayload("enrollment", mappedEnrollments as any),
-    ...buildEventPayload("coupon", mapCoupons(coupons)),
+    ...buildEventPayload("product", productRows),
+    ...buildEventPayload("customer", customerRows),
+    ...buildEventPayload("order", mappedOrders as Record<string, unknown>[]),
   ];
 
   if (events.length) {
@@ -292,12 +286,13 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     summary: {
+      range,
       products: products.length,
       customers: customers.length,
       orders: orders.length,
-      refunds: refunds.length,
-      enrollments: enrollments.length,
-      coupons: coupons.length,
+      sales: sales.length,
+      salesWindows: salesSummary.totalIntervals,
+      salesPages: salesSummary.totalPages,
     },
   });
 }

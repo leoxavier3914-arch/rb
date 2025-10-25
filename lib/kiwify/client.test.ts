@@ -324,6 +324,8 @@ describe("requestAccessToken", () => {
     const metadata = await getAccessTokenMetadata(true);
 
     expect(metadata.preview).toBe("token");
+    expect(metadata.hasToken).toBe(true);
+    expect(metadata.expiresAt).not.toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     const resolveUrl = (input: unknown) =>

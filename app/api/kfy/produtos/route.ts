@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { assertIsAdmin } from "@/lib/auth";
-import { createProduct, deleteProduct, updateProduct } from "@/lib/kfyClient";
+import { createProduct, deleteProduct, updateProduct } from "@/lib/kiwify/resources";
 import { supabaseAdmin } from "@/lib/supabase";
 import { kfyStatusEnum, type KfyProduct } from "@/types/kfy";
 

@@ -1,10 +1,14 @@
 import { getKiwifyApiEnv, hasKiwifyApiEnv } from "@/lib/env";
+import { getSupabaseAdmin, hasSupabaseConfig } from "@/lib/supabase";
 
 const ABSOLUTE_URL_PATTERN = /^https?:\/\//i;
 const DEFAULT_API_PATH_PREFIX = "/v1";
 
 const TOKEN_CACHE_KEY = "__kiwifyApiTokenCache";
 const ACCOUNT_ID_HEADER = "x-kiwify-account-id";
+const TOKEN_STORAGE_TABLE = "kfy_tokens";
+const TOKEN_STORAGE_PRIMARY_KEY = "id";
+const TOKEN_STORAGE_ROW_ID = "primary";
 
 type KiwifyApiEnvValues = ReturnType<typeof getKiwifyApiEnv>;
 type KiwifyApiConfig = Pick<KiwifyApiEnvValues, "KIWIFY_API_BASE_URL" | "KIWIFY_API_PATH_PREFIX">;
@@ -26,12 +30,16 @@ const globalCache = globalThis as typeof globalThis & {
   [TOKEN_CACHE_KEY]?: TokenCacheEntry | null;
 };
 
+let storageLoadPromise: Promise<TokenCacheEntry | null> | null = null;
+let storageLoaded = false;
+
 export interface KiwifyAccessTokenMetadata {
-  tokenType: string;
-  scope?: string;
-  expiresAt: number;
-  obtainedAt: number;
+  tokenType: string | null;
+  scope?: string | null;
+  expiresAt: string | null;
+  obtainedAt: string | null;
   preview: string;
+  hasToken: boolean;
 }
 
 export interface KiwifyFetchOptions {
@@ -82,6 +90,124 @@ const updateTokenCache = (updater: (entry: TokenCacheEntry) => TokenCacheEntry |
   } else {
     saveTokenCache(current);
   }
+};
+
+const parseStorageTimestamp = (value: string | null | undefined) => {
+  if (!value) {
+    return Date.now();
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? Date.now() : parsed;
+};
+
+const loadTokenFromStorage = async (): Promise<TokenCacheEntry | null> => {
+  if (storageLoaded) {
+    return ensureTokenCache();
+  }
+
+  if (!storageLoadPromise) {
+    storageLoadPromise = (async () => {
+      if (!hasSupabaseConfig()) {
+        storageLoaded = true;
+        return null;
+      }
+
+      try {
+        const supabase = getSupabaseAdmin();
+        const { data, error } = await supabase
+          .from(TOKEN_STORAGE_TABLE)
+          .select("token, token_type, scope, expires_at, updated_at")
+          .eq(TOKEN_STORAGE_PRIMARY_KEY, TOKEN_STORAGE_ROW_ID)
+          .maybeSingle();
+
+        if (error) {
+          console.warn("Não foi possível carregar token da Kiwify armazenado", error);
+          return null;
+        }
+
+        if (!data?.token || !data.expires_at) {
+          return null;
+        }
+
+        const expiresAt = Date.parse(data.expires_at);
+
+        if (Number.isNaN(expiresAt) || expiresAt <= Date.now() + 60_000) {
+          return null;
+        }
+
+        const entry: TokenCacheEntry = {
+          accessToken: data.token,
+          tokenType: data.token_type ?? "Bearer",
+          scope: data.scope ?? undefined,
+          expiresAt,
+          obtainedAt: parseStorageTimestamp(data.updated_at ?? data.expires_at),
+        };
+
+        saveTokenCache(entry);
+        return entry;
+      } catch (error) {
+        console.warn("Erro inesperado ao consultar armazenamento de tokens da Kiwify", error);
+        return null;
+      } finally {
+        storageLoaded = true;
+        storageLoadPromise = null;
+      }
+    })();
+  }
+
+  return storageLoadPromise;
+};
+
+const persistTokenToStorage = async (entry: TokenCacheEntry) => {
+  if (!hasSupabaseConfig()) {
+    return;
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase
+      .from(TOKEN_STORAGE_TABLE)
+      .upsert(
+        {
+          [TOKEN_STORAGE_PRIMARY_KEY]: TOKEN_STORAGE_ROW_ID,
+          token: entry.accessToken,
+          token_type: entry.tokenType,
+          scope: entry.scope ?? null,
+          expires_at: new Date(entry.expiresAt).toISOString(),
+          updated_at: new Date(entry.obtainedAt).toISOString(),
+        },
+        { onConflict: TOKEN_STORAGE_PRIMARY_KEY },
+      );
+
+    if (error) {
+      console.warn("Falha ao persistir token da Kiwify no Supabase", error);
+    }
+  } catch (error) {
+    console.warn("Erro inesperado ao persistir token da Kiwify", error);
+  }
+};
+
+const formatMetadataFromEntry = (entry: TokenCacheEntry | null): KiwifyAccessTokenMetadata => {
+  if (!entry) {
+    return {
+      tokenType: null,
+      scope: null,
+      expiresAt: null,
+      obtainedAt: null,
+      preview: "",
+      hasToken: false,
+    };
+  }
+
+  return {
+    tokenType: entry.tokenType,
+    scope: entry.scope ?? null,
+    expiresAt: new Date(entry.expiresAt).toISOString(),
+    obtainedAt: new Date(entry.obtainedAt).toISOString(),
+    preview: buildTokenPreview(entry.accessToken),
+    hasToken: Boolean(entry.accessToken),
+  };
 };
 
 const buildTokenPreview = (token: string) => {
@@ -180,6 +306,14 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
     return cached;
   }
 
+  if (!forceRefresh) {
+    const stored = await loadTokenFromStorage();
+
+    if (stored && stored.expiresAt > Date.now() + 60_000) {
+      return stored;
+    }
+  }
+
   const env = getKiwifyApiEnv();
 
   const { KIWIFY_CLIENT_ID, KIWIFY_CLIENT_SECRET, KIWIFY_API_SCOPE, KIWIFY_API_AUDIENCE } = env;
@@ -254,6 +388,8 @@ async function requestAccessToken(forceRefresh = false): Promise<TokenCacheEntry
   };
 
   saveTokenCache(entry);
+  storageLoaded = false;
+  await persistTokenToStorage(entry);
   return entry;
 }
 
@@ -311,19 +447,28 @@ async function resolveBody(body: KiwifyFetchOptions["body"], headers: Headers) {
 }
 
 export async function getAccessTokenMetadata(forceRefresh = false): Promise<KiwifyAccessTokenMetadata> {
-  const entry = await requestAccessToken(forceRefresh);
+  if (forceRefresh) {
+    const entry = await requestAccessToken(true);
+    return formatMetadataFromEntry(entry);
+  }
 
-  return {
-    tokenType: entry.tokenType,
-    scope: entry.scope,
-    expiresAt: entry.expiresAt,
-    obtainedAt: entry.obtainedAt,
-    preview: buildTokenPreview(entry.accessToken),
-  };
+  const cached = ensureTokenCache();
+  if (cached) {
+    return formatMetadataFromEntry(cached);
+  }
+
+  const stored = await loadTokenFromStorage();
+  return formatMetadataFromEntry(stored);
 }
 
 export async function invalidateCachedToken() {
   saveTokenCache(null);
+  storageLoaded = false;
+}
+
+export async function getAccessToken(forceRefresh = false): Promise<string> {
+  const entry = await requestAccessToken(forceRefresh);
+  return entry.accessToken;
 }
 
 export async function kiwifyFetch<T>(path: string, options: KiwifyFetchOptions = {}): Promise<T> {

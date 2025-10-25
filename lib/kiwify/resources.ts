@@ -30,7 +30,7 @@ const parseDateParam = (value: string, label: string): Date => {
   return parsed;
 };
 
-const extractSalesCollection = (payload: unknown): unknown[] => {
+export const extractCollection = (payload: unknown): unknown[] => {
   if (Array.isArray(payload)) {
     return payload;
   }
@@ -52,7 +52,7 @@ const extractSalesCollection = (payload: unknown): unknown[] => {
   return [];
 };
 
-const shouldRequestNextPage = (
+export const shouldRequestNextPage = (
   payload: unknown,
   currentPageSize: number,
   perPage: number,
@@ -158,6 +158,15 @@ export async function updateProduct(
   return kiwifyFetch<unknown>(resourcePath, {
     method: "PATCH",
     body: payload,
+  });
+}
+
+export async function deleteProduct(productId: string, options: { path?: string } = {}) {
+  const { path = "products" } = options;
+  const resourcePath = `${path.replace(/\/$/, "")}/${productId}`;
+
+  return kiwifyFetch<unknown>(resourcePath, {
+    method: "DELETE",
   });
 }
 
@@ -296,7 +305,7 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
       pages.push(response);
       totalPages += 1;
 
-      const records = extractSalesCollection(response);
+      const records = extractCollection(response);
       aggregatedSales.push(...records);
 
       if (!shouldRequestNextPage(response, records.length, perPage, page)) {
@@ -325,6 +334,24 @@ export async function listAllSales(options: ListAllSalesOptions): Promise<ListAl
     sales: aggregatedSales,
     requests: aggregatedRequests,
   };
+}
+
+export async function fetchAllSalesByWindow(
+  startDate: string,
+  endDate: string,
+  pageSize = MAX_SALES_PAGE_SIZE,
+  options: { status?: string; productId?: string; path?: string } = {},
+): Promise<ListAllSalesResult> {
+  const { status, productId, path } = options;
+
+  return listAllSales({
+    startDate,
+    endDate,
+    perPage: pageSize,
+    status,
+    productId,
+    path,
+  });
 }
 
 export async function listAffiliates(options: {
