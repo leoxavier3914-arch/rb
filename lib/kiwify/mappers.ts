@@ -155,18 +155,56 @@ export function mapCustomerFromSalePayload(
   options?: CustomerFromSaleOptions
 ): CustomerRow | null {
   const customer = extractNestedCustomer(payload);
-  if (!customer) {
-    return null;
+  if (customer) {
+    const normalizedId = normalizeExternalId(customer.id ?? customer.uuid ?? null);
+    if (!normalizedId) {
+      options?.onInvalidCustomerId?.(customer.id ?? customer.uuid ?? null);
+      return null;
+    }
+
+    const normalizedCustomer = { ...customer, id: normalizedId };
+    return mapCustomerPayload(normalizedCustomer);
   }
 
-  const normalizedId = normalizeExternalId(customer.id ?? customer.uuid ?? null);
+  const rawCustomerId =
+    payload.customer_id ??
+    payload.customerId ??
+    (payload.customer_uuid as unknown) ??
+    (payload.customerUuid as unknown) ??
+    null;
+  const normalizedId = normalizeExternalId(rawCustomerId);
   if (!normalizedId) {
-    options?.onInvalidCustomerId?.(customer.id ?? customer.uuid ?? null);
+    if (rawCustomerId !== null && rawCustomerId !== undefined) {
+      options?.onInvalidCustomerId?.(rawCustomerId);
+    }
     return null;
   }
 
-  const normalizedCustomer = { ...customer, id: normalizedId };
-  return mapCustomerPayload(normalizedCustomer);
+  const fallbackCustomer: UnknownRecord = {
+    id: normalizedId,
+    uuid: normalizedId,
+    name:
+      payload.customer_name ??
+      payload.customerName ??
+      payload.customer_full_name ??
+      payload.customerFullName ??
+      null,
+    email: payload.customer_email ?? payload.customerEmail ?? payload.email ?? null,
+    phone:
+      payload.customer_phone ??
+      payload.customerPhone ??
+      payload.customer_whatsapp ??
+      payload.customerWhatsapp ??
+      payload.whatsapp ??
+      null,
+    country: payload.customer_country ?? payload.customerCountry ?? null,
+    state: payload.customer_state ?? payload.customerState ?? null,
+    city: payload.customer_city ?? payload.customerCity ?? null,
+    created_at: payload.customer_created_at ?? payload.customerCreatedAt ?? null,
+    updated_at: payload.customer_updated_at ?? payload.customerUpdatedAt ?? null
+  };
+
+  return mapCustomerPayload(fallbackCustomer);
 }
 
 function extractNestedCustomer(payload: UnknownRecord): UnknownRecord | null {
