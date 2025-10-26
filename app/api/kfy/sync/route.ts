@@ -31,5 +31,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await delByPrefix(METRICS_CACHE_PREFIXES);
   }
 
+  if (!syncResult.ok) {
+    const message = syncResult.logs.at(-1) ?? 'Falha ao executar sincronização.';
+    return NextResponse.json(
+      {
+        ...syncResult,
+        code: 'sync_failed',
+        error: message
+      },
+      { status: 500 }
+    );
+  }
+
   return NextResponse.json(syncResult satisfies SyncResult);
 }
