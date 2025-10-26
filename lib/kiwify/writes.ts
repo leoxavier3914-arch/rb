@@ -24,6 +24,26 @@ type UpsertableRow =
   | RefundRow
   | PayoutRow;
 
+export class SupabaseWriteError extends Error {
+  readonly table: string;
+  readonly operation: 'upsert';
+  readonly code: string | null;
+  readonly details: string | null;
+  readonly hint: string | null;
+
+  constructor(
+    message: string,
+    options: { table: string; code?: string | null; details?: string | null; hint?: string | null; cause?: unknown }
+  ) {
+    super(message, { cause: options.cause });
+    this.table = options.table;
+    this.operation = 'upsert';
+    this.code = options.code ?? null;
+    this.details = options.details ?? null;
+    this.hint = options.hint ?? null;
+  }
+}
+
 export function chunk<T>(input: readonly T[], size: number): T[][] {
   if (size <= 0) {
     throw new Error('chunk size must be positive');
@@ -56,9 +76,7 @@ async function upsertRows<T extends UpsertableRow>(
       throw new Error(`Exceeded write budget while inserting into ${table}`);
     }
 
-    const { error } = await client
-      .from(table)
-      .upsert(slice, { onConflict });
+    const { error } = await client.from(table).upsert(slice, { onConflict });
 
     if (error) {
       if (table === 'kfy_customers') {
@@ -87,8 +105,16 @@ async function upsertRows<T extends UpsertableRow>(
 
         console.error(JSON.stringify(logPayload));
       }
-
-      throw new Error(`Failed to upsert into ${table}: ${error.message ?? 'unknown error'}`);
+      throw new SupabaseWriteError(
+        `Failed to upsert into ${table}: ${error.message ?? 'unknown error'}`,
+        {
+          table,
+          code: typeof error.code === 'string' ? error.code : null,
+          details: typeof error.details === 'string' ? error.details : null,
+          hint: typeof error.hint === 'string' ? error.hint : null,
+          cause: error
+        }
+      );
     }
 
     total += slice.length;
@@ -190,9 +216,9 @@ export async function upsertCustomers(rows: readonly CustomerRow[]): Promise<num
 
   const uniqueExternalIds = Array.from(new Set(normalized.map((row) => row.external_id).filter(Boolean)));
   const existingIds = await loadExistingCustomerIds(uniqueExternalIds);
-  const preparedRows = ensureExistingCustomerIds(normalized, existingIds);
+  const preparedRows = prepareCustomerUpsertRows(normalized, existingIds);
 
-  return upsertRows('kfy_customers', preparedRows, 'external_id');
+  return upsertRows('kfy_customers', preparedRows, 'id');
 }
 
 export async function upsertCustomer(row: CustomerRow | null | undefined): Promise<number> {
@@ -219,6 +245,17 @@ export async function upsertDerivedCustomers(
     return 0;
   }
   return upsertCustomers(Array.from(unique.values()));
+}
+
+export function prepareCustomerUpsertRows(
+  rows: readonly CustomerRow[],
+  existingIds: Map<string, string>
+): CustomerRow[] {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  return ensureExistingCustomerIds(rows, existingIds);
 }
 
 export function upsertSales(rows: readonly SaleRow[]): Promise<number> {
