@@ -3,6 +3,17 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { ComponentType } from 'react';
+import {
+  Area as RechartsArea,
+  AreaChart as RechartsAreaChart,
+  CartesianGrid as RechartsCartesianGrid,
+  Legend as RechartsLegend,
+  ResponsiveContainer as RechartsResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis as RechartsXAxis,
+  YAxis as RechartsYAxis,
+} from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
@@ -11,6 +22,15 @@ import { usePeriod } from '@/components/providers/PeriodProvider';
 import { CardSkeleton, ChartSkeleton, TableSkeleton } from '@/components/ui/Skeletons';
 import { formatMoneyFromCents } from '@/lib/ui/format';
 import { createPeriodSearchParams, type CustomPeriod } from '@/lib/ui/date';
+
+const AreaChart = RechartsAreaChart as unknown as ComponentType<any>;
+const Area = RechartsArea as unknown as ComponentType<any>;
+const CartesianGrid = RechartsCartesianGrid as unknown as ComponentType<any>;
+const Legend = RechartsLegend as unknown as ComponentType<any>;
+const ResponsiveContainer = RechartsResponsiveContainer as unknown as ComponentType<any>;
+const Tooltip = RechartsTooltip as unknown as ComponentType<any>;
+const XAxis = RechartsXAxis as unknown as ComponentType<any>;
+const YAxis = RechartsYAxis as unknown as ComponentType<any>;
 
 interface MetricResponse {
   readonly id: string;
@@ -25,6 +45,10 @@ interface StatsResponse {
   readonly compare: boolean;
   readonly period: CustomPeriod;
   readonly metrics: readonly MetricResponse[];
+  readonly series: {
+    readonly current: readonly SeriesPoint[];
+    readonly previous: readonly SeriesPoint[];
+  };
 }
 
 interface TopProduct {
@@ -37,6 +61,20 @@ interface TopProduct {
 interface TopProductsResponse {
   readonly ok: true;
   readonly products: readonly TopProduct[];
+}
+
+interface SeriesPoint {
+  readonly date: string;
+  readonly gross_cents: number;
+  readonly net_est_cents: number;
+  readonly approved_count: number;
+  readonly total_count: number;
+}
+
+interface ChartDatum {
+  readonly label: string;
+  readonly current: number;
+  readonly previous: number | null;
 }
 
 function computeDelta(current: number, previous: number): number | null {
@@ -89,6 +127,17 @@ export default function DashboardPage() {
 
   const metrics = statsQuery.data?.metrics ?? [];
   const products = topProductsQuery.data?.products ?? [];
+  const revenueSeries = useMemo(() => {
+    if (!statsQuery.data?.series) {
+      return [];
+    }
+    return buildRevenueSeries(
+      statsQuery.data.series.current,
+      statsQuery.data.series.previous,
+      statsQuery.data.compare
+    );
+  }, [statsQuery.data]);
+  const hasComparison = statsQuery.data?.compare && revenueSeries.some(point => point.previous !== null);
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -199,14 +248,105 @@ export default function DashboardPage() {
           <CardContent className="flex flex-1 items-center justify-center">
             {statsQuery.isLoading ? (
               <ChartSkeleton />
+            ) : revenueSeries.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-300 p-6 text-sm text-slate-600">
+                Ainda não há dados suficientes para montar o comparativo visual deste período.
+              </div>
             ) : (
-              <p className="text-sm text-slate-500">
-                Em breve você poderá acompanhar gráficos de evolução com base no período selecionado.
-              </p>
+              <div className="h-72 w-full">
+                <ResponsiveContainer>
+                  <AreaChart data={revenueSeries} margin={{ left: 12, right: 12, top: 16, bottom: 8 }}>
+                    <defs>
+                      <linearGradient id="current-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="rgb(37 99 235)" stopOpacity={0.85} />
+                        <stop offset="95%" stopColor="rgb(37 99 235)" stopOpacity={0.05} />
+                      </linearGradient>
+                      <linearGradient id="previous-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="rgb(148 163 184)" stopOpacity={0.6} />
+                        <stop offset="95%" stopColor="rgb(148 163 184)" stopOpacity={0.04} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(226 232 240)" />
+                    <XAxis dataKey="label" stroke="rgb(100 116 139)" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis
+                      stroke="rgb(100 116 139)"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      width={80}
+                      tickFormatter={(value: number) => formatCurrency(value)}
+                    />
+                    <Tooltip
+                      formatter={(value: number, name: string) => [formatMoneyFromValue(value), name]}
+                      labelFormatter={(label: string | number) => `Dia ${label}`}
+                      contentStyle={{ borderRadius: 12, borderColor: 'rgb(226 232 240)' }}
+                    />
+                    <Legend
+                      formatter={(value: string) =>
+                        value === 'current' ? 'Período atual' : 'Período anterior'
+                      }
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="current"
+                      name="Período atual"
+                      stroke="rgb(37 99 235)"
+                      fill="url(#current-fill)"
+                      strokeWidth={2}
+                    />
+                    {hasComparison ? (
+                      <Area
+                        type="monotone"
+                        dataKey="previous"
+                        name="Período anterior"
+                        stroke="rgb(148 163 184)"
+                        fill="url(#previous-fill)"
+                        strokeWidth={2}
+                      />
+                    ) : null}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </CardContent>
         </Card>
       </section>
     </div>
   );
+}
+
+function buildRevenueSeries(
+  current: readonly SeriesPoint[],
+  previous: readonly SeriesPoint[],
+  compare: boolean
+): ChartDatum[] {
+  if (!current.length) {
+    return [];
+  }
+
+  const formatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' });
+  const sortedCurrent = [...current].sort((a, b) => a.date.localeCompare(b.date));
+  const sortedPrevious = [...previous].sort((a, b) => a.date.localeCompare(b.date));
+  const hasComparison = compare && sortedPrevious.length > 0;
+
+  return sortedCurrent.map((point, index) => {
+    const label = formatter.format(new Date(point.date));
+    const previousPoint = hasComparison ? sortedPrevious[index] : undefined;
+    return {
+      label,
+      current: Number((point.gross_cents / 100).toFixed(2)),
+      previous:
+        hasComparison && previousPoint
+          ? Number((previousPoint.gross_cents / 100).toFixed(2))
+          : null
+    };
+  });
+}
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+}
+
+function formatMoneyFromValue(value: number): string {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
