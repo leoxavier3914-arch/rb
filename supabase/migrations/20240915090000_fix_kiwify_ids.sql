@@ -27,22 +27,56 @@ alter table if exists kfy_enrollments alter column customer_id drop identity if 
 alter table if exists kfy_enrollments alter column customer_id drop default;
 alter table if exists kfy_enrollments alter column customer_id type text using customer_id::text;
 
-alter table if exists kfy_orders
-  add constraint kfy_orders_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
-alter table if exists kfy_sales
-  add constraint kfy_sales_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
-alter table if exists kfy_subscriptions
-  add constraint kfy_subscriptions_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
-alter table if exists kfy_enrollments
-  add constraint kfy_enrollments_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+do $$
+begin
+  if to_regclass('public.kfy_orders') is not null then
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'kfy_orders_customer_id_fkey'
+        and conrelid = 'public.kfy_orders'::regclass
+    ) then
+      alter table kfy_orders
+        add constraint kfy_orders_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+    end if;
+  end if;
 
-alter table if exists kfy_orders
-  add constraint kfy_orders_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
-alter table if exists kfy_sales
-  add constraint kfy_sales_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
-alter table if exists kfy_subscriptions
-  add constraint kfy_subscriptions_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
-alter table if exists kfy_enrollments
-  add constraint kfy_enrollments_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+  if to_regclass('public.kfy_sales') is not null then
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'kfy_sales_customer_id_fkey'
+        and conrelid = 'public.kfy_sales'::regclass
+    ) then
+      alter table kfy_sales
+        add constraint kfy_sales_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+    end if;
+  end if;
+
+  if to_regclass('public.kfy_subscriptions') is not null then
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'kfy_subscriptions_customer_id_fkey'
+        and conrelid = 'public.kfy_subscriptions'::regclass
+    ) then
+      alter table kfy_subscriptions
+        add constraint kfy_subscriptions_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+    end if;
+  end if;
+
+  if to_regclass('public.kfy_enrollments') is not null then
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'kfy_enrollments_customer_id_fkey'
+        and conrelid = 'public.kfy_enrollments'::regclass
+    ) then
+      alter table kfy_enrollments
+        add constraint kfy_enrollments_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+    end if;
+  end if;
+end;
+$$;
 
 commit;
