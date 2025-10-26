@@ -6,6 +6,7 @@ import type { CustomerRow } from '@/lib/kiwify/mappers';
 
 const baseCustomer: CustomerRow = {
   id: 'cust_explicit',
+  external_id: 'cust_explicit',
   name: null,
   email: null,
   phone: null,
@@ -49,7 +50,7 @@ describe('customer upsert migration safeguards', () => {
     vi.spyOn(env, 'loadEnv').mockReturnValue({} as env.AppEnv);
     const clientSpy = vi.spyOn(supabase, 'getServiceClient');
 
-    const result = await upsertCustomer({ ...baseCustomer, id: '   ' });
+    const result = await upsertCustomer({ ...baseCustomer, id: '   ', external_id: '   ' });
 
     expect(result).toBe(0);
     expect(clientSpy).not.toHaveBeenCalled();

@@ -17,6 +17,7 @@ export interface ProductRow {
 
 export interface CustomerRow {
   readonly id: string;
+  readonly external_id: string;
   readonly name: string | null;
   readonly email: string | null;
   readonly phone: string | null;
@@ -123,6 +124,7 @@ export function mapCustomerPayload(payload: UnknownRecord): CustomerRow {
   const normalizedId = normalizeExternalId(payload.id ?? payload.uuid ?? null);
   return {
     id: normalizedId ?? '',
+    external_id: normalizedId ?? '',
     name: toNullableString(payload.name ?? payload.full_name ?? payload.fullName),
     email: toNullableString(payload.email),
     phone: toNullableString(payload.phone ?? payload.phone_number ?? payload.whatsapp),

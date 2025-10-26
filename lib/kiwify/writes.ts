@@ -131,16 +131,18 @@ export async function upsertProducts(rows: readonly ProductRow[]): Promise<numbe
 }
 
 function normalizeCustomerRow(row: CustomerRow): CustomerRow | null {
-  const normalizedId = normalizeExternalId(row.id);
-  if (!normalizedId) {
+  const normalizedExternalId = normalizeExternalId(row.external_id ?? row.id);
+  if (!normalizedExternalId) {
     return null;
   }
 
-  if (row.id === normalizedId) {
+  const normalizedId = normalizeExternalId(row.id) ?? normalizedExternalId;
+
+  if (row.id === normalizedId && row.external_id === normalizedExternalId) {
     return row;
   }
 
-  return { ...row, id: normalizedId };
+  return { ...row, id: normalizedId, external_id: normalizedExternalId };
 }
 
 export function upsertCustomers(rows: readonly CustomerRow[]): Promise<number> {
