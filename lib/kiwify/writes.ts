@@ -152,7 +152,7 @@ export function upsertCustomers(rows: readonly CustomerRow[]): Promise<number> {
   if (normalized.length === 0) {
     return Promise.resolve(0);
   }
-  return upsertRows('kfy_customers', normalized);
+  return upsertRows('kfy_customers', normalized, 'external_id');
 }
 
 export async function upsertCustomer(row: CustomerRow | null | undefined): Promise<number> {
@@ -163,7 +163,7 @@ export async function upsertCustomer(row: CustomerRow | null | undefined): Promi
   if (!normalized) {
     return 0;
   }
-  return upsertRows('kfy_customers', [normalized]);
+  return upsertRows('kfy_customers', [normalized], 'external_id');
 }
 
 export async function upsertDerivedCustomers(
