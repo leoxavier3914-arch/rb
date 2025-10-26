@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { ApiError, buildApiError } from '@/lib/ui/apiError';
 
 interface Feedback {
   readonly type: 'success' | 'error';
@@ -17,10 +18,9 @@ async function callEndpoint(path: string, body?: unknown): Promise<void> {
     },
     body: body ? JSON.stringify(body) : undefined
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload?.ok === false) {
-    const errorMessage = payload?.error ?? 'Falha ao executar ação.';
-    throw new Error(errorMessage);
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok || (payload as { ok?: boolean }).ok === false) {
+    throw buildApiError(payload, 'Falha ao executar ação.');
   }
 }
 
@@ -35,7 +35,15 @@ export default function ConfigSyncPage() {
       await action();
       setFeedback({ type: 'success', message: 'Ação concluída com sucesso.' });
     } catch (error) {
-      setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Erro ao executar ação.' });
+      setFeedback({
+        type: 'error',
+        message:
+          error instanceof ApiError
+            ? `${error.message} (código: ${error.code})`
+            : error instanceof Error
+              ? error.message
+              : 'Erro ao executar ação.'
+      });
     } finally {
       setLoadingAction(null);
     }
