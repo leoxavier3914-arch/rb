@@ -66,14 +66,46 @@ describe('syncEngine', () => {
       }
     };
 
-    fetchMock.mockImplementation(() =>
-      Promise.resolve(
+    const salesResponses = [
+      responseBody,
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } },
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } },
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } },
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } }
+    ];
+    let salesCallIndex = 0;
+
+    fetchMock.mockImplementation((url: string | URL) => {
+      const resolvedUrl = typeof url === 'string' ? url : url.toString();
+      if (resolvedUrl.includes('/v1/account-details')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              created_at: '2020-01-01T00:00:00.000Z'
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        );
+      }
+
+      if (resolvedUrl.includes('/v1/sales')) {
+        const payload = salesResponses[salesCallIndex] ?? salesResponses[salesResponses.length - 1];
+        salesCallIndex += 1;
+        return Promise.resolve(
+          new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        );
+      }
+
+      return Promise.resolve(
         new Response(JSON.stringify(responseBody), {
           status: 200,
           headers: { 'content-type': 'application/json' }
         })
-      )
-    );
+      );
+    });
 
     const result = await runSync({
       cursor: { resource: 'products', page: 1, intervalIndex: 0, done: false },
@@ -107,12 +139,47 @@ describe('syncEngine', () => {
       }
     };
 
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify(responseBody), {
-        status: 200,
-        headers: { 'content-type': 'application/json' }
-      })
-    );
+    const salesMissingIdResponses = [
+      responseBody,
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } },
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } },
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } },
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } }
+    ];
+    let salesMissingIdIndex = 0;
+
+    fetchMock.mockImplementation((url: string | URL) => {
+      const resolvedUrl = typeof url === 'string' ? url : url.toString();
+      if (resolvedUrl.includes('/v1/account-details')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              created_at: '2020-01-01T00:00:00.000Z'
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        );
+      }
+
+      if (resolvedUrl.includes('/v1/sales')) {
+        const payload = salesMissingIdResponses[salesMissingIdIndex] ??
+          salesMissingIdResponses[salesMissingIdResponses.length - 1];
+        salesMissingIdIndex += 1;
+        return Promise.resolve(
+          new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        );
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify(responseBody), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      );
+    });
 
     const result = await runSync({
       cursor: { resource: 'sales', page: 1, intervalIndex: 0, done: false },
@@ -146,12 +213,47 @@ describe('syncEngine', () => {
       }
     };
 
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify(responseBody), {
-        status: 200,
-        headers: { 'content-type': 'application/json' }
-      })
-    );
+    const salesMissingIdResponses = [
+      responseBody,
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } },
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } },
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } },
+      { data: [], meta: { pagination: { page: 1, total_pages: 1 } } }
+    ];
+    let missingIdCallIndex = 0;
+
+    fetchMock.mockImplementation((url: string | URL) => {
+      const resolvedUrl = typeof url === 'string' ? url : url.toString();
+      if (resolvedUrl.includes('/v1/account-details')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              created_at: '2020-01-01T00:00:00.000Z'
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        );
+      }
+
+      if (resolvedUrl.includes('/v1/sales')) {
+        const payload = salesMissingIdResponses[missingIdCallIndex] ??
+          salesMissingIdResponses[salesMissingIdResponses.length - 1];
+        missingIdCallIndex += 1;
+        return Promise.resolve(
+          new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        );
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [], meta: { pagination: { page: 1, total_pages: 1 } } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      );
+    });
 
     const result = await runSync({
       cursor: { resource: 'sales', page: 1, intervalIndex: 0, done: false }
@@ -179,7 +281,39 @@ describe('syncEngine', () => {
       isHtml: false
     });
 
-    fetchMock.mockRejectedValueOnce(notFoundError);
+    fetchMock.mockImplementation((url: string | URL) => {
+      const resolvedUrl = typeof url === 'string' ? url : url.toString();
+      if (resolvedUrl.includes('/v1/account-details')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              created_at: '2020-01-01T00:00:00.000Z'
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        );
+      }
+
+      if (resolvedUrl.includes('/v1/coupons')) {
+        return Promise.reject(notFoundError);
+      }
+
+      if (resolvedUrl.includes('/v1/refunds')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(refundsResponse), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        );
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [], meta: { pagination: { page: 1, total_pages: 1 } } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      );
+    });
 
     const refundsResponse = {
       data: [],
@@ -187,13 +321,6 @@ describe('syncEngine', () => {
         pagination: { page: 1, total_pages: 1 }
       }
     };
-
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify(refundsResponse), {
-        status: 200,
-        headers: { 'content-type': 'application/json' }
-      })
-    );
 
     const result = await runSync({
       cursor: { resource: 'coupons', page: 1, intervalIndex: 0, done: false }

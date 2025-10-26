@@ -145,25 +145,61 @@ function normalizeCustomerRow(row: CustomerRow): CustomerRow | null {
   return { ...row, id: normalizedId, external_id: normalizedExternalId };
 }
 
-export function upsertCustomers(rows: readonly CustomerRow[]): Promise<number> {
+function ensureExistingCustomerIds(
+  rows: readonly CustomerRow[],
+  existingIds: Map<string, string>
+): CustomerRow[] {
+  if (existingIds.size === 0) {
+    return [...rows];
+  }
+
+  return rows.map((row) => {
+    const existingId = existingIds.get(row.external_id);
+    if (!existingId || existingId === row.id) {
+      return row;
+    }
+    return { ...row, id: existingId };
+  });
+}
+
+async function loadExistingCustomerIds(externalIds: readonly string[]): Promise<Map<string, string>> {
+  if (externalIds.length === 0) {
+    return new Map();
+  }
+
+  const client = getServiceClient();
+  const { data, error } = await client
+    .from('kfy_customers')
+    .select('id, external_id')
+    .in('external_id', externalIds);
+
+  if (error) {
+    throw new Error(`Failed to load existing kfy_customers: ${error.message ?? 'unknown error'}`);
+  }
+
+  return new Map((data ?? []).map((row) => [row.external_id as string, row.id as string]));
+}
+
+export async function upsertCustomers(rows: readonly CustomerRow[]): Promise<number> {
   const normalized = rows
     .map((row) => normalizeCustomerRow(row))
     .filter((row): row is CustomerRow => row !== null);
   if (normalized.length === 0) {
-    return Promise.resolve(0);
+    return 0;
   }
-  return upsertRows('kfy_customers', normalized, 'external_id');
+
+  const uniqueExternalIds = Array.from(new Set(normalized.map((row) => row.external_id).filter(Boolean)));
+  const existingIds = await loadExistingCustomerIds(uniqueExternalIds);
+  const preparedRows = ensureExistingCustomerIds(normalized, existingIds);
+
+  return upsertRows('kfy_customers', preparedRows, 'external_id');
 }
 
 export async function upsertCustomer(row: CustomerRow | null | undefined): Promise<number> {
   if (!row) {
     return 0;
   }
-  const normalized = normalizeCustomerRow(row);
-  if (!normalized) {
-    return 0;
-  }
-  return upsertRows('kfy_customers', [normalized], 'external_id');
+  return upsertCustomers([row]);
 }
 
 export async function upsertDerivedCustomers(

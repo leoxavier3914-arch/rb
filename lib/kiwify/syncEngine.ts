@@ -451,6 +451,8 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
       }
 
       if (!page.hasMore) {
+        resourceIntervals.splice(cursor.intervalIndex, 1);
+
         if (cursor.resource === 'sales') {
           const count = windowCounters.get(windowKey) ?? 0;
           logs.push(
@@ -585,7 +587,7 @@ async function resolveSalesRange(
       }
     }
 
-    if (!start) {
+    if (!start && !request.full) {
       const accountDate = await fetchAccountCreationDate(budgetEndsAt, logs);
       if (accountDate) {
         start = accountDate;
@@ -798,6 +800,9 @@ function latestProcessedDate(state: SalesSyncState | null): Date | null {
 
 async function fetchAccountCreationDate(budgetEndsAt: number, logs: string[]): Promise<Date | null> {
   try {
+    if (Date.now() >= budgetEndsAt) {
+      return null;
+    }
     const response = await kiwifyFetch('/v1/account-details', { budgetEndsAt });
     const payload = (await response.json()) as UnknownRecord;
     const candidates: Date[] = [];

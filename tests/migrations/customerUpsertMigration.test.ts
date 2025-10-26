@@ -25,6 +25,8 @@ describe('customer upsert migration safeguards', () => {
 
   it('logga dica quando o banco recusa id explícito por identity', async () => {
     vi.spyOn(env, 'loadEnv').mockReturnValue({} as env.AppEnv);
+    const selectInMock = vi.fn().mockResolvedValue({ data: [], error: null });
+    const selectMock = vi.fn().mockReturnValue({ in: selectInMock });
     const upsertMock = vi.fn().mockResolvedValue({
       error: {
         message: 'cannot insert a non-DEFAULT value into column "id"',
@@ -34,6 +36,7 @@ describe('customer upsert migration safeguards', () => {
     });
     vi.spyOn(supabase, 'getServiceClient').mockReturnValue({
       from: () => ({
+        select: selectMock,
         upsert: upsertMock
       })
     } as unknown as ReturnType<typeof supabase.getServiceClient>);
@@ -41,9 +44,7 @@ describe('customer upsert migration safeguards', () => {
 
     await expect(upsertCustomer(baseCustomer)).rejects.toThrow(/Failed to upsert/);
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('column id must be non-identity / no default')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('column id must be non-identity / no default'));
   });
 
   it('não chama o banco quando o id é inválido', async () => {
