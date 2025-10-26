@@ -1,8 +1,9 @@
 import { getServiceClient } from '@/lib/supabase';
-import type { SyncCursor } from './syncEngine';
+import type { SalesSyncState, SyncCursor } from './syncEngine';
 
 const STATE_ID = 'kfy_sync_cursor';
 const UNSUPPORTED_STATE_ID = 'kfy_unsupported_resources';
+const SALES_STATE_ID = 'kfy_sales_sync_state';
 
 export async function getSyncCursor(): Promise<SyncCursor | null> {
   try {
@@ -61,5 +62,41 @@ export async function setUnsupportedResources(resources: ReadonlySet<string>): P
     }
   } catch (error) {
     console.error(JSON.stringify({ level: 'error', event: 'unsupported_resources_write_failed', error }));
+  }
+}
+
+export async function getSalesSyncState(): Promise<SalesSyncState | null> {
+  try {
+    const client = getServiceClient();
+    const { data, error } = await client.from('app_state').select('value').eq('id', SALES_STATE_ID).single();
+    if (error) {
+      console.error(JSON.stringify({ level: 'error', event: 'sales_state_read_failed', error }));
+      return null;
+    }
+    const value = data?.value;
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+    const payload = value as Record<string, unknown>;
+    const lastPaidAt = typeof payload.lastPaidAt === 'string' ? payload.lastPaidAt : null;
+    const lastCreatedAt = typeof payload.lastCreatedAt === 'string' ? payload.lastCreatedAt : null;
+    return { lastPaidAt, lastCreatedAt };
+  } catch (error) {
+    console.error(JSON.stringify({ level: 'error', event: 'sales_state_unavailable', error }));
+    return null;
+  }
+}
+
+export async function setSalesSyncState(state: SalesSyncState): Promise<void> {
+  try {
+    const client = getServiceClient();
+    const { error } = await client
+      .from('app_state')
+      .upsert({ id: SALES_STATE_ID, value: { lastPaidAt: state.lastPaidAt, lastCreatedAt: state.lastCreatedAt } });
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    console.error(JSON.stringify({ level: 'error', event: 'sales_state_write_failed', error }));
   }
 }

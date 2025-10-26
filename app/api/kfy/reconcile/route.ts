@@ -7,6 +7,14 @@ import { buildRateLimitKey, checkRateLimit } from '@/lib/rateLimit';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+const DAY = 24 * 60 * 60 * 1000;
+
+function formatDateOnly(value: Date): string {
+  const copy = new Date(value);
+  copy.setUTCHours(0, 0, 0, 0);
+  return copy.toISOString().slice(0, 10);
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   assertIsAdmin(request);
 
@@ -21,12 +29,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const body = (await request.json().catch(() => ({}))) as SyncRequest;
   const now = new Date();
-  const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const end = now.toISOString();
+  const defaultEnd = formatDateOnly(now);
+  const defaultStart = formatDateOnly(new Date(now.getTime() - 30 * DAY));
 
   const syncResult = await runSync({
     ...body,
-    range: body.range ?? { startDate: start, endDate: end }
+    range: body.range ?? { startDate: defaultStart, endDate: defaultEnd }
   });
 
   if (body.persist) {
