@@ -1,12 +1,22 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { assertIsAdmin } from '@/lib/auth';
 import { getAccessToken } from '@/lib/kiwify/client';
+import { buildRateLimitKey, checkRateLimit } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   assertIsAdmin(request);
+
+  const key = buildRateLimitKey(request, `${request.nextUrl.pathname}:token`);
+  const result = await checkRateLimit(key, 5, 60_000);
+  if (!result.allowed) {
+    return NextResponse.json(
+      { ok: false, code: 'rate_limited', error: 'Too many requests, try again soon.' },
+      { status: 429 }
+    );
+  }
 
   try {
     await getAccessToken(true);
