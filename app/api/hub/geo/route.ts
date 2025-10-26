@@ -31,10 +31,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   assertIsAdmin(request);
 
   const params = request.nextUrl.searchParams;
+  const dateFrom = params.get('date_from');
+  const dateTo = params.get('date_to');
   const period = resolvePeriod(params);
   const cacheKey = buildCacheKey('geo_cache:', {
     from: period.current.from.toISOString(),
-    to: period.current.to.toISOString()
+    to: period.current.to.toISOString(),
+    dateFrom: dateFrom ?? null,
+    dateTo: dateTo ?? null
   });
 
   const cached = await getCache<{ by_state: GeoBucket[]; by_country: GeoBucket[] }>(cacheKey);

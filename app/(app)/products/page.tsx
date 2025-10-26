@@ -1,3 +1,7 @@
+'use client';
+
+import { EmptyState } from '@/components/ui/EmptyState';
+
 export default function ProductsPage() {
   return (
     <main className="flex flex-1 flex-col gap-6">
@@ -8,9 +12,10 @@ export default function ProductsPage() {
         </p>
       </header>
 
-      <section className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-        Utilize esta página futuramente para explorar o catálogo e aplicar filtros avançados.
-      </section>
+      <EmptyState
+        title="Catálogo em preparação"
+        description="Utilize esta página futuramente para explorar o catálogo sincronizado e aplicar filtros avançados."
+      />
     </main>
   );
 }
