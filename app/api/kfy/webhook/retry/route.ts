@@ -4,6 +4,7 @@ import { delByPrefix, METRICS_CACHE_PREFIXES } from '@/lib/cache';
 import { processKiwifyEvent } from '@/lib/kiwify/webhookProcessor';
 import { extractEventDetails, isRecord } from '@/lib/kiwify/webhookUtils';
 import { getServiceClient } from '@/lib/supabase';
+import { buildRateLimitKey, checkRateLimit } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -16,6 +17,15 @@ interface FailedEventRow {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   assertIsAdmin(request);
+
+  const key = buildRateLimitKey(request, `${request.nextUrl.pathname}:retry`);
+  const result = await checkRateLimit(key, 3, 60_000);
+  if (!result.allowed) {
+    return NextResponse.json(
+      { ok: false, code: 'rate_limited', error: 'Too many requests, try again soon.' },
+      { status: 429 }
+    );
+  }
 
   const client = getServiceClient();
   const { data, error } = await client
