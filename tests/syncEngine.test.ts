@@ -78,6 +78,40 @@ describe('syncEngine', () => {
     expect(syncState.setSyncCursor).toHaveBeenCalledTimes(1);
   });
 
+  it('usa endpoint paginado de clientes sem filtros de intervalo', async () => {
+    const responseBody = {
+      data: [],
+      meta: {
+        pagination: {
+          page: 1,
+          total_pages: 1
+        }
+      }
+    };
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(responseBody), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+
+    const result = await runSync({
+      cursor: { resource: 'customers', page: 1, intervalIndex: 0, done: false }
+    });
+
+    expect(result.ok).toBe(true);
+
+    const [requestedPath] = fetchMock.mock.calls[0] as [string];
+    expect(requestedPath.startsWith('/v1/customers/list?')).toBe(true);
+
+    const url = new URL(requestedPath, 'https://public-api.kiwify.com');
+    expect(url.searchParams.get('page_number')).toBe('1');
+    expect(url.searchParams.get('page_size')).toBe('2');
+    expect(url.searchParams.has('start_date')).toBe(false);
+    expect(url.searchParams.has('end_date')).toBe(false);
+  });
+
   it('short-circuits quando orçamento insuficiente', async () => {
     const nowSpy = vi.spyOn(Date, 'now');
     nowSpy.mockReturnValueOnce(10).mockReturnValue(Number.MAX_SAFE_INTEGER);

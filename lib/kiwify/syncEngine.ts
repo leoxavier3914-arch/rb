@@ -76,10 +76,10 @@ const RESOURCE_CONFIG: Record<SyncResource, ResourceConfig<any>> = {
     supportsRange: false
   },
   customers: {
-    path: '/v1/customers',
+    path: '/v1/customers/list',
     mapper: mapCustomerPayload,
     writer: upsertCustomers,
-    supportsRange: true
+    supportsRange: false
   },
   sales: {
     path: '/v1/sales',
