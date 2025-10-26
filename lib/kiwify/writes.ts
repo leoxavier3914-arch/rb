@@ -34,7 +34,11 @@ export function chunk<T>(input: readonly T[], size: number): T[][] {
   return result;
 }
 
-async function upsertRows<T extends UpsertableRow>(table: string, rows: readonly T[]): Promise<number> {
+async function upsertRows<T extends UpsertableRow>(
+  table: string,
+  rows: readonly T[],
+  onConflict: string = 'id'
+): Promise<number> {
   if (rows.length === 0) {
     return 0;
   }
@@ -53,7 +57,7 @@ async function upsertRows<T extends UpsertableRow>(table: string, rows: readonly
 
     const { error } = await client
       .from(table)
-      .upsert(slice, { onConflict: 'id' });
+      .upsert(slice, { onConflict });
 
     if (error) {
       throw new Error(`Failed to upsert into ${table}: ${error.message ?? 'unknown error'}`);
@@ -66,7 +70,7 @@ async function upsertRows<T extends UpsertableRow>(table: string, rows: readonly
 }
 
 export function upsertProducts(rows: readonly ProductRow[]): Promise<number> {
-  return upsertRows('kfy_products', rows);
+  return upsertRows('kfy_products', rows, 'external_id');
 }
 
 export function upsertCustomers(rows: readonly CustomerRow[]): Promise<number> {
