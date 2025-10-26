@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { assertIsAdmin } from '@/lib/auth';
+import { delByPrefix, METRICS_CACHE_PREFIXES } from '@/lib/cache';
 import { runSync, type SyncRequest, type SyncResult } from '@/lib/kiwify/syncEngine';
 
 export const runtime = 'nodejs';
@@ -17,6 +18,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<SyncResul
     ...body,
     range: body.range ?? { startDate: start, endDate: end }
   });
+
+  if (body.persist) {
+    await delByPrefix(METRICS_CACHE_PREFIXES);
+  }
 
   return NextResponse.json(result);
 }
