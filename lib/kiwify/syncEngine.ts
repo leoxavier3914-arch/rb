@@ -20,6 +20,7 @@ import {
 } from './mappers';
 import { normalizeExternalId } from './ids';
 import {
+  SupabaseWriteError,
   upsertCoupons,
   upsertEnrollments,
   upsertPayouts,
@@ -273,6 +274,29 @@ export function buildSalesWindows(dateFrom: string | Date, dateTo: string | Date
   return windows;
 }
 
+export interface SalesRangePreviewParams {
+  readonly request?: Partial<SyncRequest>;
+  readonly salesState?: SalesSyncState | null;
+  readonly today?: Date;
+  readonly accountCreationDate?: Date | null;
+}
+
+export async function previewSalesRangeForDoctor(
+  params: SalesRangePreviewParams = {}
+): Promise<IntervalRange | null> {
+  const resolvedRequest: SyncRequest = {
+    full: params.request?.full,
+    range: params.request?.range ?? null,
+    cursor: params.request?.cursor ?? null,
+    persist: params.request?.persist
+  };
+  const logs: string[] = [];
+  return resolveSalesRange(resolvedRequest, params.salesState ?? null, Date.now() + 1_000, logs, {
+    today: params.today ?? new Date(),
+    fetchAccountCreationDate: async () => params.accountCreationDate ?? null
+  });
+}
+
 type IntervalMap = Record<SyncResource, IntervalRange[]>;
 
 export async function runSync(request: SyncRequest): Promise<SyncResult> {
@@ -430,23 +454,46 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
       }
 
       const mapped = page.items.map((item) => resourceConfig.mapper(item));
+      let processedRows = mapped;
+
+      if (mapped.length > 0) {
+        try {
+          const affected = await resourceConfig.writer(mapped);
+          if (affected > 0) {
+            stats[cursor.resource] = (stats[cursor.resource] ?? 0) + affected;
+          }
+        } catch (error) {
+          if (cursor.resource === 'sales' && isForeignKeyViolation(error)) {
+            const supabaseError = error as SupabaseWriteError;
+            logs.push(
+              JSON.stringify({
+                event: 'sales_fk_violation',
+                source: 'sync',
+                code: supabaseError.code,
+                details: supabaseError.details ?? null,
+                hint: supabaseError.hint ?? null
+              })
+            );
+            const fallback = await retrySalesAfterCustomerUpsert(page.items, mapped as SaleRow[], logs);
+            processedRows = fallback.processedRows;
+            if (fallback.affected > 0) {
+              stats.sales = (stats.sales ?? 0) + fallback.affected;
+            }
+          } else {
+            throw error;
+          }
+        }
+      }
 
       if (cursor.resource === 'sales') {
-        windowCounters.set(windowKey, (windowCounters.get(windowKey) ?? 0) + mapped.length);
-        const update = extractSalesStateFromRows(mapped as SaleRow[]);
+        windowCounters.set(windowKey, (windowCounters.get(windowKey) ?? 0) + processedRows.length);
+        const update = extractSalesStateFromRows(processedRows as SaleRow[]);
         if (update) {
           const merged = mergeSalesState(salesState, update);
           if (merged.changed) {
             salesState = merged.state;
             salesStateChanged = true;
           }
-        }
-      }
-
-      if (mapped.length > 0) {
-        const affected = await resourceConfig.writer(mapped);
-        if (affected > 0) {
-          stats[cursor.resource] = (stats[cursor.resource] ?? 0) + affected;
         }
       }
 
@@ -566,13 +613,20 @@ function resolveGenericIntervals(request: SyncRequest): IntervalRange[] {
   return buildDefaultIntervals();
 }
 
+interface ResolveSalesRangeOptions {
+  readonly fetchAccountCreationDate?: (budgetEndsAt: number, logs: string[]) => Promise<Date | null>;
+  readonly today?: Date;
+}
+
 async function resolveSalesRange(
   request: SyncRequest,
   salesState: SalesSyncState | null,
   budgetEndsAt: number,
-  logs: string[]
+  logs: string[],
+  options: ResolveSalesRangeOptions = {}
 ): Promise<IntervalRange | null> {
-  const today = startOfUtcDay(new Date());
+  const today = startOfUtcDay(options.today ?? new Date());
+  const resolveAccountDate = options.fetchAccountCreationDate ?? fetchAccountCreationDate;
   let start: Date | null = null;
   let end = today;
 
@@ -588,7 +642,7 @@ async function resolveSalesRange(
     }
 
     if (!start && !request.full) {
-      const accountDate = await fetchAccountCreationDate(budgetEndsAt, logs);
+      const accountDate = await resolveAccountDate(budgetEndsAt, logs);
       if (accountDate) {
         start = accountDate;
       }
@@ -683,6 +737,54 @@ function handleSalesBadRequest(
   logs.push(JSON.stringify({ event: 'sales_window_skipped', status: error.status, url: error.url, window, shrunk: false }));
   const nextCursor = advanceCursor(cursor, intervals);
   return { action: 'advance', cursor: nextCursor };
+}
+
+function isForeignKeyViolation(error: unknown): error is SupabaseWriteError {
+  return error instanceof SupabaseWriteError && error.code === '23503';
+}
+
+async function retrySalesAfterCustomerUpsert(
+  pageItems: UnknownRecord[],
+  salesRows: readonly SaleRow[],
+  logs: string[]
+): Promise<{ processedRows: SaleRow[]; affected: number }> {
+  logs.push(JSON.stringify({ event: 'sales_fk_retry_triggered', source: 'sync', count: salesRows.length }));
+
+  const derived = new Map<string, CustomerRow>();
+  for (const item of pageItems) {
+    const customerRow = mapCustomerFromSalePayload(item);
+    if (customerRow) {
+      derived.set(customerRow.id, customerRow);
+    }
+  }
+
+  if (derived.size > 0) {
+    await upsertDerivedCustomers(Array.from(derived.values()));
+  }
+
+  const processed: SaleRow[] = [];
+
+  for (const row of salesRows) {
+    try {
+      await upsertSales([row]);
+      processed.push(row);
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        const payload = {
+          event: 'fk_violation_after_retry',
+          source: 'sync',
+          sale_id: row.id ?? null,
+          customer_id: row.customer_id ?? null
+        };
+        logs.push(JSON.stringify(payload));
+        console.warn(JSON.stringify({ level: 'warn', ...payload, error: (error as Error).message ?? String(error) }));
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return { processedRows: processed, affected: processed.length };
 }
 
 function shrinkSalesInterval(intervals: IntervalMap, resource: SyncResource, intervalIndex: number): boolean {
