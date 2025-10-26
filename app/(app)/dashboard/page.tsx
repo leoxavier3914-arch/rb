@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import type { ComponentType } from 'react';
 import {
@@ -14,14 +14,15 @@ import {
   XAxis as RechartsXAxis,
   YAxis as RechartsYAxis,
 } from 'recharts';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePeriod } from '@/components/providers/PeriodProvider';
 import { CardSkeleton, ChartSkeleton, TableSkeleton } from '@/components/ui/Skeletons';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { formatMoneyFromCents } from '@/lib/ui/format';
 import { createPeriodSearchParams, type CustomPeriod } from '@/lib/ui/date';
+import { ApiError, buildApiError } from '@/lib/ui/apiError';
 
 const AreaChart = RechartsAreaChart as unknown as ComponentType<any>;
 const Area = RechartsArea as unknown as ComponentType<any>;
@@ -77,6 +78,78 @@ interface ChartDatum {
   readonly previous: number | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isSeriesPoint(value: unknown): value is SeriesPoint {
+  return (
+    isRecord(value) &&
+    typeof value.date === 'string' &&
+    typeof value.gross_cents === 'number' &&
+    typeof value.net_est_cents === 'number' &&
+    typeof value.approved_count === 'number' &&
+    typeof value.total_count === 'number'
+  );
+}
+
+function isMetricResponse(value: unknown): value is MetricResponse {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.label === 'string' &&
+    (value.format === 'currency' || value.format === 'number') &&
+    typeof value.current === 'number' &&
+    typeof value.previous === 'number'
+  );
+}
+
+function isCustomPeriod(value: unknown): value is CustomPeriod {
+  return isRecord(value) && typeof value.from === 'string' && typeof value.to === 'string';
+}
+
+function isStatsResponse(value: unknown): value is StatsResponse {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.ok !== true || typeof value.compare !== 'boolean') {
+    return false;
+  }
+  if (!isCustomPeriod(value.period)) {
+    return false;
+  }
+  if (!isRecord(value.series)) {
+    return false;
+  }
+  if (!Array.isArray(value.series.current) || !value.series.current.every(isSeriesPoint)) {
+    return false;
+  }
+  if (!Array.isArray(value.series.previous) || !value.series.previous.every(isSeriesPoint)) {
+    return false;
+  }
+  if (!Array.isArray(value.metrics) || !value.metrics.every(isMetricResponse)) {
+    return false;
+  }
+  return true;
+}
+
+function isTopProduct(value: unknown): value is TopProduct {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.title === 'string' &&
+    typeof value.revenue_cents === 'number' &&
+    typeof value.total_sales === 'number'
+  );
+}
+
+function isTopProductsResponse(value: unknown): value is TopProductsResponse {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return value.ok === true && Array.isArray(value.products) && value.products.every(isTopProduct);
+}
+
 function computeDelta(current: number, previous: number): number | null {
   if (previous === 0) {
     return current === 0 ? 0 : 100;
@@ -85,6 +158,7 @@ function computeDelta(current: number, previous: number): number | null {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { range, preset, isPreset } = usePeriod();
   const params = useMemo(
     () => createPeriodSearchParams(range, isPreset ? preset : null, { compare: true }),
@@ -97,12 +171,17 @@ export default function DashboardPage() {
       const response = await fetch(`/api/hub/stats?${params.toString()}`, {
         headers: { 'x-admin-role': 'true' }
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        const message = payload?.error ?? 'Erro ao carregar estatísticas.';
-        throw new Error(message);
+      const payload = (await response.json().catch(() => null)) as unknown;
+      if (!isRecord(payload)) {
+        throw buildApiError(null, 'Erro ao carregar estatísticas.');
       }
-      return payload as StatsResponse;
+      if (!response.ok || payload.ok === false) {
+        throw buildApiError(payload, 'Erro ao carregar estatísticas.');
+      }
+      if (!isStatsResponse(payload)) {
+        throw buildApiError(null, 'Erro ao carregar estatísticas.');
+      }
+      return payload;
     },
     staleTime: 60_000,
     retry: false
@@ -114,12 +193,17 @@ export default function DashboardPage() {
       const response = await fetch(`/api/hub/top-products?${params.toString()}`, {
         headers: { 'x-admin-role': 'true' }
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        const message = payload?.error ?? 'Erro ao carregar ranking de produtos.';
-        throw new Error(message);
+      const payload = (await response.json().catch(() => null)) as unknown;
+      if (!isRecord(payload)) {
+        throw buildApiError(null, 'Erro ao carregar ranking de produtos.');
       }
-      return payload as TopProductsResponse;
+      if (!response.ok || payload.ok === false) {
+        throw buildApiError(payload, 'Erro ao carregar ranking de produtos.');
+      }
+      if (!isTopProductsResponse(payload)) {
+        throw buildApiError(null, 'Erro ao carregar ranking de produtos.');
+      }
+      return payload;
     },
     staleTime: 60_000,
     retry: false
@@ -139,6 +223,15 @@ export default function DashboardPage() {
   }, [statsQuery.data]);
   const hasComparison = statsQuery.data?.compare && revenueSeries.some(point => point.previous !== null);
 
+  const resolveErrorCode = (error: Error): string => (error instanceof ApiError ? error.code : 'unknown_error');
+  const renderErrorNotice = (title: string, error: Error) => (
+    <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+      <p className="font-semibold text-rose-700">{title}</p>
+      <p className="mt-1 text-xs text-rose-600">Código: {resolveErrorCode(error)}</p>
+      <p className="mt-1">{error.message}</p>
+    </div>
+  );
+
   return (
     <div className="flex flex-1 flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -156,26 +249,22 @@ export default function DashboardPage() {
           <CardSkeleton />
         </div>
       ) : statsQuery.isError ? (
-        <Card className="border-red-200 bg-red-50">
+        <Card className="border-rose-200 bg-rose-50">
           <CardHeader>
-            <CardTitle className="text-red-700">Não foi possível carregar as estatísticas.</CardTitle>
+            <CardTitle className="text-rose-700">Não foi possível carregar as estatísticas.</CardTitle>
+            <CardDescription className="text-rose-600">
+              Código: {resolveErrorCode(statsQuery.error)}
+            </CardDescription>
           </CardHeader>
-          <CardContent className="text-sm text-red-600">{statsQuery.error.message}</CardContent>
+          <CardContent className="text-sm text-rose-600">{statsQuery.error.message}</CardContent>
         </Card>
       ) : metrics.length === 0 ? (
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle>Nenhum dado para este período</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-slate-600">
-              Assim que uma sincronização for concluída, as métricas aparecerão automaticamente por aqui.
-            </p>
-            <Button asChild className="mt-4" variant="secondary">
-              <Link href="/config-sync">Sincronizar agora</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <EmptyState
+          title="Nenhum dado para este período"
+          description="Assim que uma sincronização for concluída, as métricas aparecerão automaticamente por aqui."
+          actionLabel="Sincronizar agora"
+          onAction={() => router.push('/config-sync')}
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {metrics.map(metric => {
@@ -211,13 +300,12 @@ export default function DashboardPage() {
             {topProductsQuery.isLoading ? (
               <TableSkeleton rows={5} />
             ) : topProductsQuery.isError ? (
-              <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-600">
-                {topProductsQuery.error.message}
-              </div>
+              renderErrorNotice('Não foi possível carregar o ranking de produtos.', topProductsQuery.error)
             ) : products.length === 0 ? (
-              <div className="rounded-md border border-dashed border-slate-300 p-6 text-sm text-slate-600">
-                Ainda não há vendas suficientes para ranquear produtos neste período.
-              </div>
+              <EmptyState
+                title="Nenhum produto ranqueado"
+                description="Ainda não há vendas suficientes para ranquear produtos neste período."
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -249,9 +337,10 @@ export default function DashboardPage() {
             {statsQuery.isLoading ? (
               <ChartSkeleton />
             ) : revenueSeries.length === 0 ? (
-              <div className="rounded-md border border-dashed border-slate-300 p-6 text-sm text-slate-600">
-                Ainda não há dados suficientes para montar o comparativo visual deste período.
-              </div>
+              <EmptyState
+                title="Sem dados suficientes"
+                description="Ainda não há dados suficientes para montar o comparativo visual deste período."
+              />
             ) : (
               <div className="h-72 w-full">
                 <ResponsiveContainer>
