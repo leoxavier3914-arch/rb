@@ -13,6 +13,8 @@ import { useLocalStorage } from '@/lib/ui/useLocalStorage';
 import { createPeriodSearchParams } from '@/lib/ui/date';
 import { formatMoneyFromCents, formatShortDate } from '@/lib/ui/format';
 import { TableSkeleton } from '@/components/ui/Skeletons';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ApiError, buildApiError } from '@/lib/ui/apiError';
 
 interface Sale {
   readonly id: string;
@@ -78,6 +80,101 @@ const COLUMN_LABELS: Record<(typeof DEFAULT_COLUMNS)[number], string> = {
   created_at: 'Data'
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSale(value: unknown): value is Sale {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === 'string' &&
+    typeof value.customer === 'string' &&
+    typeof value.status === 'string' &&
+    typeof value.total_cents === 'number' &&
+    typeof value.created_at === 'string'
+  );
+}
+
+function isSalesResponse(value: unknown): value is SalesResponse {
+  return isRecord(value) && value.ok === true && Array.isArray(value.items) && value.items.every(isSale);
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || typeof value === 'number';
+}
+
+function isSaleDetail(value: unknown): value is SaleDetail {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === 'string' &&
+    isNullableString(value.status) &&
+    isNullableNumber(value.total_amount_cents) &&
+    isNullableNumber(value.net_amount_cents) &&
+    isNullableNumber(value.fee_amount_cents) &&
+    isNullableString(value.created_at) &&
+    isNullableString(value.paid_at) &&
+    isNullableString(value.updated_at) &&
+    isNullableString(value.customer_id) &&
+    isNullableString(value.product_id)
+  );
+}
+
+function isSaleEvent(value: unknown): value is SaleEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === 'string' &&
+    typeof value.type === 'string' &&
+    typeof value.at === 'string'
+  );
+}
+
+function isSaleNote(value: unknown): value is SaleNote {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === 'string' &&
+    typeof value.body === 'string' &&
+    isNullableString(value.author) &&
+    typeof value.created_at === 'string'
+  );
+}
+
+function isSaleVersion(value: unknown): value is SaleVersion {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === 'string' &&
+    typeof value.version === 'number' &&
+    typeof value.changed_at === 'string'
+  );
+}
+
+function isSaleDetailResponse(value: unknown): value is SaleDetailResponse {
+  return (
+    isRecord(value) &&
+    value.ok === true &&
+    isSaleDetail(value.sale) &&
+    Array.isArray(value.events) &&
+    value.events.every(isSaleEvent) &&
+    Array.isArray(value.notes) &&
+    value.notes.every(isSaleNote) &&
+    Array.isArray(value.versions) &&
+    value.versions.every(isSaleVersion)
+  );
+}
+
 function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.length === b.length && a.every((item, index) => item === b[index]);
 }
@@ -134,12 +231,15 @@ export default function SalesPage() {
       const response = await fetch(`/api/hub/sales?${params.toString()}`, {
         headers: { 'x-admin-role': 'true' }
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        const message = payload?.error ?? 'Erro ao carregar vendas.';
-        throw new Error(message);
+      const payload = (await response.json().catch(() => null)) as unknown;
+      const errorPayload = isRecord(payload) ? payload : null;
+      if (!response.ok || errorPayload?.ok === false) {
+        throw buildApiError(errorPayload, 'Erro ao carregar vendas.');
       }
-      return payload as SalesResponse;
+      if (!isSalesResponse(payload)) {
+        throw buildApiError(null, 'Erro ao carregar vendas.');
+      }
+      return payload;
     },
     staleTime: 60_000,
     retry: false
@@ -161,15 +261,20 @@ export default function SalesPage() {
           columns
         })
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        const message = payload?.error ?? 'Não foi possível salvar o favorito.';
-        throw new Error(message);
+      const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok || (payload as { ok?: boolean }).ok === false) {
+        throw buildApiError(payload, 'Não foi possível salvar o favorito.');
       }
       setFavoriteStatus('success');
     } catch (error) {
       setFavoriteStatus('error');
-      setFavoriteError(error instanceof Error ? error.message : 'Erro ao salvar favorito.');
+      setFavoriteError(
+        error instanceof ApiError
+          ? `${error.message} (código: ${error.code})`
+          : error instanceof Error
+            ? error.message
+            : 'Erro ao salvar favorito.'
+      );
     }
   };
 
@@ -193,6 +298,15 @@ export default function SalesPage() {
 
   const rows = salesQuery.data?.items ?? [];
 
+  const resolveErrorCode = (error: Error): string => (error instanceof ApiError ? error.code : 'unknown_error');
+  const renderErrorNotice = (title: string, error: Error) => (
+    <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+      <p className="font-semibold text-rose-700">{title}</p>
+      <p className="mt-1 text-xs text-rose-600">Código: {resolveErrorCode(error)}</p>
+      <p className="mt-1">{error.message}</p>
+    </div>
+  );
+
   const openDrawerForSale = async (saleId: string): Promise<void> => {
     setSelectedSaleId(saleId);
     setDrawerOpen(true);
@@ -201,16 +315,24 @@ export default function SalesPage() {
       const response = await fetch(`/api/hub/sales/${saleId}`, {
         headers: { 'x-admin-role': 'true' }
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        const message = payload?.error ?? 'Não foi possível carregar os detalhes da venda.';
-        throw new Error(message);
+      const payload = (await response.json().catch(() => null)) as unknown;
+      const errorPayload = isRecord(payload) ? payload : null;
+      if (!response.ok || errorPayload?.ok === false) {
+        throw buildApiError(errorPayload, 'Não foi possível carregar os detalhes da venda.');
       }
-      setDetailState({ status: 'idle', error: null, data: payload as SaleDetailResponse });
+      if (!isSaleDetailResponse(payload)) {
+        throw buildApiError(null, 'Não foi possível carregar os detalhes da venda.');
+      }
+      setDetailState({ status: 'idle', error: null, data: payload });
     } catch (error) {
       setDetailState({
         status: 'error',
-        error: error instanceof Error ? error.message : 'Erro ao carregar detalhes.',
+        error:
+          error instanceof ApiError
+            ? `${error.message} (código: ${error.code})`
+            : error instanceof Error
+              ? error.message
+              : 'Erro ao carregar detalhes.',
         data: null
       });
     }
@@ -245,10 +367,9 @@ export default function SalesPage() {
           body: noteBody.trim()
         })
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        const message = payload?.error ?? 'Não foi possível adicionar a nota.';
-        throw new Error(message);
+      const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok || (payload as { ok?: boolean }).ok === false) {
+        throw buildApiError(payload, 'Não foi possível adicionar a nota.');
       }
       setDetailState(current =>
         current.data
@@ -266,7 +387,13 @@ export default function SalesPage() {
       setNoteStatus('idle');
     } catch (error) {
       setNoteStatus('error');
-      setNoteError(error instanceof Error ? error.message : 'Erro ao criar nota.');
+      setNoteError(
+        error instanceof ApiError
+          ? `${error.message} (código: ${error.code})`
+          : error instanceof Error
+            ? error.message
+            : 'Erro ao criar nota.'
+      );
     }
   };
 
@@ -277,10 +404,9 @@ export default function SalesPage() {
         method: 'DELETE',
         headers: { 'x-admin-role': 'true' }
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        const message = payload?.error ?? 'Não foi possível remover a nota.';
-        throw new Error(message);
+      const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok || (payload as { ok?: boolean }).ok === false) {
+        throw buildApiError(payload, 'Não foi possível remover a nota.');
       }
       setDetailState(current =>
         current.data
@@ -295,7 +421,13 @@ export default function SalesPage() {
           : current
       );
     } catch (error) {
-      setNoteError(error instanceof Error ? error.message : 'Erro ao remover nota.');
+      setNoteError(
+        error instanceof ApiError
+          ? `${error.message} (código: ${error.code})`
+          : error instanceof Error
+            ? error.message
+            : 'Erro ao remover nota.'
+      );
     }
   };
 
@@ -506,13 +638,12 @@ export default function SalesPage() {
           {salesQuery.isLoading ? (
             <TableSkeleton rows={6} />
           ) : salesQuery.isError ? (
-            <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-              {salesQuery.error.message}
-            </div>
+            renderErrorNotice('Não foi possível carregar as vendas.', salesQuery.error)
           ) : rows.length === 0 ? (
-            <div className="rounded-md border border-dashed border-slate-300 p-6 text-sm text-slate-600">
-              Nenhuma venda sincronizada para este intervalo. Inicie uma sincronização para visualizar novos resultados.
-            </div>
+            <EmptyState
+              title="Nenhuma venda sincronizada"
+              description="Nenhuma venda sincronizada para este intervalo. Inicie uma sincronização para visualizar novos resultados."
+            />
           ) : (
             <Table>
               <TableHeader>
