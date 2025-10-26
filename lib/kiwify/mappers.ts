@@ -2,6 +2,7 @@ type UnknownRecord = Record<string, unknown>;
 
 export interface ProductRow {
   readonly id: string;
+  readonly external_id: string;
   readonly title: string;
   readonly price_cents: number;
   readonly currency: string;
@@ -96,8 +97,10 @@ export interface PayoutRow {
 }
 
 export function mapProductPayload(payload: UnknownRecord): ProductRow {
+  const externalId = String(payload.id ?? payload.uuid ?? '');
   return {
-    id: String(payload.id ?? payload.uuid ?? ''),
+    id: externalId,
+    external_id: externalId,
     title: toNullableString(payload.title) ?? '',
     price_cents: toCents(payload.price_cents ?? payload.price ?? payload.price_br ?? 0),
     currency: toNullableString(payload.currency) ?? 'BRL',
