@@ -32,6 +32,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const params = request.nextUrl.searchParams;
   const metricParam = params.get('metric');
   const metric: 'revenue' | 'qty' = metricParam === 'qty' ? 'qty' : 'revenue';
+  const dateFrom = params.get('date_from');
+  const dateTo = params.get('date_to');
   const period = resolvePeriod(params);
   const cacheKey = buildCacheKey('top_products_cache:', {
     metric,
@@ -39,7 +41,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     to: period.current.to.toISOString(),
     compare: period.compare,
     previousFrom: period.previous?.from.toISOString() ?? null,
-    previousTo: period.previous?.to.toISOString() ?? null
+    previousTo: period.previous?.to.toISOString() ?? null,
+    dateFrom: dateFrom ?? null,
+    dateTo: dateTo ?? null
   });
 
   const cached = await getCache<AggregatedProduct[]>(cacheKey);

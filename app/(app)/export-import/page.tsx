@@ -3,6 +3,7 @@
 import { FormEvent, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ApiError, buildApiError } from '@/lib/ui/apiError';
 
 const RESOURCES = ['sales', 'products', 'customers', 'subscriptions', 'enrollments', 'payouts', 'coupons', 'refunds'] as const;
 const FORMATS = ['json', 'csv'] as const;
@@ -26,10 +27,9 @@ async function postJSON(path: string, body: unknown): Promise<any> {
     },
     body: JSON.stringify(body)
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload?.ok === false) {
-    const message = payload?.error ?? 'Falha ao executar ação.';
-    throw new Error(message);
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok || (payload as { ok?: boolean }).ok === false) {
+    throw buildApiError(payload, 'Falha ao executar ação.');
   }
   return payload;
 }
@@ -38,10 +38,9 @@ async function getJSON(path: string): Promise<any> {
   const response = await fetch(path, {
     headers: { 'x-admin-role': 'true' }
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload?.ok === false) {
-    const message = payload?.error ?? 'Falha ao obter status.';
-    throw new Error(message);
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok || (payload as { ok?: boolean }).ok === false) {
+    throw buildApiError(payload, 'Falha ao obter status.');
   }
   return payload;
 }
@@ -62,7 +61,13 @@ export default function ExportImportPage() {
       setJob({ id: payload.jobId, status: 'queued', resultUrl: null });
       setStatusMessage('Job criado com sucesso. Utilize os botões abaixo para processar e acompanhar.');
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Falha ao criar job.');
+      setStatusMessage(
+        error instanceof ApiError
+          ? `${error.message} (código: ${error.code})`
+          : error instanceof Error
+            ? error.message
+            : 'Falha ao criar job.'
+      );
     } finally {
       setLoading(false);
     }
@@ -84,7 +89,13 @@ export default function ExportImportPage() {
       });
       setStatusMessage('Execução concluída. Atualize o status ou baixe o arquivo se disponível.');
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Falha ao executar job.');
+      setStatusMessage(
+        error instanceof ApiError
+          ? `${error.message} (código: ${error.code})`
+          : error instanceof Error
+            ? error.message
+            : 'Falha ao executar job.'
+      );
     } finally {
       setLoading(false);
     }
@@ -106,7 +117,13 @@ export default function ExportImportPage() {
       });
       setStatusMessage('Status atualizado.');
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Falha ao consultar status.');
+      setStatusMessage(
+        error instanceof ApiError
+          ? `${error.message} (código: ${error.code})`
+          : error instanceof Error
+            ? error.message
+            : 'Falha ao consultar status.'
+      );
     } finally {
       setLoading(false);
     }
