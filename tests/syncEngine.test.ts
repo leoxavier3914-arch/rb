@@ -29,7 +29,9 @@ vi.mock('@/lib/kiwify/writes', () => ({
 vi.mock('@/lib/kiwify/syncState', () => ({
   setSyncCursor: vi.fn(() => Promise.resolve()),
   getUnsupportedResources: vi.fn(() => Promise.resolve(new Set())),
-  setUnsupportedResources: vi.fn(() => Promise.resolve())
+  setUnsupportedResources: vi.fn(() => Promise.resolve()),
+  getSalesSyncState: vi.fn(() => Promise.resolve(null)),
+  setSalesSyncState: vi.fn(() => Promise.resolve())
 }));
 
 const loadEnvMock = vi.spyOn(env, 'loadEnv');
@@ -122,6 +124,51 @@ describe('syncEngine', () => {
     expect(writes.upsertDerivedCustomers).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ id: 'cust_1' })])
     );
+    expect(writes.upsertSales).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignora clientes derivados sem id e loga customer_missing_id', async () => {
+    const responseBody = {
+      data: [
+        {
+          id: 'sale_2',
+          customer: {
+            id: null,
+            email: 'buyer-missing@example.com'
+          }
+        }
+      ],
+      meta: {
+        pagination: {
+          page: 1,
+          total_pages: 1
+        }
+      }
+    };
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(responseBody), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+
+    const result = await runSync({
+      cursor: { resource: 'sales', page: 1, intervalIndex: 0, done: false }
+    });
+
+    expect(result.ok).toBe(true);
+    expect(
+      result.logs.some((log) => {
+        try {
+          const parsed = JSON.parse(log);
+          return parsed.event === 'customer_missing_id' && parsed.sale_id === 'sale_2';
+        } catch {
+          return false;
+        }
+      })
+    ).toBe(true);
+    expect(writes.upsertDerivedCustomers).not.toHaveBeenCalled();
     expect(writes.upsertSales).toHaveBeenCalledTimes(1);
   });
 
