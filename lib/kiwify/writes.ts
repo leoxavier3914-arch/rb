@@ -10,6 +10,7 @@ import type {
   SaleRow,
   SubscriptionRow
 } from './mappers';
+import { normalizeExternalId } from './ids';
 
 const DEFAULT_BATCH_SIZE = 200;
 
@@ -60,6 +61,33 @@ async function upsertRows<T extends UpsertableRow>(
       .upsert(slice, { onConflict });
 
     if (error) {
+      if (table === 'kfy_customers') {
+        const customerIds = slice
+          .map((row) => {
+            if (row && typeof row === 'object' && 'id' in row) {
+              const id = (row as { id?: unknown }).id;
+              return typeof id === 'string' && id ? id : null;
+            }
+            return null;
+          })
+          .filter((id): id is string => Boolean(id));
+
+        const logPayload: Record<string, unknown> = {
+          level: 'error',
+          event: 'customer_write_failed',
+          table,
+          operation: 'upsert',
+          customer_id: customerIds.length <= 1 ? customerIds[0] ?? null : customerIds,
+          error
+        };
+
+        if (typeof error.message === 'string' && error.message.includes('cannot insert a non-DEFAULT value into column')) {
+          logPayload.hint = 'column id must be non-identity / no default';
+        }
+
+        console.error(JSON.stringify(logPayload));
+      }
+
       throw new Error(`Failed to upsert into ${table}: ${error.message ?? 'unknown error'}`);
     }
 
@@ -102,15 +130,38 @@ export async function upsertProducts(rows: readonly ProductRow[]): Promise<numbe
   return upsertRows('kfy_products', normalisedRows, 'external_id');
 }
 
+function normalizeCustomerRow(row: CustomerRow): CustomerRow | null {
+  const normalizedId = normalizeExternalId(row.id);
+  if (!normalizedId) {
+    return null;
+  }
+
+  if (row.id === normalizedId) {
+    return row;
+  }
+
+  return { ...row, id: normalizedId };
+}
+
 export function upsertCustomers(rows: readonly CustomerRow[]): Promise<number> {
-  return upsertRows('kfy_customers', rows);
+  const normalized = rows
+    .map((row) => normalizeCustomerRow(row))
+    .filter((row): row is CustomerRow => row !== null);
+  if (normalized.length === 0) {
+    return Promise.resolve(0);
+  }
+  return upsertRows('kfy_customers', normalized);
 }
 
 export async function upsertCustomer(row: CustomerRow | null | undefined): Promise<number> {
-  if (!row || !row.id) {
+  if (!row) {
     return 0;
   }
-  return upsertRows('kfy_customers', [row]);
+  const normalized = normalizeCustomerRow(row);
+  if (!normalized) {
+    return 0;
+  }
+  return upsertRows('kfy_customers', [normalized]);
 }
 
 export async function upsertDerivedCustomers(
@@ -118,8 +169,12 @@ export async function upsertDerivedCustomers(
 ): Promise<number> {
   const unique = new Map<string, CustomerRow>();
   for (const row of rows) {
-    if (row && row.id) {
-      unique.set(row.id, row);
+    if (!row) {
+      continue;
+    }
+    const normalized = normalizeCustomerRow(row);
+    if (normalized) {
+      unique.set(normalized.id, normalized);
     }
   }
   if (unique.size === 0) {

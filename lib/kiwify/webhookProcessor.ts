@@ -58,7 +58,9 @@ export async function processKiwifyEvent(
   if (normalizedType.includes('customer')) {
     const row = mapCustomerPayload(payload);
     await upsertCustomers([row]);
-    await snapshotEntity(client, 'customer', row.id, row);
+    if (row.id) {
+      await snapshotEntity(client, 'customer', row.id, row);
+    }
     return { metricsChanged: false };
   }
 
@@ -105,7 +107,19 @@ async function handleSaleEvent(
     throw new Error('ID da venda ausente no payload do webhook.');
   }
 
-  const customerRow = mapCustomerFromSalePayload(payload);
+  const customerRow = mapCustomerFromSalePayload(payload, {
+    onInvalidCustomerId: (rawId) => {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          event: 'customer_missing_id',
+          source: 'webhook',
+          sale_id: row.id,
+          customer_id: rawId ?? null
+        })
+      );
+    }
+  });
   if (customerRow) {
     await upsertCustomer(customerRow);
   }

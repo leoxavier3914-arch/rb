@@ -1,3 +1,5 @@
+import { normalizeExternalId } from './ids';
+
 type UnknownRecord = Record<string, unknown>;
 
 export interface ProductRow {
@@ -118,8 +120,9 @@ export function mapProductPayload(payload: UnknownRecord): ProductRow {
 }
 
 export function mapCustomerPayload(payload: UnknownRecord): CustomerRow {
+  const normalizedId = normalizeExternalId(payload.id ?? payload.uuid ?? null);
   return {
-    id: String(payload.id ?? payload.uuid ?? ''),
+    id: normalizedId ?? '',
     name: toNullableString(payload.name ?? payload.full_name ?? payload.fullName),
     email: toNullableString(payload.email),
     phone: toNullableString(payload.phone ?? payload.phone_number ?? payload.whatsapp),
@@ -132,18 +135,28 @@ export function mapCustomerPayload(payload: UnknownRecord): CustomerRow {
   };
 }
 
-export function mapCustomerFromSalePayload(payload: UnknownRecord): CustomerRow | null {
+interface CustomerFromSaleOptions {
+  readonly onInvalidCustomerId?: (value: unknown) => void;
+}
+
+export function mapCustomerFromSalePayload(payload: UnknownRecord): CustomerRow | null;
+export function mapCustomerFromSalePayload(
+  payload: UnknownRecord,
+  options?: CustomerFromSaleOptions
+): CustomerRow | null {
   const customer = extractNestedCustomer(payload);
   if (!customer) {
     return null;
   }
 
-  const mapped = mapCustomerPayload(customer);
-  if (!mapped.id) {
+  const normalizedId = normalizeExternalId(customer.id ?? customer.uuid ?? null);
+  if (!normalizedId) {
+    options?.onInvalidCustomerId?.(customer.id ?? customer.uuid ?? null);
     return null;
   }
 
-  return mapped;
+  const normalizedCustomer = { ...customer, id: normalizedId };
+  return mapCustomerPayload(normalizedCustomer);
 }
 
 function extractNestedCustomer(payload: UnknownRecord): UnknownRecord | null {

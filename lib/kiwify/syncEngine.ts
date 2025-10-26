@@ -18,6 +18,7 @@ import {
   type SaleRow,
   type SubscriptionRow
 } from './mappers';
+import { normalizeExternalId } from './ids';
 import {
   upsertCoupons,
   upsertEnrollments,
@@ -402,9 +403,24 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
       const page = parsePage(json, cursor.page);
 
       if (cursor.resource === 'sales') {
-        const derivedCustomers = page.items
-          .map((item) => mapCustomerFromSalePayload(item))
-          .filter((row): row is CustomerRow => row !== null);
+        const derivedCustomers: CustomerRow[] = [];
+        for (const item of page.items) {
+          const customerRow = mapCustomerFromSalePayload(item, {
+            onInvalidCustomerId: (rawId) => {
+              const saleId = normalizeExternalId((item.id ?? item.uuid) as unknown);
+              logs.push(
+                JSON.stringify({
+                  event: 'customer_missing_id',
+                  sale_id: saleId ?? null,
+                  customer_id: rawId ?? null
+                })
+              );
+            }
+          });
+          if (customerRow) {
+            derivedCustomers.push(customerRow);
+          }
+        }
         if (derivedCustomers.length > 0) {
           const affectedCustomers = await upsertDerivedCustomers(derivedCustomers);
           if (affectedCustomers > 0) {
