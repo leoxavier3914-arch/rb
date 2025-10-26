@@ -27,7 +27,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const client = getServiceClient();
+  let client: ReturnType<typeof getServiceClient>;
+  try {
+    client = getServiceClient();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Falha ao carregar cliente Supabase.';
+    return jsonError('webhook_retry_failed', message);
+  }
   const { data, error } = await client
     .from('app_events')
     .select('id, type, payload')
