@@ -179,13 +179,18 @@ function extractNestedCustomer(payload: UnknownRecord): UnknownRecord | null {
 
 export function mapSalePayload(payload: UnknownRecord): SaleRow {
   const nestedCustomer = extractNestedCustomer(payload);
+  const rawCustomerId =
+    payload.customer_id ??
+    payload.customerId ??
+    (nestedCustomer?.id as unknown) ??
+    (nestedCustomer?.uuid as unknown) ??
+    null;
+  const normalizedCustomerId = normalizeExternalId(rawCustomerId);
   return {
     id: String(payload.id ?? payload.uuid ?? ''),
     status: toNullableString(payload.status),
     product_id: toNullableString(payload.product_id ?? payload.productId),
-    customer_id: toNullableString(
-      payload.customer_id ?? payload.customerId ?? (nestedCustomer?.id as string | undefined)
-    ),
+    customer_id: normalizedCustomerId,
     total_amount_cents: toCents(
       payload.total_amount_cents ?? payload.total_amount ?? payload.amount ?? payload.total
     ),
