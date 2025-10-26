@@ -36,4 +36,13 @@ alter table if exists kfy_subscriptions
 alter table if exists kfy_enrollments
   add constraint kfy_enrollments_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
 
+alter table if exists kfy_orders
+  add constraint kfy_orders_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+alter table if exists kfy_sales
+  add constraint kfy_sales_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+alter table if exists kfy_subscriptions
+  add constraint kfy_subscriptions_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+alter table if exists kfy_enrollments
+  add constraint kfy_enrollments_customer_id_fkey foreign key (customer_id) references kfy_customers(id);
+
 commit;
