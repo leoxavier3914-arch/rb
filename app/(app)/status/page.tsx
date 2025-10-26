@@ -130,6 +130,22 @@ export default function StatusPage() {
         </Card>
       ),
       (
+        <Card key="doctor">
+          <CardHeader>
+            <CardTitle>Backfill Doctor</CardTitle>
+            <CardDescription>Auditoria de preparo do backfill.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <span className="text-sm text-slate-600">
+              Valide janelas, ordens de escrita e requisitos do reconcile antes de rodar.
+            </span>
+            <Button asChild variant="secondary">
+              <Link href="/status/backfill-doctor">Abrir auditoria</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ),
+      (
         <Card key="storage">
           <CardHeader>
             <CardTitle>Storage</CardTitle>

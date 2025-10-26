@@ -14,6 +14,7 @@ import {
   type SaleRow
 } from './mappers';
 import {
+  SupabaseWriteError,
   upsertCoupons,
   upsertCustomers,
   upsertCustomer,
@@ -125,7 +126,10 @@ async function handleSaleEvent(
   }
 
   const previous = await loadSaleState(client, row.id);
-  await upsertSales([row]);
+  const inserted = await attemptSaleUpsertWithRetry(row, customerRow);
+  if (!inserted) {
+    return { metricsChanged: false };
+  }
 
   const statusChanged = normalizeStatus(previous?.status) !== normalizeStatus(row.status);
   const paidChanged = normalizeDate(previous?.paid_at) !== normalizeDate(row.paid_at);
@@ -141,6 +145,46 @@ async function handleSaleEvent(
 
   const metricsChanged = shouldSnapshot || statusChanged;
   return { metricsChanged: metricsChanged || paidChanged || affectsMetrics(previous?.status, row.status) };
+}
+
+async function attemptSaleUpsertWithRetry(row: SaleRow, customerRow: CustomerRow | null): Promise<boolean> {
+  try {
+    await upsertSales([row]);
+    return true;
+  } catch (error) {
+    if (!isForeignKeyViolation(error)) {
+      throw error;
+    }
+  }
+
+  if (customerRow) {
+    await upsertCustomer(customerRow);
+  }
+
+  try {
+    await upsertSales([row]);
+    return true;
+  } catch (error) {
+    if (isForeignKeyViolation(error)) {
+      const payload = {
+        level: 'warn',
+        event: 'fk_violation_after_retry',
+        source: 'webhook',
+        sale_id: row.id,
+        customer_id: row.customer_id ?? customerRow?.id ?? null,
+        error: (error as Error).message ?? String(error)
+      };
+      console.warn(JSON.stringify(payload));
+      return false;
+    }
+    throw error;
+  }
+
+  return true;
+}
+
+function isForeignKeyViolation(error: unknown): error is SupabaseWriteError {
+  return error instanceof SupabaseWriteError && error.code === '23503';
 }
 
 async function loadSaleState(client: SupabaseClient, saleId: string): Promise<SaleState | null> {

@@ -154,6 +154,7 @@ export function mapCustomerFromSalePayload(
   payload: UnknownRecord,
   options?: CustomerFromSaleOptions
 ): CustomerRow | null {
+  let invalidCustomerId: unknown = null;
   const customer = extractNestedCustomer(payload);
   if (customer) {
     const normalizedId = normalizeExternalId(customer.id ?? customer.uuid ?? null);
@@ -162,10 +163,7 @@ export function mapCustomerFromSalePayload(
       return mapCustomerPayload(normalizedCustomer);
     }
 
-    const rawNestedId = customer.id ?? customer.uuid ?? null;
-    if (rawNestedId !== null && rawNestedId !== undefined) {
-      options?.onInvalidCustomerId?.(rawNestedId);
-    }
+    invalidCustomerId = customer.id ?? customer.uuid ?? null;
   }
 
   const rawCustomerId =
@@ -176,10 +174,13 @@ export function mapCustomerFromSalePayload(
     null;
   const normalizedId = normalizeExternalId(rawCustomerId);
   if (!normalizedId) {
-    if (rawCustomerId !== null && rawCustomerId !== undefined) {
-      options?.onInvalidCustomerId?.(rawCustomerId);
-    }
+    const reportedId = rawCustomerId ?? invalidCustomerId ?? null;
+    options?.onInvalidCustomerId?.(reportedId);
     return null;
+  }
+
+  if (invalidCustomerId !== null && invalidCustomerId !== undefined) {
+    options?.onInvalidCustomerId?.(invalidCustomerId);
   }
 
   const fallbackCustomer: UnknownRecord = {
