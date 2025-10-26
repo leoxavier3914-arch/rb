@@ -122,6 +122,10 @@ export function mapProductPayload(payload: UnknownRecord): ProductRow {
 
 export function mapCustomerPayload(payload: UnknownRecord): CustomerRow {
   const normalizedId = normalizeExternalId(payload.id ?? payload.uuid ?? null);
+  const createdAt =
+    toIso(payload.created_at ?? payload.createdAt ?? null) ?? new Date().toISOString();
+  const updatedAt = toIso(payload.updated_at ?? payload.updatedAt ?? null) ?? createdAt;
+
   return {
     id: normalizedId ?? '',
     external_id: normalizedId ?? '',
@@ -131,8 +135,8 @@ export function mapCustomerPayload(payload: UnknownRecord): CustomerRow {
     country: toNullableString(payload.country ?? payload.country_code),
     state: toNullableString(payload.state ?? payload.state_code),
     city: toNullableString(payload.city),
-    created_at: toIso(payload.created_at ?? payload.createdAt ?? null),
-    updated_at: toIso(payload.updated_at ?? payload.updatedAt ?? null),
+    created_at: createdAt,
+    updated_at: updatedAt,
     raw: payload
   };
 }
