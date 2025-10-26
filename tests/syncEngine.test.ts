@@ -103,7 +103,7 @@ describe('syncEngine', () => {
     expect(result.ok).toBe(true);
 
     const [requestedPath] = fetchMock.mock.calls[0] as [string];
-    expect(requestedPath.startsWith('/v1/customers/list?')).toBe(true);
+    expect(requestedPath.startsWith('/v1/customers?')).toBe(true);
 
     const url = new URL(requestedPath, 'https://public-api.kiwify.com');
     expect(url.searchParams.get('page_number')).toBe('1');
