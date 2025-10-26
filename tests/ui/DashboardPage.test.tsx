@@ -33,7 +33,11 @@ describe('DashboardPage', () => {
                 current: 600000,
                 previous: 300000
               }
-            ]
+            ],
+            series: {
+              current: [],
+              previous: []
+            }
           })
         });
       }
