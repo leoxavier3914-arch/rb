@@ -100,6 +100,9 @@ export interface PayoutRow {
 export function mapProductPayload(payload: UnknownRecord): ProductRow {
   const externalId = String(payload.id ?? payload.uuid ?? '');
   const active = toBoolean(payload.active ?? payload.enabled ?? payload.is_active ?? payload.published, true);
+  const createdAt = toIso(payload.created_at ?? payload.createdAt ?? null);
+  const updatedAt =
+    toIso(payload.updated_at ?? payload.updatedAt ?? null) ?? createdAt ?? new Date().toISOString();
   return {
     id: externalId,
     external_id: externalId,
@@ -108,8 +111,8 @@ export function mapProductPayload(payload: UnknownRecord): ProductRow {
     price_cents: toCents(payload.price_cents ?? payload.price ?? payload.price_br ?? 0),
     currency: toNullableString(payload.currency) ?? 'BRL',
     active,
-    created_at: toIso(payload.created_at ?? payload.createdAt ?? null),
-    updated_at: toIso(payload.updated_at ?? payload.updatedAt ?? null),
+    created_at: createdAt,
+    updated_at: updatedAt,
     raw: payload
   };
 }
