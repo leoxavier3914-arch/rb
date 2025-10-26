@@ -44,13 +44,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   assertIsAdmin(request);
 
   const params = request.nextUrl.searchParams;
+  const dateFrom = params.get('date_from');
+  const dateTo = params.get('date_to');
   const period = resolvePeriod(params);
   const cacheKey = buildCacheKey('stats_cache:', {
     from: period.current.from.toISOString(),
     to: period.current.to.toISOString(),
     compare: period.compare,
     previousFrom: period.previous?.from.toISOString() ?? null,
-    previousTo: period.previous?.to.toISOString() ?? null
+    previousTo: period.previous?.to.toISOString() ?? null,
+    dateFrom: dateFrom ?? null,
+    dateTo: dateTo ?? null
   });
 
   const cached = await getCache<CachedStats | MetricValue[]>(cacheKey);
