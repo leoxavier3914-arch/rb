@@ -4,6 +4,7 @@ export interface ProductRow {
   readonly id: string;
   readonly external_id: string;
   readonly title: string;
+  readonly status: string;
   readonly price_cents: number;
   readonly currency: string;
   readonly active: boolean;
@@ -98,13 +99,15 @@ export interface PayoutRow {
 
 export function mapProductPayload(payload: UnknownRecord): ProductRow {
   const externalId = String(payload.id ?? payload.uuid ?? '');
+  const active = toBoolean(payload.active ?? payload.enabled ?? payload.is_active ?? payload.published, true);
   return {
     id: externalId,
     external_id: externalId,
     title: toNullableString(payload.title) ?? '',
+    status: resolveProductStatus(payload, active),
     price_cents: toCents(payload.price_cents ?? payload.price ?? payload.price_br ?? 0),
     currency: toNullableString(payload.currency) ?? 'BRL',
-    active: Boolean(payload.active ?? payload.enabled ?? true),
+    active,
     created_at: toIso(payload.created_at ?? payload.createdAt ?? null),
     updated_at: toIso(payload.updated_at ?? payload.updatedAt ?? null),
     raw: payload
@@ -269,4 +272,48 @@ function toNullableNumber(value: unknown): number | null {
   }
   const numeric = Number.parseFloat(String(value).replace(',', '.'));
   return Number.isNaN(numeric) ? null : numeric;
+}
+
+function toBoolean(value: unknown, fallback: boolean): boolean {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return fallback;
+    }
+    return value !== 0;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (['true', '1', 'yes', 'y', 'sim', 'ativo', 'active', 'enabled', 'on'].includes(normalized)) {
+    return true;
+  }
+
+  if (['false', '0', 'no', 'n', 'nao', 'não', 'inactive', 'inativo', 'disabled', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
+function resolveProductStatus(payload: UnknownRecord, isActive: boolean): string {
+  const rawStatus =
+    toNullableString(payload.status ?? payload.state ?? payload.lifecycle_status ?? payload.publication_status) ??
+    null;
+
+  if (rawStatus) {
+    return rawStatus;
+  }
+
+  return isActive ? 'active' : 'inactive';
 }
