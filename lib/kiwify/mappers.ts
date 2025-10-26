@@ -157,13 +157,15 @@ export function mapCustomerFromSalePayload(
   const customer = extractNestedCustomer(payload);
   if (customer) {
     const normalizedId = normalizeExternalId(customer.id ?? customer.uuid ?? null);
-    if (!normalizedId) {
-      options?.onInvalidCustomerId?.(customer.id ?? customer.uuid ?? null);
-      return null;
+    if (normalizedId) {
+      const normalizedCustomer = { ...customer, id: normalizedId };
+      return mapCustomerPayload(normalizedCustomer);
     }
 
-    const normalizedCustomer = { ...customer, id: normalizedId };
-    return mapCustomerPayload(normalizedCustomer);
+    const rawNestedId = customer.id ?? customer.uuid ?? null;
+    if (rawNestedId !== null && rawNestedId !== undefined) {
+      options?.onInvalidCustomerId?.(rawNestedId);
+    }
   }
 
   const rawCustomerId =
@@ -181,27 +183,62 @@ export function mapCustomerFromSalePayload(
   }
 
   const fallbackCustomer: UnknownRecord = {
+    ...(customer ?? {}),
     id: normalizedId,
     uuid: normalizedId,
     name:
+      (customer?.name as unknown) ??
+      (customer?.full_name as unknown) ??
+      (customer?.fullName as unknown) ??
       payload.customer_name ??
       payload.customerName ??
       payload.customer_full_name ??
       payload.customerFullName ??
       null,
-    email: payload.customer_email ?? payload.customerEmail ?? payload.email ?? null,
+    email:
+      (customer?.email as unknown) ??
+      payload.customer_email ??
+      payload.customerEmail ??
+      payload.email ??
+      null,
     phone:
+      (customer?.phone as unknown) ??
+      (customer?.phone_number as unknown) ??
+      (customer?.phoneNumber as unknown) ??
+      (customer?.whatsapp as unknown) ??
       payload.customer_phone ??
       payload.customerPhone ??
       payload.customer_whatsapp ??
       payload.customerWhatsapp ??
       payload.whatsapp ??
       null,
-    country: payload.customer_country ?? payload.customerCountry ?? null,
-    state: payload.customer_state ?? payload.customerState ?? null,
-    city: payload.customer_city ?? payload.customerCity ?? null,
-    created_at: payload.customer_created_at ?? payload.customerCreatedAt ?? null,
-    updated_at: payload.customer_updated_at ?? payload.customerUpdatedAt ?? null
+    country:
+      (customer?.country as unknown) ??
+      (customer?.country_code as unknown) ??
+      (customer?.countryCode as unknown) ??
+      payload.customer_country ??
+      payload.customerCountry ??
+      null,
+    state:
+      (customer?.state as unknown) ??
+      (customer?.state_code as unknown) ??
+      (customer?.stateCode as unknown) ??
+      payload.customer_state ??
+      payload.customerState ??
+      null,
+    city: (customer?.city as unknown) ?? payload.customer_city ?? payload.customerCity ?? null,
+    created_at:
+      (customer?.created_at as unknown) ??
+      (customer?.createdAt as unknown) ??
+      payload.customer_created_at ??
+      payload.customerCreatedAt ??
+      null,
+    updated_at:
+      (customer?.updated_at as unknown) ??
+      (customer?.updatedAt as unknown) ??
+      payload.customer_updated_at ??
+      payload.customerUpdatedAt ??
+      null
   };
 
   return mapCustomerPayload(fallbackCustomer);

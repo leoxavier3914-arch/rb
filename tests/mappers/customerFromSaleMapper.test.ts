@@ -48,4 +48,29 @@ describe('mapCustomerFromSalePayload', () => {
     expect(result).toBeNull();
     expect(onInvalid).toHaveBeenCalledWith('   ');
   });
+
+  it('deriva cliente a partir de campos planos quando customer aninhado possui id inválido', () => {
+    const onInvalid = vi.fn();
+
+    const result = mapCustomerFromSalePayload(
+      {
+        id: 'sale_nested',
+        customer_id: 'cust-123',
+        customer: {
+          id: '',
+          name: 'Nested Buyer',
+          email: 'nested@example.com'
+        },
+        customer_phone: '+5511988887777'
+      },
+      { onInvalidCustomerId: onInvalid }
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.id).toBe('cust-123');
+    expect(result?.name).toBe('Nested Buyer');
+    expect(result?.email).toBe('nested@example.com');
+    expect(result?.phone).toBe('+5511988887777');
+    expect(onInvalid).toHaveBeenCalledWith('');
+  });
 });
