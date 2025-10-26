@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   mapCouponPayload,
   mapCustomerPayload,
+  mapCustomerFromSalePayload,
   mapEnrollmentPayload,
   mapPayoutPayload,
   mapProductPayload,
@@ -15,6 +16,7 @@ import {
 import {
   upsertCoupons,
   upsertCustomers,
+  upsertCustomer,
   upsertEnrollments,
   upsertPayouts,
   upsertProducts,
@@ -101,6 +103,11 @@ async function handleSaleEvent(
   const row = mapSalePayload(payload);
   if (!row.id) {
     throw new Error('ID da venda ausente no payload do webhook.');
+  }
+
+  const customerRow = mapCustomerFromSalePayload(payload);
+  if (customerRow) {
+    await upsertCustomer(customerRow);
   }
 
   const previous = await loadSaleState(client, row.id);

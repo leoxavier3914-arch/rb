@@ -1,9 +1,9 @@
 import { loadEnv } from '@/lib/env';
-import { kiwifyFetch } from './http';
+import { KiwifyHttpError, kiwifyFetch } from './http';
 import {
   mapCouponPayload,
-  mapCustomerPayload,
   mapEnrollmentPayload,
+  mapCustomerFromSalePayload,
   mapPayoutPayload,
   mapProductPayload,
   mapRefundPayload,
@@ -20,21 +20,20 @@ import {
 } from './mappers';
 import {
   upsertCoupons,
-  upsertCustomers,
   upsertEnrollments,
   upsertPayouts,
   upsertProducts,
   upsertRefunds,
   upsertSales,
-  upsertSubscriptions
+  upsertSubscriptions,
+  upsertDerivedCustomers
 } from './writes';
-import { setSyncCursor } from './syncState';
+import { getUnsupportedResources, setSyncCursor, setUnsupportedResources } from './syncState';
 
 const DAY = 24 * 60 * 60 * 1000;
 
 const RESOURCES = [
   'products',
-  'customers',
   'sales',
   'subscriptions',
   'enrollments',
@@ -44,6 +43,13 @@ const RESOURCES = [
 ] as const;
 
 export type SyncResource = (typeof RESOURCES)[number];
+
+function isSupportedResource(value: unknown): value is SyncResource {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return (RESOURCES as readonly string[]).includes(value);
+}
 
 interface IntervalRange {
   readonly start: Date;
@@ -73,12 +79,6 @@ const RESOURCE_CONFIG: Record<SyncResource, ResourceConfig<any>> = {
     path: '/v1/products',
     mapper: mapProductPayload,
     writer: upsertProducts,
-    supportsRange: false
-  },
-  customers: {
-    path: '/v1/customers',
-    mapper: mapCustomerPayload,
-    writer: upsertCustomers,
     supportsRange: false
   },
   sales: {
@@ -168,9 +168,19 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
   }
 
   const pageSize = env.KFY_PAGE_SIZE ?? 200;
+  const unsupportedResources = await getUnsupportedResources();
 
   try {
     while (Date.now() < budgetEndsAt) {
+      if (unsupportedResources.has(cursor.resource)) {
+        logs.push(`resource_unsupported_skip:${cursor.resource}`);
+        cursor = advanceCursor(cursor, intervals.length);
+        if (cursor.done) {
+          return finalize(true, true, null, stats, logs, request.persist);
+        }
+        continue;
+      }
+
       const resourceConfig = RESOURCE_CONFIG[cursor.resource];
       if (!resourceConfig) {
         logs.push(`Configuração ausente para recurso ${cursor.resource}`);
@@ -190,18 +200,44 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
 
       logs.push(`Sync ${cursor.resource} página ${cursor.page} intervalo ${cursor.intervalIndex}`);
 
-      const response = await kiwifyFetch(`${resourceConfig.path}?${searchParams.toString()}`, {
-        budgetEndsAt
-      });
+      let response: Response;
+      try {
+        response = await kiwifyFetch(`${resourceConfig.path}?${searchParams.toString()}`, {
+          budgetEndsAt
+        });
+      } catch (error) {
+        if (isUnsupportedResourceError(error)) {
+          if (!unsupportedResources.has(cursor.resource)) {
+            unsupportedResources.add(cursor.resource);
+            await setUnsupportedResources(unsupportedResources);
+          }
+          logs.push(`resource_not_found_skip:${cursor.resource}`);
+          cursor = advanceCursor(cursor, intervals.length);
+          if (cursor.done) {
+            return finalize(true, true, null, stats, logs, request.persist);
+          }
+          continue;
+        }
 
-      if (!response.ok) {
-        const message = await safeReadText(response);
-        logs.push(`Falha ${response.status} ao sincronizar ${cursor.resource}: ${message}`);
+        logs.push(`Falha ao sincronizar ${cursor.resource}: ${(error as Error).message ?? String(error)}`);
         return finalize(false, false, cursor, stats, logs, request.persist);
       }
 
       const json = (await response.json()) as UnknownRecord;
       const page = parsePage(json, cursor.page);
+
+      if (cursor.resource === 'sales') {
+        const derivedCustomers = page.items
+          .map((item) => mapCustomerFromSalePayload(item))
+          .filter((row): row is CustomerRow => row !== null);
+        if (derivedCustomers.length > 0) {
+          const affectedCustomers = await upsertDerivedCustomers(derivedCustomers);
+          if (affectedCustomers > 0) {
+            stats.customers = (stats.customers ?? 0) + affectedCustomers;
+          }
+        }
+      }
+
       const mapped = page.items.map((item) => resourceConfig.mapper(item));
 
       if (mapped.length > 0) {
@@ -239,20 +275,31 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
 }
 
 function normaliseCursor(cursor: SyncCursor | null | undefined, intervalsLength: number): SyncCursor {
-  const base: SyncCursor = cursor ?? {
+  const fallback: SyncCursor = {
     resource: RESOURCES[0],
     page: 1,
     intervalIndex: 0,
     done: false
   };
 
-  if (base.intervalIndex >= intervalsLength) {
+  const provided = cursor ?? fallback;
+  const requestedResource = (provided as { resource?: string }).resource;
+  const resource = isSupportedResource(requestedResource) ? requestedResource : RESOURCES[0];
+  const normalized: SyncCursor = {
+    ...provided,
+    resource,
+    page: Math.max(1, provided.page ?? 1),
+    intervalIndex: provided.intervalIndex ?? 0,
+    done: Boolean(provided.done)
+  };
+
+  if (normalized.intervalIndex >= intervalsLength) {
     return {
-      ...base,
+      ...normalized,
       intervalIndex: Math.max(0, intervalsLength - 1)
     };
   }
-  return base;
+  return normalized;
 }
 
 function resolveIntervals(request: SyncRequest): IntervalRange[] {
@@ -387,12 +434,17 @@ function chooseNumber(candidates: Array<unknown>): number | undefined {
   return undefined;
 }
 
-async function safeReadText(response: Response): Promise<string> {
-  try {
-    return await response.text();
-  } catch {
-    return '';
+function isUnsupportedResourceError(error: unknown): error is KiwifyHttpError {
+  if (!(error instanceof KiwifyHttpError)) {
+    return false;
   }
+  if (error.status === 404) {
+    return true;
+  }
+  if (error.isHtml && /cannot\s+get/i.test(error.bodyText)) {
+    return true;
+  }
+  return false;
 }
 
 async function finalize(

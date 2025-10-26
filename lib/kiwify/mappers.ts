@@ -132,12 +132,37 @@ export function mapCustomerPayload(payload: UnknownRecord): CustomerRow {
   };
 }
 
+export function mapCustomerFromSalePayload(payload: UnknownRecord): CustomerRow | null {
+  const customer = extractNestedCustomer(payload);
+  if (!customer) {
+    return null;
+  }
+
+  const mapped = mapCustomerPayload(customer);
+  if (!mapped.id) {
+    return null;
+  }
+
+  return mapped;
+}
+
+function extractNestedCustomer(payload: UnknownRecord): UnknownRecord | null {
+  const customer = payload.customer;
+  if (customer && typeof customer === 'object' && !Array.isArray(customer)) {
+    return customer as UnknownRecord;
+  }
+  return null;
+}
+
 export function mapSalePayload(payload: UnknownRecord): SaleRow {
+  const nestedCustomer = extractNestedCustomer(payload);
   return {
     id: String(payload.id ?? payload.uuid ?? ''),
     status: toNullableString(payload.status),
     product_id: toNullableString(payload.product_id ?? payload.productId),
-    customer_id: toNullableString(payload.customer_id ?? payload.customerId),
+    customer_id: toNullableString(
+      payload.customer_id ?? payload.customerId ?? (nestedCustomer?.id as string | undefined)
+    ),
     total_amount_cents: toCents(
       payload.total_amount_cents ?? payload.total_amount ?? payload.amount ?? payload.total
     ),

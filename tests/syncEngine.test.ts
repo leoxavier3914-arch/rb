@@ -1,17 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildDefaultIntervals, runSync } from '@/lib/kiwify/syncEngine';
 import * as env from '@/lib/env';
-import { kiwifyFetch } from '@/lib/kiwify/http';
+import { KiwifyHttpError, kiwifyFetch } from '@/lib/kiwify/http';
 import * as writes from '@/lib/kiwify/writes';
 import * as syncState from '@/lib/kiwify/syncState';
 
-vi.mock('@/lib/kiwify/http', () => ({
-  kiwifyFetch: vi.fn()
-}));
+vi.mock('@/lib/kiwify/http', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/kiwify/http')>('@/lib/kiwify/http');
+  return {
+    ...actual,
+    kiwifyFetch: vi.fn()
+  };
+});
 
 vi.mock('@/lib/kiwify/writes', () => ({
   upsertProducts: vi.fn(() => Promise.resolve(1)),
   upsertCustomers: vi.fn(() => Promise.resolve(0)),
+  upsertCustomer: vi.fn(() => Promise.resolve(0)),
+  upsertDerivedCustomers: vi.fn(() => Promise.resolve(0)),
   upsertSales: vi.fn(() => Promise.resolve(0)),
   upsertSubscriptions: vi.fn(() => Promise.resolve(0)),
   upsertEnrollments: vi.fn(() => Promise.resolve(0)),
@@ -21,7 +27,9 @@ vi.mock('@/lib/kiwify/writes', () => ({
 }));
 
 vi.mock('@/lib/kiwify/syncState', () => ({
-  setSyncCursor: vi.fn(() => Promise.resolve())
+  setSyncCursor: vi.fn(() => Promise.resolve()),
+  getUnsupportedResources: vi.fn(() => Promise.resolve(new Set())),
+  setUnsupportedResources: vi.fn(() => Promise.resolve())
 }));
 
 const loadEnvMock = vi.spyOn(env, 'loadEnv');
@@ -78,9 +86,17 @@ describe('syncEngine', () => {
     expect(syncState.setSyncCursor).toHaveBeenCalledTimes(1);
   });
 
-  it('usa endpoint paginado de clientes sem filtros de intervalo', async () => {
+  it('upserta clientes derivados ao processar vendas', async () => {
     const responseBody = {
-      data: [],
+      data: [
+        {
+          id: 'sale_1',
+          customer: {
+            id: 'cust_1',
+            email: 'buyer@example.com'
+          }
+        }
+      ],
       meta: {
         pagination: {
           page: 1,
@@ -97,19 +113,48 @@ describe('syncEngine', () => {
     );
 
     const result = await runSync({
-      cursor: { resource: 'customers', page: 1, intervalIndex: 0, done: false }
+      cursor: { resource: 'sales', page: 1, intervalIndex: 0, done: false },
+      full: true
     });
 
     expect(result.ok).toBe(true);
+    expect(writes.upsertDerivedCustomers).toHaveBeenCalledTimes(1);
+    expect(writes.upsertDerivedCustomers).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: 'cust_1' })])
+    );
+    expect(writes.upsertSales).toHaveBeenCalledTimes(1);
+  });
 
-    const [requestedPath] = fetchMock.mock.calls[0] as [string];
-    expect(requestedPath.startsWith('/v1/customers?')).toBe(true);
+  it('marca recurso como não suportado ao receber 404', async () => {
+    const notFoundError = new KiwifyHttpError('not found', {
+      status: 404,
+      url: 'https://example.test/v1/coupons',
+      isHtml: false
+    });
 
-    const url = new URL(requestedPath, 'https://public-api.kiwify.com');
-    expect(url.searchParams.get('page_number')).toBe('1');
-    expect(url.searchParams.get('page_size')).toBe('2');
-    expect(url.searchParams.has('start_date')).toBe(false);
-    expect(url.searchParams.has('end_date')).toBe(false);
+    fetchMock.mockRejectedValueOnce(notFoundError);
+
+    const refundsResponse = {
+      data: [],
+      meta: {
+        pagination: { page: 1, total_pages: 1 }
+      }
+    };
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(refundsResponse), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+
+    const result = await runSync({
+      cursor: { resource: 'coupons', page: 1, intervalIndex: 0, done: false }
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.logs.some((log) => log.startsWith('resource_not_found_skip'))).toBe(true);
+    expect(syncState.setUnsupportedResources).toHaveBeenCalledTimes(1);
   });
 
   it('short-circuits quando orçamento insuficiente', async () => {
