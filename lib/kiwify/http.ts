@@ -9,6 +9,21 @@ export interface KiwifyRequestInit extends Omit<RequestInit, 'body'> {
   readonly json?: unknown;
 }
 
+export class KiwifyHttpError extends Error {
+  readonly status: number;
+  readonly url: string;
+  readonly isHtml: boolean;
+  readonly bodyText: string;
+
+  constructor(message: string, options: { status: number; url: string; isHtml: boolean; bodyText?: string }) {
+    super(message);
+    this.status = options.status;
+    this.url = options.url;
+    this.isHtml = options.isHtml;
+    this.bodyText = options.bodyText ?? '';
+  }
+}
+
 export async function kiwifyFetch(path: string, init: KiwifyRequestInit = {}): Promise<Response> {
   const env = loadEnv();
   const budgetEndsAt = init.budgetEndsAt ?? Number.POSITIVE_INFINITY;
@@ -64,7 +79,8 @@ export async function kiwifyFetch(path: string, init: KiwifyRequestInit = {}): P
     const id = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await fetch(`${env.KIWIFY_API_BASE_URL ?? ''}${path}`, requestInit);
+      const url = `${env.KIWIFY_API_BASE_URL ?? ''}${path}`;
+      const response = await fetch(url, requestInit);
 
       if ((response.status === 401 || response.status === 403) && attempt === 1) {
         attempt += 1;
@@ -82,6 +98,27 @@ export async function kiwifyFetch(path: string, init: KiwifyRequestInit = {}): P
         clearTimeout(id);
         await delay(delayMs);
         continue;
+      }
+
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type') ?? '';
+        const isHtml = contentType.toLowerCase().includes('text/html');
+        let bodyText = '';
+        try {
+          bodyText = await response.text();
+        } catch {
+          bodyText = '';
+        }
+
+        throw new KiwifyHttpError(
+          `Kiwify request to ${url} failed with status ${response.status}`,
+          {
+            status: response.status,
+            url,
+            isHtml,
+            bodyText: bodyText.slice(0, 2048)
+          }
+        );
       }
 
       return response;

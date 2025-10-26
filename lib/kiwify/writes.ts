@@ -106,6 +106,28 @@ export function upsertCustomers(rows: readonly CustomerRow[]): Promise<number> {
   return upsertRows('kfy_customers', rows);
 }
 
+export async function upsertCustomer(row: CustomerRow | null | undefined): Promise<number> {
+  if (!row || !row.id) {
+    return 0;
+  }
+  return upsertRows('kfy_customers', [row]);
+}
+
+export async function upsertDerivedCustomers(
+  rows: readonly (CustomerRow | null | undefined)[]
+): Promise<number> {
+  const unique = new Map<string, CustomerRow>();
+  for (const row of rows) {
+    if (row && row.id) {
+      unique.set(row.id, row);
+    }
+  }
+  if (unique.size === 0) {
+    return 0;
+  }
+  return upsertCustomers(Array.from(unique.values()));
+}
+
 export function upsertSales(rows: readonly SaleRow[]): Promise<number> {
   return upsertRows('kfy_sales', rows);
 }
