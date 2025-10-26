@@ -1,6 +1,9 @@
 begin;
 
 -- Ensure ID columns are TEXT without identity/default
+alter table if exists kfy_orders drop constraint if exists kfy_orders_product_id_fkey;
+alter table if exists kfy_enrollments drop constraint if exists kfy_enrollments_product_id_fkey;
+
 alter table if exists kfy_products alter column id drop identity if exists;
 alter table if exists kfy_products alter column id drop default;
 alter table if exists kfy_products alter column id type text using id::text;
@@ -140,7 +143,25 @@ where tc.constraint_type = 'FOREIGN KEY'
     'kfy_orders_customer_id_fkey',
     'kfy_sales_customer_id_fkey',
     'kfy_subscriptions_customer_id_fkey',
-    'kfy_enrollments_customer_id_fkey'
+    'kfy_enrollments_customer_id_fkey',
+    'kfy_orders_product_id_fkey',
+    'kfy_enrollments_product_id_fkey'
   );
+
+do $$
+begin
+  if to_regclass('public.kfy_orders') is not null then
+    alter table kfy_orders
+      add constraint kfy_orders_product_id_fkey foreign key (product_id) references kfy_products(id)
+      on update restrict on delete restrict;
+  end if;
+
+  if to_regclass('public.kfy_enrollments') is not null then
+    alter table kfy_enrollments
+      add constraint kfy_enrollments_product_id_fkey foreign key (product_id) references kfy_products(id)
+      on update restrict on delete restrict;
+  end if;
+end;
+$$;
 
 commit;
