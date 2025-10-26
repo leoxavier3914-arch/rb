@@ -69,8 +69,37 @@ async function upsertRows<T extends UpsertableRow>(
   return total;
 }
 
-export function upsertProducts(rows: readonly ProductRow[]): Promise<number> {
-  return upsertRows('kfy_products', rows, 'external_id');
+export async function upsertProducts(rows: readonly ProductRow[]): Promise<number> {
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  const client = getServiceClient();
+  const uniqueExternalIds = Array.from(new Set(rows.map((row) => row.external_id).filter(Boolean)));
+
+  let existingIds: Map<string, string> = new Map();
+  if (uniqueExternalIds.length > 0) {
+    const { data, error } = await client
+      .from('kfy_products')
+      .select('id, external_id')
+      .in('external_id', uniqueExternalIds);
+
+    if (error) {
+      throw new Error(`Failed to load existing kfy_products: ${error.message ?? 'unknown error'}`);
+    }
+
+    existingIds = new Map((data ?? []).map((row) => [row.external_id as string, row.id as string]));
+  }
+
+  const normalisedRows = rows.map((row) => {
+    const existingId = existingIds.get(row.external_id);
+    if (!existingId) {
+      return row;
+    }
+    return { ...row, id: existingId };
+  });
+
+  return upsertRows('kfy_products', normalisedRows, 'external_id');
 }
 
 export function upsertCustomers(rows: readonly CustomerRow[]): Promise<number> {
