@@ -87,4 +87,32 @@ describe('POST /api/kfy/sync', () => {
     expect(checkRateLimitMock).not.toHaveBeenCalled();
     expect(response.status).toBe(200);
   });
+
+  it('permite reiniciar o cursor quando null é enviado explicitamente', async () => {
+    getSyncCursorMock.mockResolvedValue({
+      resource: 'sales',
+      page: 1,
+      intervalIndex: 0,
+      done: false
+    });
+
+    const response = await POST(buildRequest({ cursor: null }));
+
+    expect(response.status).toBe(200);
+    expect(getSyncCursorMock).not.toHaveBeenCalled();
+    expect(runSyncMock).toHaveBeenCalledWith(
+      expect.objectContaining({ cursor: null })
+    );
+  });
+
+  it('usa cursor persistido quando não for informado no corpo', async () => {
+    const persistedCursor = { resource: 'products', page: 2, intervalIndex: 1, done: false };
+    getSyncCursorMock.mockResolvedValueOnce(persistedCursor);
+
+    const response = await POST(buildRequest({}));
+
+    expect(response.status).toBe(200);
+    expect(getSyncCursorMock).toHaveBeenCalledTimes(1);
+    expect(runSyncMock).toHaveBeenCalledWith(expect.objectContaining({ cursor: persistedCursor }));
+  });
 });
