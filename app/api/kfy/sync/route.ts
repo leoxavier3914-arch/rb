@@ -11,16 +11,20 @@ export const maxDuration = 300;
 export async function POST(request: NextRequest): Promise<NextResponse> {
   assertIsAdmin(request);
 
-  const key = buildRateLimitKey(request, `${request.nextUrl.pathname}:sync`);
-  const rateLimit = await checkRateLimit(key, 3, 120_000);
-  if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { ok: false, code: 'rate_limited', error: 'Too many requests, try again soon.' },
-      { status: 429 }
-    );
+  const body = (await request.json().catch(() => ({}))) as SyncRequest;
+  const bypassRateLimit = Boolean(body.full || body.persist);
+
+  if (!bypassRateLimit) {
+    const key = buildRateLimitKey(request, `${request.nextUrl.pathname}:sync`);
+    const rateLimit = await checkRateLimit(key, 3, 120_000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { ok: false, code: 'rate_limited', error: 'Too many requests, try again soon.' },
+        { status: 429 }
+      );
+    }
   }
 
-  const body = (await request.json().catch(() => ({}))) as SyncRequest;
   const cursor = body.cursor ?? (await getSyncCursor());
   const syncResult = await runSync({ ...body, cursor });
 
