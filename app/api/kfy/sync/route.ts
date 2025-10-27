@@ -11,7 +11,7 @@ export const maxDuration = 300;
 export async function POST(request: NextRequest): Promise<NextResponse> {
   assertIsAdmin(request);
 
-  const body = (await request.json().catch(() => ({}))) as SyncRequest;
+  const body = (await request.json().catch(() => ({}))) as SyncRequest & Record<string, unknown>;
   const bypassRateLimit = Boolean(body.full || body.persist);
 
   if (!bypassRateLimit) {
@@ -25,7 +25,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const cursor = body.cursor ?? (await getSyncCursor());
+  const hasCursorOverride = Object.prototype.hasOwnProperty.call(body, 'cursor');
+  const cursor = hasCursorOverride ? (body.cursor ?? null) : await getSyncCursor();
   const syncResult = await runSync({ ...body, cursor });
 
   if (body.persist) {
