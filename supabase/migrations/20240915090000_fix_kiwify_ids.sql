@@ -5,27 +5,97 @@ alter table if exists kfy_sales drop constraint if exists kfy_sales_customer_id_
 alter table if exists kfy_subscriptions drop constraint if exists kfy_subscriptions_customer_id_fkey;
 alter table if exists kfy_enrollments drop constraint if exists kfy_enrollments_customer_id_fkey;
 
-alter table if exists kfy_customers alter column id drop identity if exists;
-alter table if exists kfy_customers alter column id drop default;
-alter table if exists kfy_customers alter column id type text using id::text;
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'kfy_customers'
+      and column_name = 'id'
+      and (
+        data_type <> 'text'
+        or identity_generation is not null
+        or column_default is not null
+      )
+  ) then
+    execute 'alter table if exists kfy_customers alter column id drop identity if exists';
+    execute 'alter table if exists kfy_customers alter column id drop default';
+    execute 'alter table if exists kfy_customers alter column id type text using id::text';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'kfy_orders'
+      and column_name = 'customer_id'
+      and (
+        data_type <> 'text'
+        or identity_generation is not null
+        or column_default is not null
+      )
+  ) then
+    execute 'alter table if exists kfy_orders alter column customer_id drop identity if exists';
+    execute 'alter table if exists kfy_orders alter column customer_id drop default';
+    execute 'alter table if exists kfy_orders alter column customer_id type text using customer_id::text';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'kfy_sales'
+      and column_name = 'customer_id'
+      and (
+        data_type <> 'text'
+        or identity_generation is not null
+        or column_default is not null
+      )
+  ) then
+    execute 'alter table if exists kfy_sales alter column customer_id drop identity if exists';
+    execute 'alter table if exists kfy_sales alter column customer_id drop default';
+    execute 'alter table if exists kfy_sales alter column customer_id type text using customer_id::text';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'kfy_subscriptions'
+      and column_name = 'customer_id'
+      and (
+        data_type <> 'text'
+        or identity_generation is not null
+        or column_default is not null
+      )
+  ) then
+    execute 'alter table if exists kfy_subscriptions alter column customer_id drop identity if exists';
+    execute 'alter table if exists kfy_subscriptions alter column customer_id drop default';
+    execute 'alter table if exists kfy_subscriptions alter column customer_id type text using customer_id::text';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'kfy_enrollments'
+      and column_name = 'customer_id'
+      and (
+        data_type <> 'text'
+        or identity_generation is not null
+        or column_default is not null
+      )
+  ) then
+    execute 'alter table if exists kfy_enrollments alter column customer_id drop identity if exists';
+    execute 'alter table if exists kfy_enrollments alter column customer_id drop default';
+    execute 'alter table if exists kfy_enrollments alter column customer_id type text using customer_id::text';
+  end if;
+end;
+$$;
+
 alter table if exists kfy_customers drop constraint if exists kfy_customers_pkey;
 alter table if exists kfy_customers add constraint kfy_customers_pkey primary key (id);
-
-alter table if exists kfy_orders alter column customer_id drop identity if exists;
-alter table if exists kfy_orders alter column customer_id drop default;
-alter table if exists kfy_orders alter column customer_id type text using customer_id::text;
-
-alter table if exists kfy_sales alter column customer_id drop identity if exists;
-alter table if exists kfy_sales alter column customer_id drop default;
-alter table if exists kfy_sales alter column customer_id type text using customer_id::text;
-
-alter table if exists kfy_subscriptions alter column customer_id drop identity if exists;
-alter table if exists kfy_subscriptions alter column customer_id drop default;
-alter table if exists kfy_subscriptions alter column customer_id type text using customer_id::text;
-
-alter table if exists kfy_enrollments alter column customer_id drop identity if exists;
-alter table if exists kfy_enrollments alter column customer_id drop default;
-alter table if exists kfy_enrollments alter column customer_id type text using customer_id::text;
 
 do $$
 begin
