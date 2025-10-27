@@ -23,4 +23,16 @@ describe('mapSalePayload', () => {
 
     expect(mapped.customer_id).toBeNull();
   });
+
+  it('usa o identificador canônico derivado do cliente aninhado quando difere do customer_id', () => {
+    const mapped = mapSalePayload({
+      id: 'sale_789',
+      customer_id: 'legacy-id',
+      customer: {
+        uuid: ' canonical-id '
+      }
+    });
+
+    expect(mapped.customer_id).toBe('canonical-id');
+  });
 });
