@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildDefaultIntervals, runSync } from '@/lib/kiwify/syncEngine';
+import {
+  buildDefaultIntervals,
+  buildSalesWindows,
+  runSync,
+  type SyncCursor
+} from '@/lib/kiwify/syncEngine';
 import * as env from '@/lib/env';
 import { KiwifyHttpError, kiwifyFetch } from '@/lib/kiwify/http';
 import * as writes from '@/lib/kiwify/writes';
@@ -404,6 +409,101 @@ describe('syncEngine', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('percorre todas as janelas de vendas mesmo com interrupções entre execuções', async () => {
+    const range = { startDate: '2023-01-01', endDate: '2023-09-30' } as const;
+    const expectedWindows = buildSalesWindows(range.startDate, range.endDate);
+    expect(expectedWindows.length).toBeGreaterThanOrEqual(3);
+
+    const processedWindows: Array<{ start: string | null; end: string | null }> = [];
+    let salesCallIndex = 0;
+
+    fetchMock.mockImplementation((url: string | URL) => {
+      const resolvedUrl = typeof url === 'string' ? url : url.toString();
+
+      if (resolvedUrl.includes('/v1/sales')) {
+        const requestUrl = new URL(resolvedUrl, 'https://example.test');
+        processedWindows.push({
+          start: requestUrl.searchParams.get('start_date'),
+          end: requestUrl.searchParams.get('end_date')
+        });
+
+        const payload = {
+          data: [
+            {
+              id: `sale_${salesCallIndex}`,
+              customer: { id: `customer_${salesCallIndex}` }
+            }
+          ],
+          meta: { pagination: { page: 1, total_pages: 1 } }
+        };
+
+        salesCallIndex += 1;
+
+        return Promise.resolve(
+          new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        );
+      }
+
+      if (resolvedUrl.includes('/v1/account-details')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ created_at: '2020-01-01T00:00:00.000Z' }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        );
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ data: [], meta: { pagination: { page: 1, total_pages: 1 } } }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      );
+    });
+
+    let cursor: SyncCursor | null = { resource: 'sales', page: 1, intervalIndex: 0, done: false };
+    let iterations = 0;
+
+    while (cursor && cursor.resource === 'sales' && processedWindows.length < expectedWindows.length) {
+      iterations += 1;
+      if (iterations > expectedWindows.length + 2) {
+        break;
+      }
+
+      const nowSpy = vi.spyOn(Date, 'now');
+      const startTime = 1_000_000;
+      let callCount = 0;
+      nowSpy.mockImplementation(() => {
+        callCount += 1;
+        return callCount <= 2 ? startTime : startTime + 1_000_000;
+      });
+
+      const result = await runSync({
+        cursor,
+        range,
+        persist: false
+      });
+
+      nowSpy.mockRestore();
+
+      expect(result.ok).toBe(true);
+      cursor = result.nextCursor;
+
+      if (!cursor || cursor.done) {
+        break;
+      }
+    }
+
+    expect(processedWindows).toHaveLength(expectedWindows.length);
+    expect(processedWindows).toEqual(
+      expectedWindows.map((window) => ({ start: window.start, end: window.end }))
+    );
+    expect(writes.upsertSales).toHaveBeenCalledTimes(expectedWindows.length);
   });
 
   it('ignora clientes derivados sem id e loga customer_missing_id', async () => {
