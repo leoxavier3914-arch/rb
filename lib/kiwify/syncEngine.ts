@@ -187,7 +187,32 @@ function extractPagination(payload: UnknownRecord): {
 } {
   const meta = (payload.meta as UnknownRecord | undefined)?.pagination as UnknownRecord | undefined;
   const page = chooseNumber([payload.page_number, payload.pageNumber, meta?.page, meta?.current_page]);
-  const totalPages = chooseNumber([payload.total_pages, payload.totalPages, meta?.total_pages]);
+  let totalPages = chooseNumber([payload.total_pages, payload.totalPages, meta?.total_pages]);
+  const perPage = chooseNumber([
+    payload.per_page,
+    payload.perPage,
+    payload.page_size,
+    payload.pageSize,
+    meta?.per_page,
+    meta?.perPage,
+    meta?.page_size,
+    meta?.pageSize
+  ]);
+  if (totalPages === undefined) {
+    const totalItems = chooseNumber([
+      payload.total,
+      payload.total_items,
+      payload.totalItems,
+      payload.count,
+      meta?.total,
+      meta?.total_items,
+      meta?.totalItems,
+      meta?.count
+    ]);
+    if (totalItems !== undefined && perPage !== undefined && perPage > 0) {
+      totalPages = Math.ceil(totalItems / perPage);
+    }
+  }
   const nextPage = chooseNumber([payload.next_page, payload.nextPage, meta?.next_page]);
   return {
     page: page ?? null,
@@ -215,8 +240,37 @@ function determineHasMore(payload: UnknownRecord, page: number | null, totalPage
 
 function chooseNumber(candidates: Array<unknown>): number | undefined {
   for (const candidate of candidates) {
-    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
-      return candidate;
+    const value = normalizeToFiniteNumber(candidate);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function normalizeToFiniteNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if (typeof value === 'bigint') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if (typeof value === 'object') {
+    const candidate = (value as { valueOf?: () => unknown }).valueOf?.();
+    if (candidate !== value) {
+      return normalizeToFiniteNumber(candidate);
     }
   }
   return undefined;

@@ -194,6 +194,101 @@ describe('syncEngine', () => {
     expect(writes.upsertSales).toHaveBeenCalledTimes(1);
   });
 
+  it('interpreta paginação como strings e percorre múltiplas páginas', async () => {
+    const paginatedResponses = [
+      {
+        data: [
+          {
+            id: 'prod_1',
+            title: 'Produto 1'
+          }
+        ],
+        meta: {
+          pagination: {
+            page: '1',
+            per_page: '2',
+            total: '5'
+          }
+        }
+      },
+      {
+        data: [
+          {
+            id: 'prod_2',
+            title: 'Produto 2'
+          }
+        ],
+        meta: {
+          pagination: {
+            page: '2',
+            per_page: '2',
+            total: '5'
+          }
+        }
+      },
+      {
+        data: [
+          {
+            id: 'prod_3',
+            title: 'Produto 3'
+          }
+        ],
+        meta: {
+          pagination: {
+            page: '3',
+            per_page: '2',
+            total: '5'
+          }
+        }
+      }
+    ];
+
+    let productIndex = 0;
+
+    const defaultResponse = {
+      data: [],
+      meta: { pagination: { page: 1, total_pages: 1 } }
+    };
+
+    fetchMock.mockImplementation((url: string | URL) => {
+      const resolvedUrl = typeof url === 'string' ? url : url.toString();
+
+      if (resolvedUrl.includes('/v1/products')) {
+        const payload =
+          paginatedResponses[productIndex] ?? paginatedResponses[paginatedResponses.length - 1];
+        productIndex += 1;
+        return Promise.resolve(
+          new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        );
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify(defaultResponse), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      );
+    });
+
+    const result = await runSync({
+      cursor: { resource: 'products', page: 1, intervalIndex: 0, done: false },
+      full: true
+    });
+
+    const productCalls = fetchMock.mock.calls.filter(([input]) => {
+      const resolved = typeof input === 'string' ? input : (input as URL).toString();
+      return resolved.includes('/v1/products');
+    });
+
+    expect(result.ok).toBe(true);
+    expect(productCalls).toHaveLength(3);
+    expect(writes.upsertProducts).toHaveBeenCalledTimes(3);
+    expect(result.stats.products).toBe(3);
+  });
+
   it('ignora clientes derivados sem id e loga customer_missing_id', async () => {
     const responseBody = {
       data: [
