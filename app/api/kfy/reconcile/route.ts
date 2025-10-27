@@ -34,7 +34,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const syncResult = await runSync({
     ...body,
-    range: body.range ?? { startDate: defaultStart, endDate: defaultEnd }
+    since: body.since ?? defaultStart,
+    until: body.until ?? defaultEnd
   });
 
   if (body.persist) {

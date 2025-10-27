@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { assertIsAdmin } from '@/lib/auth';
 import { delByPrefix, METRICS_CACHE_PREFIXES } from '@/lib/cache';
-import { getSyncCursor, setSyncCursor } from '@/lib/kiwify/syncState';
 import { runSync, type SyncRequest, type SyncResult } from '@/lib/kiwify/syncEngine';
 import { buildRateLimitKey, checkRateLimit } from '@/lib/rateLimit';
 
@@ -12,7 +11,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   assertIsAdmin(request);
 
   const body = (await request.json().catch(() => ({}))) as SyncRequest & Record<string, unknown>;
-  const bypassRateLimit = Boolean(body.full || body.persist);
+  const bypassRateLimit = Boolean(body.persist);
 
   if (!bypassRateLimit) {
     const key = buildRateLimitKey(request, `${request.nextUrl.pathname}:sync`);
@@ -25,14 +24,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const hasCursorOverride = Object.prototype.hasOwnProperty.call(body, 'cursor');
-  const cursor = hasCursorOverride ? (body.cursor ?? null) : await getSyncCursor();
-  const syncResult = await runSync({ ...body, cursor });
+  const syncResult = await runSync(body);
 
-  if (body.persist) {
-    if (syncResult.nextCursor) {
-      await setSyncCursor(syncResult.nextCursor);
-    }
+  if (body.persist && syncResult.ok) {
     await delByPrefix(METRICS_CACHE_PREFIXES);
   }
 
