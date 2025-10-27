@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ApiError, buildApiError } from '@/lib/ui/apiError';
+import type { SyncResult } from '@/lib/kiwify/syncEngine';
 
 interface Feedback {
   readonly type: 'success' | 'error';
@@ -24,9 +25,61 @@ async function callEndpoint(path: string, body?: unknown): Promise<void> {
   }
 }
 
+async function runFullBackfill(
+  onProgress?: (iteration: number, payload: SyncResult) => void
+): Promise<void> {
+  let cursor: SyncResult['nextCursor'] | null = null;
+  let iteration = 0;
+  let done = false;
+
+  do {
+    const response = await fetch('/api/kfy/sync', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-admin-role': 'true'
+      },
+      body: JSON.stringify({ full: true, persist: true, cursor })
+    });
+
+    const rawPayload = (await response.json().catch(() => null)) as unknown;
+
+    if (!response.ok) {
+      throw buildApiError(
+        (rawPayload as { code?: string; error?: string } | null | undefined) ?? null,
+        'Falha ao executar backfill completo.'
+      );
+    }
+
+    if (!rawPayload || typeof rawPayload !== 'object') {
+      throw new ApiError('invalid_response', 'Resposta inválida da sincronização.');
+    }
+
+    const payload = rawPayload as SyncResult;
+
+    if (!payload.ok) {
+      const lastLog = payload.logs[payload.logs.length - 1];
+      throw new ApiError(
+        'sync_failed',
+        typeof lastLog === 'string' && lastLog.trim().length > 0
+          ? lastLog
+          : 'A sincronização completa retornou erro.'
+      );
+    }
+
+    iteration += 1;
+    onProgress?.(iteration, payload);
+
+    cursor = payload.nextCursor;
+    done = payload.done;
+  } while (!done);
+}
+
 export default function ConfigSyncPage() {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [backfillIterations, setBackfillIterations] = useState<number>(0);
+  const [backfillProgress, setBackfillProgress] = useState<string | null>(null);
 
   const handleAction = async (id: string, action: () => Promise<void>): Promise<void> => {
     setLoadingAction(id);
@@ -48,6 +101,26 @@ export default function ConfigSyncPage() {
       setLoadingAction(null);
     }
   };
+
+  const handleFullBackfill = (): Promise<void> =>
+    handleAction('backfill', async () => {
+      setBackfillIterations(0);
+      setBackfillProgress('Iniciando backfill completo...');
+
+      try {
+        await runFullBackfill((iteration, payload) => {
+          setBackfillIterations(iteration);
+          setBackfillProgress(
+            payload.done
+              ? 'Finalizando última janela da sincronização...'
+              : `Janelas processadas: ${iteration}. Prosseguindo com a próxima...`
+          );
+        });
+      } finally {
+        setBackfillProgress(null);
+        setBackfillIterations(0);
+      }
+    });
 
   return (
     <main className="flex flex-1 flex-col gap-6">
@@ -92,11 +165,20 @@ export default function ConfigSyncPage() {
           </p>
           <Button
             className="mt-4"
-            onClick={() => handleAction('backfill', () => callEndpoint('/api/kfy/sync', { full: true, persist: true }))}
+            onClick={handleFullBackfill}
             disabled={loadingAction === 'backfill'}
           >
-            {loadingAction === 'backfill' ? 'Executando...' : 'Iniciar backfill'}
+            {loadingAction === 'backfill'
+              ? backfillIterations > 0
+                ? `Executando (${backfillIterations})...`
+                : 'Executando...'
+              : 'Iniciar backfill'}
           </Button>
+          {backfillProgress && (
+            <p className="mt-2 text-sm text-slate-500" role="status">
+              {backfillProgress}
+            </p>
+          )}
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
