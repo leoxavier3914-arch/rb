@@ -27,6 +27,9 @@ interface Sale {
 interface SalesResponse {
   readonly ok: true;
   readonly items: readonly Sale[];
+  readonly page: number;
+  readonly page_size: number;
+  readonly total: number;
 }
 
 interface SaleDetailResponse {
@@ -98,7 +101,18 @@ function isSale(value: unknown): value is Sale {
 }
 
 function isSalesResponse(value: unknown): value is SalesResponse {
-  return isRecord(value) && value.ok === true && Array.isArray(value.items) && value.items.every(isSale);
+  return (
+    isRecord(value) &&
+    value.ok === true &&
+    Array.isArray(value.items) &&
+    value.items.every(isSale) &&
+    typeof value.page === 'number' &&
+    Number.isFinite(value.page) &&
+    typeof value.page_size === 'number' &&
+    Number.isFinite(value.page_size) &&
+    typeof value.total === 'number' &&
+    Number.isFinite(value.total)
+  );
 }
 
 function isNullableString(value: unknown): value is string | null {
@@ -192,10 +206,21 @@ function formatDateTime(value: string | null | undefined): string {
 
 export default function SalesPage() {
   const { range, preset, isPreset } = usePeriod();
-  const params = useMemo(
+  const periodParams = useMemo(
     () => createPeriodSearchParams(range, isPreset ? preset : null),
     [isPreset, preset, range]
   );
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  useEffect(() => {
+    setPage(1);
+  }, [periodParams]);
+  const params = useMemo(() => {
+    const searchParams = new URLSearchParams(periodParams);
+    searchParams.set('page', String(page));
+    searchParams.set('page_size', String(pageSize));
+    return searchParams;
+  }, [periodParams, page, pageSize]);
   const [columnsState, setColumnsState] = useLocalStorage<string[]>('rb.tableCols.sales', [...DEFAULT_COLUMNS]);
   const sanitizeColumns = useCallback((input: readonly string[]) => {
     const filtered = input.filter((column, index) => DEFAULT_COLUMNS.includes(column as any) && input.indexOf(column) === index);
@@ -296,7 +321,38 @@ export default function SalesPage() {
     });
   };
 
+  const responsePage = salesQuery.data?.page;
+  const responsePageSize = salesQuery.data?.page_size;
+
+  useEffect(() => {
+    if (responsePage !== undefined && responsePage !== page) {
+      setPage(responsePage);
+    }
+    if (responsePageSize !== undefined && responsePageSize !== pageSize) {
+      setPageSize(responsePageSize);
+    }
+  }, [page, pageSize, responsePage, responsePageSize]);
+
   const rows = salesQuery.data?.items ?? [];
+  const totalItems = salesQuery.data?.total ?? rows.length;
+  const currentPageSize = salesQuery.data?.page_size ?? pageSize;
+  const totalPages = totalItems > 0 ? Math.max(1, Math.ceil(totalItems / currentPageSize)) : 1;
+  const displayedPage = responsePage ?? page;
+  const hasPreviousPage = page > 1;
+  const hasNextPage = page < totalPages;
+
+  const goToPreviousPage = () => {
+    setPage(current => Math.max(1, current - 1));
+  };
+
+  const goToNextPage = () => {
+    setPage(current => Math.min(totalPages, current + 1));
+  };
+
+  const changePageSize = (newSize: number) => {
+    setPageSize(newSize);
+    setPage(1);
+  };
 
   const resolveErrorCode = (error: Error): string => (error instanceof ApiError ? error.code : 'unknown_error');
   const renderErrorNotice = (title: string, error: Error) => (
@@ -645,38 +701,85 @@ export default function SalesPage() {
               description="Nenhuma venda sincronizada para este intervalo. Inicie uma sincronização para visualizar novos resultados."
             />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {columns.map(column => (
-                    <TableHead key={column}>{COLUMN_LABELS[column as keyof typeof COLUMN_LABELS]}</TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map(row => (
-                  <TableRow
-                    key={row.id}
-                    className="cursor-pointer hover:bg-slate-50"
-                    onClick={() => openDrawerForSale(row.id)}
-                  >
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
                     {columns.map(column => (
-                      <TableCell key={`${row.id}-${column}`}>
-                        {column === 'id'
-                          ? row.id
-                          : column === 'customer'
-                          ? row.customer
-                          : column === 'status'
-                          ? row.status
-                          : column === 'total_cents'
-                          ? formatMoneyFromCents(row.total_cents)
-                          : formatShortDate(row.created_at)}
-                      </TableCell>
+                      <TableHead key={column}>{COLUMN_LABELS[column as keyof typeof COLUMN_LABELS]}</TableHead>
                     ))}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {rows.map(row => (
+                    <TableRow
+                      key={row.id}
+                      className="cursor-pointer hover:bg-slate-50"
+                      onClick={() => openDrawerForSale(row.id)}
+                    >
+                      {columns.map(column => (
+                        <TableCell key={`${row.id}-${column}`}>
+                          {column === 'id'
+                            ? row.id
+                            : column === 'customer'
+                            ? row.customer
+                            : column === 'status'
+                            ? row.status
+                            : column === 'total_cents'
+                            ? formatMoneyFromCents(row.total_cents)
+                            : formatShortDate(row.created_at)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="mt-4 flex flex-col gap-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <span>
+                    Página {displayedPage} de {totalPages}
+                  </span>
+                  <span className="hidden sm:inline" aria-hidden>
+                    •
+                  </span>
+                  <span>Total de {totalItems} resultados</span>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                  <label className="flex items-center gap-2">
+                    <span>Itens por página</span>
+                    <select
+                      className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                      value={pageSize}
+                      onChange={event => changePageSize(Number(event.target.value))}
+                    >
+                      {[10, 25, 50].map(option => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={goToPreviousPage}
+                      disabled={!hasPreviousPage || salesQuery.isFetching}
+                    >
+                      Anterior
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={goToNextPage}
+                      disabled={!hasNextPage || salesQuery.isFetching}
+                    >
+                      Próxima
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
