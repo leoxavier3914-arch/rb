@@ -254,6 +254,7 @@ function extractNestedCustomer(payload: UnknownRecord): UnknownRecord | null {
 }
 
 export function mapSalePayload(payload: UnknownRecord): SaleRow {
+  const customerRow = mapCustomerFromSalePayload(payload);
   const nestedCustomer = extractNestedCustomer(payload);
   const rawCustomerId =
     payload.customer_id ??
@@ -261,7 +262,7 @@ export function mapSalePayload(payload: UnknownRecord): SaleRow {
     (nestedCustomer?.id as unknown) ??
     (nestedCustomer?.uuid as unknown) ??
     null;
-  const normalizedCustomerId = normalizeExternalId(rawCustomerId);
+  const normalizedCustomerId = customerRow?.id ?? normalizeExternalId(rawCustomerId);
   return {
     id: String(payload.id ?? payload.uuid ?? ''),
     status: toNullableString(payload.status),
