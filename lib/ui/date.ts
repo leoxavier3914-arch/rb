@@ -56,6 +56,12 @@ export function formatDate(date: Date): string {
   return iso.toISOString();
 }
 
+export function formatDateEndOfDay(date: Date): string {
+  const iso = new Date(date.getTime());
+  iso.setHours(23, 59, 59, 999);
+  return iso.toISOString();
+}
+
 export function diffInDays(period: CustomPeriod): number {
   const from = new Date(period.from);
   const to = new Date(period.to);
@@ -80,7 +86,12 @@ export function createPeriodSearchParams(
     params.set('period', String(preset));
   } else {
     params.set('date_from', range.from);
-    params.set('date_to', range.to);
+    const toDate = new Date(range.to);
+    if (Number.isNaN(toDate.getTime())) {
+      params.set('date_to', range.to);
+    } else {
+      params.set('date_to', formatDateEndOfDay(toDate));
+    }
   }
 
   if (options.compare) {
