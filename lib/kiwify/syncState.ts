@@ -1,102 +1,66 @@
+import { z } from 'zod';
 import { getServiceClient } from '@/lib/supabase';
-import type { SalesSyncState, SyncCursor } from './syncEngine';
 
 const STATE_ID = 'kfy_sync_cursor';
-const UNSUPPORTED_STATE_ID = 'kfy_unsupported_resources';
-const SALES_STATE_ID = 'kfy_sales_sync_state';
 
-export async function getSyncCursor(): Promise<SyncCursor | null> {
+const metadataSchema = z.object({
+  last_run_at: z.string(),
+  resources: z.array(z.string()).optional(),
+  since: z.string().nullable().optional(),
+  until: z.string().nullable().optional()
+});
+
+export interface SyncMetadata {
+  readonly lastRunAt: string;
+  readonly resources: readonly string[] | null;
+  readonly since: string | null;
+  readonly until: string | null;
+}
+
+export async function setSyncMetadata(metadata: SyncMetadata): Promise<void> {
   try {
     const client = getServiceClient();
-    const { data, error } = await client.from('app_state').select('value').eq('id', STATE_ID).single();
+    const payload = {
+      last_run_at: metadata.lastRunAt,
+      resources: metadata.resources && metadata.resources.length > 0 ? metadata.resources : undefined,
+      since: metadata.since,
+      until: metadata.until
+    };
+    const { error } = await client.from('app_state').upsert({ id: STATE_ID, value: payload });
     if (error) {
-      console.error(JSON.stringify({ level: 'error', event: 'sync_state_read_failed', error }));
+      throw error;
+    }
+  } catch (error) {
+    console.error(JSON.stringify({ level: 'error', event: 'sync_metadata_write_failed', error }));
+  }
+}
+
+export async function getSyncMetadata(): Promise<SyncMetadata | null> {
+  try {
+    const client = getServiceClient();
+    const { data, error } = await client.from('app_state').select('value').eq('id', STATE_ID).maybeSingle();
+    if (error || !data) {
       return null;
     }
-    return (data?.value as SyncCursor | null) ?? null;
+    const parsed = metadataSchema.safeParse(data.value);
+    if (!parsed.success) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          event: 'sync_metadata_invalid',
+          error: parsed.error.message
+        })
+      );
+      return null;
+    }
+    return {
+      lastRunAt: parsed.data.last_run_at,
+      resources: parsed.data.resources ?? null,
+      since: parsed.data.since ?? null,
+      until: parsed.data.until ?? null
+    };
   } catch (error) {
-    console.error(JSON.stringify({ level: 'error', event: 'sync_state_unavailable', error }));
+    console.error(JSON.stringify({ level: 'error', event: 'sync_metadata_read_failed', error }));
     return null;
-  }
-}
-
-export async function setSyncCursor(cursor: SyncCursor): Promise<void> {
-  try {
-    const client = getServiceClient();
-    const { error } = await client.from('app_state').upsert({ id: STATE_ID, value: cursor });
-    if (error) {
-      throw error;
-    }
-  } catch (error) {
-    console.error(JSON.stringify({ level: 'error', event: 'sync_state_write_failed', error }));
-  }
-}
-
-export async function getUnsupportedResources(): Promise<Set<string>> {
-  try {
-    const client = getServiceClient();
-    const { data, error } = await client.from('app_state').select('value').eq('id', UNSUPPORTED_STATE_ID).single();
-    if (error) {
-      console.warn(JSON.stringify({ level: 'warn', event: 'unsupported_resources_read_failed', error }));
-      return new Set();
-    }
-    const value = data?.value;
-    if (!value || typeof value !== 'object') {
-      return new Set();
-    }
-    const entries = Object.entries(value as Record<string, unknown>);
-    return new Set(entries.filter(([, enabled]) => Boolean(enabled)).map(([resource]) => resource));
-  } catch (error) {
-    console.error(JSON.stringify({ level: 'error', event: 'unsupported_resources_unavailable', error }));
-    return new Set();
-  }
-}
-
-export async function setUnsupportedResources(resources: ReadonlySet<string>): Promise<void> {
-  try {
-    const payload = Object.fromEntries(Array.from(resources).map((resource) => [resource, true]));
-    const client = getServiceClient();
-    const { error } = await client.from('app_state').upsert({ id: UNSUPPORTED_STATE_ID, value: payload });
-    if (error) {
-      throw error;
-    }
-  } catch (error) {
-    console.error(JSON.stringify({ level: 'error', event: 'unsupported_resources_write_failed', error }));
-  }
-}
-
-export async function getSalesSyncState(): Promise<SalesSyncState | null> {
-  try {
-    const client = getServiceClient();
-    const { data, error } = await client.from('app_state').select('value').eq('id', SALES_STATE_ID).single();
-    if (error) {
-      console.error(JSON.stringify({ level: 'error', event: 'sales_state_read_failed', error }));
-      return null;
-    }
-    const value = data?.value;
-    if (!value || typeof value !== 'object') {
-      return null;
-    }
-    const payload = value as Record<string, unknown>;
-    const lastPaidAt = typeof payload.lastPaidAt === 'string' ? payload.lastPaidAt : null;
-    const lastCreatedAt = typeof payload.lastCreatedAt === 'string' ? payload.lastCreatedAt : null;
-    return { lastPaidAt, lastCreatedAt };
-  } catch (error) {
-    console.error(JSON.stringify({ level: 'error', event: 'sales_state_unavailable', error }));
-    return null;
-  }
-}
-
-export async function setSalesSyncState(state: SalesSyncState): Promise<void> {
-  try {
-    const client = getServiceClient();
-    const { error } = await client
-      .from('app_state')
-      .upsert({ id: SALES_STATE_ID, value: { lastPaidAt: state.lastPaidAt, lastCreatedAt: state.lastCreatedAt } });
-    if (error) {
-      throw error;
-    }
-  } catch (error) {
-    console.error(JSON.stringify({ level: 'error', event: 'sales_state_write_failed', error }));
   }
 }
