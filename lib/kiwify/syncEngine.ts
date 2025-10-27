@@ -678,9 +678,27 @@ async function resolveIntervals(
   }
 
   const windows = buildSalesWindows(salesRange.start, salesRange.end);
-  intervals.sales = windows
+  const salesWindows = windows
     .map(({ start, end }) => ({ start: parseDateOnly(start) ?? salesRange.start, end: parseDateOnly(end) ?? salesRange.end }))
     .filter((interval) => interval.start.getTime() <= interval.end.getTime());
+
+  intervals.sales = salesWindows;
+
+  if (request.full) {
+    for (const resource of RESOURCES) {
+      if (resource === 'sales') {
+        continue;
+      }
+      const config = RESOURCE_CONFIG[resource];
+      if (!config?.supportsRange) {
+        continue;
+      }
+      intervals[resource] = salesWindows.map((interval) => ({
+        start: new Date(interval.start),
+        end: new Date(interval.end)
+      }));
+    }
+  }
 
   return intervals;
 }
@@ -733,7 +751,7 @@ async function resolveSalesRange(
       }
     }
 
-    if (!start && !request.full) {
+    if (!start) {
       const accountDate = await resolveAccountDate(budgetEndsAt, logs);
       if (accountDate) {
         start = accountDate;
