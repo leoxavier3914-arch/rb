@@ -162,7 +162,7 @@ function parsePage(payload: UnknownRecord, fallbackPage: number): ParsedPage {
   const pagination = extractPagination(payload);
   const page = pagination.page ?? fallbackPage;
   const totalPages = pagination.totalPages;
-  const hasMore = determineHasMore(payload, page, totalPages);
+  const hasMore = determineHasMore(payload, page, totalPages, pagination.nextPage);
   const nextPage = hasMore ? (pagination.nextPage ?? page + 1) : null;
   return { items, hasMore, nextPage };
 }
@@ -221,21 +221,51 @@ function extractPagination(payload: UnknownRecord): {
   };
 }
 
-function determineHasMore(payload: UnknownRecord, page: number | null, totalPages: number | null): boolean {
+function determineHasMore(
+  payload: UnknownRecord,
+  page: number | null,
+  totalPages: number | null,
+  paginationNextPage: number | null
+): boolean {
   if (typeof payload.has_more === 'boolean') {
     return payload.has_more;
   }
   const meta = (payload.meta as UnknownRecord | undefined)?.pagination as UnknownRecord | undefined;
-  if (meta && typeof meta.has_more === 'boolean') {
-    return meta.has_more;
+  if (meta) {
+    if (typeof meta.has_more === 'boolean') {
+      return meta.has_more;
+    }
+    const metaHasMore = (meta.hasMore ?? null) as unknown;
+    if (typeof metaHasMore === 'boolean') {
+      return metaHasMore;
+    }
   }
   if (page !== null && totalPages !== null) {
     return page < totalPages;
   }
-  if (payload.next_page !== undefined || payload.nextPage !== undefined) {
+  if (hasPaginationPointer(payload.next_page) || hasPaginationPointer(payload.nextPage)) {
+    return true;
+  }
+  if (meta && (hasPaginationPointer(meta.next_page) || hasPaginationPointer(meta.nextPage))) {
+    return true;
+  }
+  if (hasPaginationPointer(paginationNextPage)) {
     return true;
   }
   return false;
+}
+
+function hasPaginationPointer(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+  if (typeof value === 'string') {
+    return value.trim() !== '';
+  }
+  return true;
 }
 
 function chooseNumber(candidates: Array<unknown>): number | undefined {
