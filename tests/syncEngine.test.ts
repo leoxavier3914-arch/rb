@@ -292,6 +292,59 @@ describe('syncEngine', () => {
     expect(result.stats.products).toBe(3);
   });
 
+  it('usa data de criação da conta para expandir backfill completo em todos os recursos com faixa', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-06-01T00:00:00.000Z'));
+
+    const capturedUrls: string[] = [];
+
+    fetchMock.mockImplementation((url: string | URL) => {
+      const resolvedUrl = typeof url === 'string' ? url : url.toString();
+      capturedUrls.push(resolvedUrl);
+
+      if (resolvedUrl.includes('/v1/account-details')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              created_at: '2021-01-01T00:00:00.000Z'
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        );
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [],
+            meta: { pagination: { page: 1, total_pages: 1 } }
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      );
+    });
+
+    try {
+      const result = await runSync({ full: true, persist: false });
+
+      expect(result.ok).toBe(true);
+
+      const subscriptionCalls = capturedUrls.filter((url) => url.includes('/v1/subscriptions'));
+      expect(subscriptionCalls.length).toBeGreaterThan(0);
+      const firstSubscriptionUrl = new URL(subscriptionCalls[0]!, 'https://example.test');
+      const subscriptionStartDate = firstSubscriptionUrl.searchParams.get('start_date');
+      expect(subscriptionStartDate).toBe('2021-01-01T00:00:00.000Z');
+
+      const salesCalls = capturedUrls.filter((url) => url.includes('/v1/sales'));
+      expect(salesCalls.length).toBeGreaterThan(0);
+      const firstSalesUrl = new URL(salesCalls[0]!, 'https://example.test');
+      const salesStartDate = firstSalesUrl.searchParams.get('start_date');
+      expect(salesStartDate).toBe('2021-01-01');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('ignora clientes derivados sem id e loga customer_missing_id', async () => {
     const responseBody = {
       data: [
