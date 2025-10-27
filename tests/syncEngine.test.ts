@@ -292,6 +292,67 @@ describe('syncEngine', () => {
     expect(result.stats.products).toBe(3);
   });
 
+  it('caps configured budget to API limits and logs adjustment', async () => {
+    vi.useFakeTimers();
+    const now = new Date('2024-01-01T00:00:00.000Z');
+    vi.setSystemTime(now);
+
+    loadEnvMock.mockReturnValue({ SYNC_BUDGET_MS: 600_000, KFY_PAGE_SIZE: 2 } as env.AppEnv);
+
+    fetchMock.mockImplementation((url: string | URL) => {
+      const resolvedUrl = typeof url === 'string' ? url : url.toString();
+
+      if (resolvedUrl.includes('/v1/account-details')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ created_at: '2020-01-01T00:00:00.000Z' }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        );
+      }
+
+      if (resolvedUrl.includes('/v1/products')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: [],
+              meta: { pagination: { page: 1, total_pages: 1 } }
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        );
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ data: [], meta: { pagination: { page: 1, total_pages: 1 } } }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      );
+    });
+
+    const start = Date.now();
+
+    try {
+      const result = await runSync({
+        cursor: { resource: 'products', page: 1, intervalIndex: 0, done: false }
+      });
+
+      expect(result.logs).toContain('budget_truncated:600000:295000');
+
+      const budgetValues = fetchMock.mock.calls
+        .map(([, options]) => options?.budgetEndsAt)
+        .filter((value): value is number => typeof value === 'number');
+
+      expect(budgetValues.length).toBeGreaterThan(0);
+      for (const value of budgetValues) {
+        expect(value).toBeLessThanOrEqual(start + 295_000);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('usa data de criação da conta para expandir backfill completo em todos os recursos com faixa', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2024-06-01T00:00:00.000Z'));
