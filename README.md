@@ -54,7 +54,7 @@ pnpm build
 - **403 BAD_ORIGIN** — confira a variável `ALLOWED_ORIGINS`; inclua o domínio atual (ou wildcard) para liberar o acesso.
 - **401 NO_ADMIN** — as requisições internas precisam do header `x-admin-role: true` (e, quando configurado, da chave interna).
 - **Timeout na sincronização** — aumente o orçamento configurando `SYNC_BUDGET_MS` para um valor maior.
-- **Sincronização lenta** — ajuste `KFY_PAGE_SIZE`, `DB_UPSERT_BATCH` e `MAX_WRITE_MS` conforme necessário.
+- **Sincronização lenta** — ajuste `KFY_PAGE_SIZE`, `DB_UPSERT_BATCH` e `MAX_WRITE_MS` conforme necessário (limite máximo da API: `KFY_PAGE_SIZE=50`).
 
 ## Deploy em produção
 
