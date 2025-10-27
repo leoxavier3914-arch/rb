@@ -4,6 +4,11 @@ begin;
 alter table if exists kfy_orders drop constraint if exists kfy_orders_product_id_fkey;
 alter table if exists kfy_enrollments drop constraint if exists kfy_enrollments_product_id_fkey;
 
+alter table if exists kfy_orders drop constraint if exists kfy_orders_customer_id_fkey;
+alter table if exists kfy_sales drop constraint if exists kfy_sales_customer_id_fkey;
+alter table if exists kfy_subscriptions drop constraint if exists kfy_subscriptions_customer_id_fkey;
+alter table if exists kfy_enrollments drop constraint if exists kfy_enrollments_customer_id_fkey;
+
 do $$
 declare
   rec record;
@@ -88,11 +93,6 @@ alter table if exists kfy_payouts drop constraint if exists kfy_payouts_pkey;
 alter table if exists kfy_payouts add constraint kfy_payouts_pkey primary key (id);
 
 -- Ensure customer foreign keys use text type and strict rules
-alter table if exists kfy_orders drop constraint if exists kfy_orders_customer_id_fkey;
-alter table if exists kfy_sales drop constraint if exists kfy_sales_customer_id_fkey;
-alter table if exists kfy_subscriptions drop constraint if exists kfy_subscriptions_customer_id_fkey;
-alter table if exists kfy_enrollments drop constraint if exists kfy_enrollments_customer_id_fkey;
-
 do $$
 begin
   if to_regclass('public.kfy_orders') is not null then
