@@ -8,8 +8,6 @@ const mocks = vi.hoisted(() => {
     assertIsAdminMock: vi.fn(),
     buildRateLimitKeyMock: vi.fn(() => 'key'),
     checkRateLimitMock: vi.fn(),
-    getSyncCursorMock: vi.fn(),
-    setSyncCursorMock: vi.fn(),
     delByPrefixMock: vi.fn(),
     runSyncMock
   };
@@ -24,11 +22,6 @@ vi.mock('@/lib/rateLimit', () => ({
   checkRateLimit: mocks.checkRateLimitMock
 }));
 
-vi.mock('@/lib/kiwify/syncState', () => ({
-  getSyncCursor: mocks.getSyncCursorMock,
-  setSyncCursor: mocks.setSyncCursorMock
-}));
-
 vi.mock('@/lib/cache', () => ({
   delByPrefix: mocks.delByPrefixMock,
   METRICS_CACHE_PREFIXES: ['metrics:']
@@ -38,7 +31,7 @@ vi.mock('@/lib/kiwify/syncEngine', () => ({
   runSync: mocks.runSyncMock
 }));
 
-const { assertIsAdminMock, buildRateLimitKeyMock, checkRateLimitMock, getSyncCursorMock, runSyncMock } = mocks;
+const { assertIsAdminMock, buildRateLimitKeyMock, checkRateLimitMock, delByPrefixMock, runSyncMock } = mocks;
 
 function buildRequest(body: unknown): import('next/server').NextRequest {
   const request = new Request('https://example.com/api/kfy/sync', {
@@ -56,7 +49,6 @@ describe('POST /api/kfy/sync', () => {
     vi.clearAllMocks();
 
     checkRateLimitMock.mockResolvedValue({ allowed: true, remaining: 1 });
-    getSyncCursorMock.mockResolvedValue(null);
     runSyncMock.mockResolvedValue({
       ok: true,
       done: true,
@@ -66,7 +58,7 @@ describe('POST /api/kfy/sync', () => {
     });
   });
 
-  it('respects rate limit for standard sync requests', async () => {
+  it('respects rate limit for non-persistent requests', async () => {
     checkRateLimitMock.mockResolvedValueOnce({ allowed: false, remaining: 0 });
 
     const response = await POST(buildRequest({}));
@@ -81,38 +73,37 @@ describe('POST /api/kfy/sync', () => {
     expect(runSyncMock).not.toHaveBeenCalled();
   });
 
-  it('bypasses rate limit for backfill operations', async () => {
+  it('bypasses rate limit for persistent runs', async () => {
     const response = await POST(buildRequest({ persist: true }));
 
     expect(checkRateLimitMock).not.toHaveBeenCalled();
     expect(response.status).toBe(200);
+    expect(delByPrefixMock).toHaveBeenCalledWith(['metrics:']);
   });
 
-  it('permite reiniciar o cursor quando null é enviado explicitamente', async () => {
-    getSyncCursorMock.mockResolvedValue({
-      resource: 'sales',
-      page: 1,
-      intervalIndex: 0,
-      done: false
+  it('forwards body to runSync', async () => {
+    const response = await POST(buildRequest({ persist: true, resources: ['sales'], since: '2024-01-01' }));
+
+    expect(response.status).toBe(200);
+    expect(runSyncMock).toHaveBeenCalledWith({ persist: true, resources: ['sales'], since: '2024-01-01' });
+  });
+
+  it('returns failure payload when sync fails', async () => {
+    runSyncMock.mockResolvedValueOnce({
+      ok: false,
+      done: true,
+      nextCursor: null,
+      stats: {},
+      logs: ['failed reason']
     });
 
-    const response = await POST(buildRequest({ cursor: null }));
+    const response = await POST(buildRequest({ persist: true }));
 
-    expect(response.status).toBe(200);
-    expect(getSyncCursorMock).not.toHaveBeenCalled();
-    expect(runSyncMock).toHaveBeenCalledWith(
-      expect.objectContaining({ cursor: null })
-    );
-  });
-
-  it('usa cursor persistido quando não for informado no corpo', async () => {
-    const persistedCursor = { resource: 'products', page: 2, intervalIndex: 1, done: false };
-    getSyncCursorMock.mockResolvedValueOnce(persistedCursor);
-
-    const response = await POST(buildRequest({}));
-
-    expect(response.status).toBe(200);
-    expect(getSyncCursorMock).toHaveBeenCalledTimes(1);
-    expect(runSyncMock).toHaveBeenCalledWith(expect.objectContaining({ cursor: persistedCursor }));
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: 'sync_failed',
+      error: 'failed reason'
+    });
   });
 });
