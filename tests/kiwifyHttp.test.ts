@@ -13,7 +13,7 @@ describe('kiwifyFetch', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
     loadEnvMock.mockReturnValue({
-      KIWIFY_API_BASE_URL: 'https://public-api.kiwify.com',
+      KIWIFY_API_BASE_URL: 'https://public-api.kiwify.com/v1/',
       KIWIFY_ACCOUNT_ID: 'acc_123'
     } as env.AppEnv);
   });
@@ -33,7 +33,7 @@ describe('kiwifyFetch', () => {
       .mockResolvedValueOnce(new Response(null, { status: 401 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
-    const promise = kiwifyFetch('/v1/products', { budgetEndsAt: Date.now() + 10_000 });
+    const promise = kiwifyFetch('/products', { budgetEndsAt: Date.now() + 10_000 });
     const response = await promise;
 
     expect(response.status).toBe(200);
@@ -51,7 +51,7 @@ describe('kiwifyFetch', () => {
       .mockResolvedValueOnce(new Response(null, { status: 503 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
-    const promise = kiwifyFetch('/v1/products', { budgetEndsAt: Date.now() + 5_000 });
+    const promise = kiwifyFetch('/products', { budgetEndsAt: Date.now() + 5_000 });
     await vi.advanceTimersByTimeAsync(800);
     const response = await promise;
 
@@ -66,7 +66,7 @@ describe('kiwifyFetch', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch');
     fetchMock.mockResolvedValue(new Response(null, { status: 503 }));
 
-    const promise = kiwifyFetch('/v1/products', { budgetEndsAt: Date.now() + 100 });
+    const promise = kiwifyFetch('/products', { budgetEndsAt: Date.now() + 100 });
     const handled = promise.catch(() => {});
     await vi.advanceTimersByTimeAsync(200);
     await expect(promise).rejects.toThrow('Kiwify request budget exceeded');

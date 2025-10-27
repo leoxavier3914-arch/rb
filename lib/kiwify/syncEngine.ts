@@ -39,6 +39,8 @@ const MAX_SYNC_BUDGET_MS = 295_000;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 50;
 const FALLBACK_PAGE_SIZE = 25;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const SALES_DEFAULT_LOOKBACK_DAYS = 30;
 
 export const RESOURCES = [
   'products',
@@ -82,19 +84,19 @@ interface ResourceConfig<T> {
 }
 
 const RESOURCE_CONFIG: Record<SyncResource, ResourceConfig<any>> = {
-  products: { path: '/v1/products', mapper: mapProductPayload, writer: upsertProducts, supportsRange: true },
-  customers: { path: '/v1/customers', mapper: mapCustomerPayload, writer: upsertCustomers, supportsRange: true },
-  sales: { path: '/v1/sales', mapper: mapSalePayload, writer: upsertSales, supportsRange: true },
+  products: { path: '/products', mapper: mapProductPayload, writer: upsertProducts, supportsRange: true },
+  customers: { path: '/customers', mapper: mapCustomerPayload, writer: upsertCustomers, supportsRange: true },
+  sales: { path: '/sales', mapper: mapSalePayload, writer: upsertSales, supportsRange: true },
   subscriptions: {
-    path: '/v1/subscriptions',
+    path: '/subscriptions',
     mapper: mapSubscriptionPayload,
     writer: upsertSubscriptions,
     supportsRange: true
   },
-  enrollments: { path: '/v1/enrollments', mapper: mapEnrollmentPayload, writer: upsertEnrollments, supportsRange: true },
-  coupons: { path: '/v1/coupons', mapper: mapCouponPayload, writer: upsertCoupons, supportsRange: true },
-  refunds: { path: '/v1/refunds', mapper: mapRefundPayload, writer: upsertRefunds, supportsRange: true },
-  payouts: { path: '/v1/payouts', mapper: mapPayoutPayload, writer: upsertPayouts, supportsRange: true }
+  enrollments: { path: '/enrollments', mapper: mapEnrollmentPayload, writer: upsertEnrollments, supportsRange: true },
+  coupons: { path: '/coupons', mapper: mapCouponPayload, writer: upsertCoupons, supportsRange: true },
+  refunds: { path: '/refunds', mapper: mapRefundPayload, writer: upsertRefunds, supportsRange: true },
+  payouts: { path: '/payouts', mapper: mapPayoutPayload, writer: upsertPayouts, supportsRange: true }
 };
 
 interface FetchOptions {
@@ -216,6 +218,18 @@ async function fetchResourceItems(options: FetchOptions): Promise<UnknownRecord[
   const { resource, config, pageSize, since, until, budgetEndsAt, logs } = options;
   const items: UnknownRecord[] = [];
   let page = 1;
+  let effectiveSince = since;
+  let effectiveUntil = until;
+
+  if (resource === 'sales') {
+    const range = ensureSalesRange(since, until);
+    effectiveSince = range.since;
+    effectiveUntil = range.until;
+
+    if (!since || !until) {
+      logs.push('resource_range_defaulted:sales');
+    }
+  }
 
   while (Date.now() < budgetEndsAt) {
     const searchParams = new URLSearchParams({
@@ -223,11 +237,17 @@ async function fetchResourceItems(options: FetchOptions): Promise<UnknownRecord[
       page_size: String(pageSize)
     });
 
-    if (since) {
-      searchParams.set('start_date', resource === 'sales' ? formatDateOnly(since) : since.toISOString());
+    if (effectiveSince) {
+      searchParams.set(
+        'start_date',
+        resource === 'sales' ? formatDateOnly(effectiveSince) : effectiveSince.toISOString()
+      );
     }
-    if (until) {
-      searchParams.set('end_date', resource === 'sales' ? formatDateOnly(until) : until.toISOString());
+    if (effectiveUntil) {
+      searchParams.set(
+        'end_date',
+        resource === 'sales' ? formatDateOnly(effectiveUntil) : effectiveUntil.toISOString()
+      );
     }
 
     logs.push(`sync_request:${resource}:${page}`);
@@ -368,6 +388,23 @@ function formatDateOnly(value: Date): string {
   const copy = new Date(value);
   copy.setUTCHours(0, 0, 0, 0);
   return copy.toISOString().slice(0, 10);
+}
+
+function ensureSalesRange(since: Date | null, until: Date | null): { since: Date; until: Date } {
+  const now = new Date();
+  const endSource = until ?? now;
+  const end = new Date(endSource.getTime());
+  end.setUTCHours(0, 0, 0, 0);
+
+  const startSource = since ?? new Date(end.getTime() - SALES_DEFAULT_LOOKBACK_DAYS * DAY_IN_MS);
+  const start = new Date(startSource.getTime());
+  start.setUTCHours(0, 0, 0, 0);
+
+  if (start > end) {
+    start.setTime(end.getTime());
+  }
+
+  return { since: start, until: end };
 }
 
 function sanitizeLogDetail(value: string): string {
