@@ -97,7 +97,8 @@ async function fetchAndPersistToken(): Promise<CachedToken> {
     client_secret: env.KIWIFY_CLIENT_SECRET
   });
 
-  const response = await fetch(`${env.KIWIFY_API_BASE_URL}/v1/oauth/token`, {
+  const baseUrl = env.KIWIFY_API_BASE_URL.replace(/\/+$/, '');
+  const response = await fetch(`${baseUrl}/oauth/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: body.toString()

@@ -79,7 +79,9 @@ export async function kiwifyFetch(path: string, init: KiwifyRequestInit = {}): P
     const id = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const url = `${env.KIWIFY_API_BASE_URL ?? ''}${path}`;
+      const baseUrl = (env.KIWIFY_API_BASE_URL ?? '').replace(/\/+$/, '');
+      const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+      const url = `${baseUrl}${normalizedPath}`;
       const response = await fetch(url, requestInit);
 
       if ((response.status === 401 || response.status === 403) && attempt === 1) {

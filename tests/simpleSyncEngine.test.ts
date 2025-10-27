@@ -51,13 +51,13 @@ describe('runSync - simple engine', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.fetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/v1/products')) {
+      if (path.startsWith('/products')) {
         return buildResponse({ data: [{ id: 'prod_1', title: 'Course', price: 100 }] });
       }
-      if (path.startsWith('/v1/customers')) {
+      if (path.startsWith('/customers')) {
         return buildResponse({ data: [{ id: 'cust_1', email: 'a@example.com' }] });
       }
-      if (path.startsWith('/v1/sales')) {
+      if (path.startsWith('/sales')) {
         return buildResponse({
           data: [
             {
@@ -69,19 +69,19 @@ describe('runSync - simple engine', () => {
           ]
         });
       }
-      if (path.startsWith('/v1/subscriptions')) {
+      if (path.startsWith('/subscriptions')) {
         return buildResponse({ data: [{ id: 'sub_1' }] });
       }
-      if (path.startsWith('/v1/enrollments')) {
+      if (path.startsWith('/enrollments')) {
         return buildResponse({ data: [{ id: 'enroll_1' }] });
       }
-      if (path.startsWith('/v1/coupons')) {
+      if (path.startsWith('/coupons')) {
         return buildResponse({ data: [{ id: 'coupon_1' }] });
       }
-      if (path.startsWith('/v1/refunds')) {
+      if (path.startsWith('/refunds')) {
         return buildResponse({ data: [{ id: 'refund_1', sale_id: 'sale_1' }] });
       }
-      if (path.startsWith('/v1/payouts')) {
+      if (path.startsWith('/payouts')) {
         return buildResponse({ data: [{ id: 'payout_1' }] });
       }
       throw new Error(`Unhandled path ${path}`);
@@ -105,12 +105,12 @@ describe('runSync - simple engine', () => {
     expect(mocks.writesMock.resolveCustomerIds).toHaveBeenCalledWith(['cust_1']);
     expect(mocks.setSyncMetadataMock).toHaveBeenCalledTimes(1);
     const paths = mocks.fetchMock.mock.calls.map((call) => call[0] as string);
-    expect(paths.some((path) => path.includes('/v1/sales'))).toBe(true);
+    expect(paths.some((path) => path.includes('/sales'))).toBe(true);
   });
 
   it('continues when a resource is not available', async () => {
     mocks.fetchMock.mockImplementationOnce(async () => {
-      throw new KiwifyHttpError('missing', { status: 404, url: '/v1/products', isHtml: false });
+      throw new KiwifyHttpError('missing', { status: 404, url: '/products', isHtml: false });
     });
 
     const result = await runSync({ resources: ['products', 'sales'] });
@@ -144,14 +144,14 @@ describe('runSync - simple engine', () => {
 
     const error = new KiwifyHttpError('invalid page size', {
       status: 400,
-      url: '/v1/sales',
+      url: '/sales',
       isHtml: false,
       bodyText: 'page_size must be less than or equal to 25'
     });
 
     let attempts = 0;
     mocks.fetchMock.mockImplementation(async (path: string) => {
-      if (!path.startsWith('/v1/sales')) {
+      if (!path.startsWith('/sales')) {
         throw new Error(`Unexpected path ${path}`);
       }
 
