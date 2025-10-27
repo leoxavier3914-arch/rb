@@ -137,4 +137,42 @@ describe('runSync - simple engine', () => {
     expect(paths.some((path) => path.includes('start_date=2024-01-01'))).toBe(true);
     expect(paths.some((path) => path.includes('end_date=2024-01-31'))).toBe(true);
   });
+
+  it('reduces page size when the API rejects the request with status 400', async () => {
+    const previousPageSize = mocks.envMock.KFY_PAGE_SIZE;
+    mocks.envMock.KFY_PAGE_SIZE = 50;
+
+    const error = new KiwifyHttpError('invalid page size', {
+      status: 400,
+      url: '/v1/sales',
+      isHtml: false,
+      bodyText: 'page_size must be less than or equal to 25'
+    });
+
+    let attempts = 0;
+    mocks.fetchMock.mockImplementation(async (path: string) => {
+      if (!path.startsWith('/v1/sales')) {
+        throw new Error(`Unexpected path ${path}`);
+      }
+
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw error;
+      }
+
+      expect(path).toContain('page_size=25');
+      return buildResponse({ data: [] });
+    });
+
+    const result = await runSync({ resources: ['sales'] });
+
+    expect(result.ok).toBe(true);
+    expect(attempts).toBe(2);
+    expect(result.logs).toContain(
+      'resource_retry:sales:page_size:50->25:page_size must be less than or equal to 25'
+    );
+
+    mocks.envMock.KFY_PAGE_SIZE = previousPageSize;
+  });
 });
