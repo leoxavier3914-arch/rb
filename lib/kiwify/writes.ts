@@ -188,7 +188,7 @@ function ensureExistingCustomerIds(
   });
 }
 
-async function loadExistingCustomerIds(externalIds: readonly string[]): Promise<Map<string, string>> {
+export async function loadExistingCustomerIds(externalIds: readonly string[]): Promise<Map<string, string>> {
   if (externalIds.length === 0) {
     return new Map();
   }
@@ -260,6 +260,20 @@ export function prepareCustomerUpsertRows(
 
 export function upsertSales(rows: readonly SaleRow[]): Promise<number> {
   return upsertRows('kfy_sales', rows);
+}
+
+export async function resolveCustomerIds(externalIds: readonly string[]): Promise<Map<string, string>> {
+  const uniqueExternalIds = Array.from(new Set(externalIds.filter((id): id is string => Boolean(id))));
+  if (uniqueExternalIds.length === 0) {
+    return new Map();
+  }
+
+  const existingIds = await loadExistingCustomerIds(uniqueExternalIds);
+  if (existingIds.size === 0) {
+    return new Map(uniqueExternalIds.map((id) => [id, id]));
+  }
+
+  return new Map(uniqueExternalIds.map((id) => [id, existingIds.get(id) ?? id]));
 }
 
 export function upsertSubscriptions(rows: readonly SubscriptionRow[]): Promise<number> {

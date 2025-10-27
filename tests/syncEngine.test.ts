@@ -23,7 +23,10 @@ vi.mock('@/lib/kiwify/writes', () => ({
   upsertEnrollments: vi.fn(() => Promise.resolve(0)),
   upsertCoupons: vi.fn(() => Promise.resolve(0)),
   upsertRefunds: vi.fn(() => Promise.resolve(0)),
-  upsertPayouts: vi.fn(() => Promise.resolve(0))
+  upsertPayouts: vi.fn(() => Promise.resolve(0)),
+  resolveCustomerIds: vi.fn(async (externalIds: readonly string[]) =>
+    new Map(externalIds.map((id) => [id, id]))
+  )
 }));
 
 vi.mock('@/lib/kiwify/syncState', () => ({
