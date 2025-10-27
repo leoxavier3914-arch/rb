@@ -405,7 +405,14 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
   let salesStateChanged = false;
 
   const intervals = await resolveIntervals(request, salesState, budgetEndsAt, logs);
+  const initialIntervalCounts = Object.fromEntries(
+    RESOURCES.map((resource) => [resource, (intervals[resource] ?? []).length])
+  ) as Record<SyncResource, number>;
   let cursor = normaliseCursor(request.cursor, intervals);
+  const initialCursorOffsets = Object.fromEntries(
+    RESOURCES.map((resource) => [resource, 0])
+  ) as Record<SyncResource, number>;
+  initialCursorOffsets[cursor.resource] = cursor.intervalIndex;
 
   if (!hasAnyIntervals(intervals)) {
     return finalize(true, true, null, stats, logs, request.persist, salesState, salesStateChanged);
@@ -430,7 +437,7 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
 
       const interval = resourceIntervals[cursor.intervalIndex] ?? null;
       if (!interval) {
-        cursor = advanceCursor(cursor, intervals);
+        cursor = advanceCursor(cursor, intervals, interval);
         if (cursor.done) {
           return finalize(true, true, null, stats, logs, request.persist, salesState, salesStateChanged);
         }
@@ -441,7 +448,7 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
         logs.push(
           `interval_skip:${cursor.resource}:${formatDateOnly(interval.start)}:${formatDateOnly(interval.end)}`
         );
-        cursor = advanceCursor(cursor, intervals);
+        cursor = advanceCursor(cursor, intervals, interval);
         if (cursor.done) {
           return finalize(true, true, null, stats, logs, request.persist, salesState, salesStateChanged);
         }
@@ -450,7 +457,7 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
 
       if (unsupportedResources.has(cursor.resource)) {
         logs.push(`resource_unsupported_skip:${cursor.resource}`);
-        cursor = advanceCursor(cursor, intervals);
+        cursor = advanceCursor(cursor, intervals, interval);
         if (cursor.done) {
           return finalize(true, true, null, stats, logs, request.persist, salesState, salesStateChanged);
         }
@@ -505,7 +512,7 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
             await setUnsupportedResources(unsupportedResources);
           }
           logs.push(`resource_not_found_skip:${cursor.resource}`);
-          cursor = advanceCursor(cursor, intervals);
+          cursor = advanceCursor(cursor, intervals, interval);
           if (cursor.done) {
             return finalize(true, true, null, stats, logs, request.persist, salesState, salesStateChanged);
           }
@@ -611,7 +618,7 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
           );
           windowCounters.delete(windowKey);
         }
-        cursor = advanceCursor(cursor, intervals);
+        cursor = advanceCursor(cursor, intervals, interval);
         if (cursor.done) {
           return finalize(true, true, null, stats, logs, request.persist, salesState, salesStateChanged);
         }
@@ -630,6 +637,10 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
   } catch (error) {
     logs.push(`Erro ao processar sync: ${(error as Error).message ?? String(error)}`);
     return finalize(false, false, cursor, stats, logs, request.persist, salesState, salesStateChanged);
+  }
+
+  if (!cursor.done) {
+    cursor = prepareCursorForPersistence(cursor, intervals, initialIntervalCounts, initialCursorOffsets);
   }
 
   const done = cursor.done;
@@ -810,15 +821,35 @@ function findFirstResourceWithIntervals(intervals: IntervalMap): SyncResource | 
   return null;
 }
 
-function advanceCursor(current: SyncCursor, intervals: IntervalMap): SyncCursor {
+function advanceCursor(
+  current: SyncCursor,
+  intervals: IntervalMap,
+  previousInterval?: IntervalRange | null
+): SyncCursor {
   const resourceIntervals = intervals[current.resource] ?? [];
-  if (resourceIntervals.length > 0 && current.intervalIndex + 1 < resourceIntervals.length) {
-    return {
-      resource: current.resource,
-      page: 1,
-      intervalIndex: current.intervalIndex + 1,
-      done: false
-    };
+  if (resourceIntervals.length > 0) {
+    const intervalRemoved = previousInterval
+      ? !resourceIntervals.includes(previousInterval)
+      : false;
+
+    if (intervalRemoved) {
+      const nextIndex = Math.min(current.intervalIndex, resourceIntervals.length - 1);
+      return {
+        resource: current.resource,
+        page: 1,
+        intervalIndex: nextIndex,
+        done: false
+      };
+    }
+
+    if (current.intervalIndex + 1 < resourceIntervals.length) {
+      return {
+        resource: current.resource,
+        page: 1,
+        intervalIndex: current.intervalIndex + 1,
+        done: false
+      };
+    }
   }
 
   const currentIndex = RESOURCES.indexOf(current.resource);
@@ -831,6 +862,28 @@ function advanceCursor(current: SyncCursor, intervals: IntervalMap): SyncCursor 
   }
 
   return { resource: RESOURCES[0], page: 1, intervalIndex: 0, done: true };
+}
+
+function prepareCursorForPersistence(
+  cursor: SyncCursor,
+  intervals: IntervalMap,
+  initialCounts: Record<SyncResource, number>,
+  initialOffsets: Record<SyncResource, number>
+): SyncCursor {
+  const initialCount = initialCounts[cursor.resource] ?? 0;
+  if (initialCount <= 0) {
+    return cursor;
+  }
+
+  const remaining = (intervals[cursor.resource] ?? []).length;
+  const removedThisRun = initialCount - remaining;
+  const baseIndex = initialOffsets[cursor.resource] ?? 0;
+  const processed = baseIndex + removedThisRun;
+  if (processed <= baseIndex) {
+    return cursor;
+  }
+
+  return { ...cursor, intervalIndex: processed };
 }
 
 function handleSalesBadRequest(
@@ -853,7 +906,7 @@ function handleSalesBadRequest(
   }
 
   logs.push(JSON.stringify({ event: 'sales_window_skipped', status: error.status, url: error.url, window, shrunk: false }));
-  const nextCursor = advanceCursor(cursor, intervals);
+  const nextCursor = advanceCursor(cursor, intervals, interval);
   return { action: 'advance', cursor: nextCursor };
 }
 
