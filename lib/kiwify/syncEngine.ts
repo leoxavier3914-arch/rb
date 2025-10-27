@@ -36,7 +36,8 @@ import {
 import { setSyncMetadata } from './syncState';
 
 const MAX_SYNC_BUDGET_MS = 295_000;
-const DEFAULT_PAGE_SIZE = 200;
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 50;
 
 export const RESOURCES = [
   'products',
@@ -112,7 +113,7 @@ export async function runSync(request: SyncRequest = {}): Promise<SyncResult> {
   const stats: Record<string, number> = {};
 
   const resources = normaliseResources(request.resources);
-  const pageSize = Math.max(1, Math.min(request.pageSize ?? env.KFY_PAGE_SIZE ?? DEFAULT_PAGE_SIZE, 500));
+  const pageSize = Math.max(1, Math.min(request.pageSize ?? env.KFY_PAGE_SIZE ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE));
   const since = parseDate(request.since);
   const until = parseDate(request.until);
 
