@@ -28,7 +28,8 @@ import {
   upsertRefunds,
   upsertSales,
   upsertSubscriptions,
-  upsertDerivedCustomers
+  upsertDerivedCustomers,
+  resolveCustomerIds
 } from './writes';
 import {
   getSalesSyncState,
@@ -537,8 +538,13 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
         }
       }
 
-      const mapped = page.items.map((item) => resourceConfig.mapper(item));
-      let processedRows = mapped;
+      let mapped: T[] = page.items.map((item) => resourceConfig.mapper(item));
+
+      if (cursor.resource === 'sales') {
+        mapped = (await remapSaleCustomerIds(mapped as unknown as SaleRow[])) as unknown as T[];
+      }
+
+      let processedRows: readonly T[] = mapped;
 
       if (mapped.length > 0) {
         try {
@@ -559,7 +565,7 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
               })
             );
             const fallback = await retrySalesAfterCustomerUpsert(page.items, mapped as SaleRow[], logs);
-            processedRows = fallback.processedRows;
+            processedRows = fallback.processedRows as unknown as readonly T[];
             if (fallback.affected > 0) {
               stats.sales = (stats.sales ?? 0) + fallback.affected;
             }
@@ -827,6 +833,41 @@ function isForeignKeyViolation(error: unknown): error is SupabaseWriteError {
   return error instanceof SupabaseWriteError && error.code === '23503';
 }
 
+async function remapSaleCustomerIds(rows: readonly SaleRow[]): Promise<SaleRow[]> {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const customerIds = Array.from(
+    new Set(rows.map((row) => row.customer_id).filter((id): id is string => Boolean(id)))
+  );
+
+  if (customerIds.length === 0) {
+    return [...rows];
+  }
+
+  const resolvedIds = await resolveCustomerIds(customerIds);
+  if (resolvedIds.size === 0) {
+    return [...rows];
+  }
+
+  let changed = false;
+  const remapped = rows.map((row) => {
+    const original = row.customer_id;
+    if (!original) {
+      return row;
+    }
+    const resolved = resolvedIds.get(original) ?? original;
+    if (resolved === original) {
+      return row;
+    }
+    changed = true;
+    return { ...row, customer_id: resolved };
+  });
+
+  return changed ? remapped : [...rows];
+}
+
 async function retrySalesAfterCustomerUpsert(
   pageItems: UnknownRecord[],
   salesRows: readonly SaleRow[],
@@ -846,9 +887,10 @@ async function retrySalesAfterCustomerUpsert(
     await upsertDerivedCustomers(Array.from(derived.values()));
   }
 
+  const remappedRows = await remapSaleCustomerIds(salesRows);
   const processed: SaleRow[] = [];
 
-  for (const row of salesRows) {
+  for (const row of remappedRows) {
     try {
       await upsertSales([row]);
       processed.push(row);
