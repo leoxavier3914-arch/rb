@@ -38,6 +38,7 @@ import { setSyncMetadata } from './syncState';
 const MAX_SYNC_BUDGET_MS = 295_000;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 50;
+const FALLBACK_PAGE_SIZE = 25;
 
 export const RESOURCES = [
   'products',
@@ -104,6 +105,7 @@ interface FetchOptions {
   readonly until: Date | null;
   readonly budgetEndsAt: number;
   readonly logs: string[];
+  readonly attemptedPageSizeFallback?: boolean;
 }
 
 export async function runSync(request: SyncRequest = {}): Promise<SyncResult> {
@@ -236,9 +238,24 @@ async function fetchResourceItems(options: FetchOptions): Promise<UnknownRecord[
         budgetEndsAt
       });
     } catch (error) {
-      if (error instanceof KiwifyHttpError && error.status === 404) {
-        logs.push(`resource_not_found:${resource}`);
-        return [];
+      if (error instanceof KiwifyHttpError) {
+        if (error.status === 404) {
+          logs.push(`resource_not_found:${resource}`);
+          return [];
+        }
+
+        const attemptedFallback = options.attemptedPageSizeFallback ?? false;
+        if (!attemptedFallback && error.status === 400 && pageSize > FALLBACK_PAGE_SIZE) {
+          logs.push(
+            `resource_retry:${resource}:page_size:${pageSize}->${FALLBACK_PAGE_SIZE}` +
+              (error.bodyText ? `:${sanitizeLogDetail(error.bodyText)}` : '')
+          );
+          return fetchResourceItems({
+            ...options,
+            pageSize: FALLBACK_PAGE_SIZE,
+            attemptedPageSizeFallback: true
+          });
+        }
       }
       throw error;
     }
@@ -351,6 +368,10 @@ function formatDateOnly(value: Date): string {
   const copy = new Date(value);
   copy.setUTCHours(0, 0, 0, 0);
   return copy.toISOString().slice(0, 10);
+}
+
+function sanitizeLogDetail(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, 160);
 }
 
 function parseDate(value: string | null | undefined): Date | null {
