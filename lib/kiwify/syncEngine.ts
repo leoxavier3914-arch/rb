@@ -41,6 +41,9 @@ import {
 
 const DAY = 24 * 60 * 60 * 1000;
 
+// Keep the sync budget safely within the /api/kfy/sync route's 300s maxDuration.
+const MAX_SYNC_BUDGET_MS = 295_000;
+
 const RESOURCES = [
   'products',
   'sales',
@@ -388,7 +391,12 @@ export async function runSync(request: SyncRequest): Promise<SyncResult> {
   const env = loadEnv();
   const logs: string[] = [];
   const stats: Record<string, number> = {};
-  const budgetEndsAt = Date.now() + (env.SYNC_BUDGET_MS ?? 20_000);
+  const configuredBudgetMs = env.SYNC_BUDGET_MS ?? 20_000;
+  const safeBudgetMs = Math.min(Math.max(configuredBudgetMs, 0), MAX_SYNC_BUDGET_MS);
+  if (safeBudgetMs < configuredBudgetMs) {
+    logs.push(`budget_truncated:${configuredBudgetMs}:${safeBudgetMs}`);
+  }
+  const budgetEndsAt = Date.now() + safeBudgetMs;
   const pageSize = env.KFY_PAGE_SIZE ?? 200;
 
   const unsupportedResources = await getUnsupportedResources();
