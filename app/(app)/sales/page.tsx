@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { OperationResult } from '@/components/ui/operation-result';
@@ -34,6 +34,17 @@ interface SaleDetail {
   readonly paidAt: string | null;
   readonly updatedAt: string | null;
   readonly raw: UnknownRecord;
+}
+
+interface SaleListFilters {
+  readonly startDate: string;
+  readonly endDate: string;
+  readonly status?: string;
+  readonly paymentMethod?: string;
+  readonly productId?: string;
+  readonly fullDetails: boolean;
+  readonly pageSize: number;
+  readonly page: number;
 }
 
 const SALE_KEYS = ['sales', 'data', 'items', 'results', 'orders', 'list', 'values', 'entries'] as const;
@@ -96,6 +107,19 @@ const CUSTOMER_STRING_KEYS = [
   'customerDocument',
   'email'
 ] as const;
+
+function subDays(date: Date, amount: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() - amount);
+  return result;
+}
+
+function formatDateInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -315,13 +339,15 @@ export default function SalesPage() {
   const refundOperation = useOperation<unknown>();
   const statsOperation = useOperation<unknown>();
 
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const defaultEndDate = useMemo(() => formatDateInput(new Date()), []);
+  const defaultStartDate = useMemo(() => formatDateInput(subDays(new Date(), 30)), []);
+
+  const [startDate, setStartDate] = useState(defaultStartDate);
+  const [endDate, setEndDate] = useState(defaultEndDate);
   const [status, setStatus] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [productId, setProductId] = useState('');
-  const [pageSize, setPageSize] = useState('');
-  const [page, setPage] = useState('');
+  const [pageSize, setPageSize] = useState('10');
   const [fullDetails, setFullDetails] = useState(false);
 
   const [detailSaleId, setDetailSaleId] = useState('');
@@ -332,18 +358,63 @@ export default function SalesPage() {
   const [statsEndDate, setStatsEndDate] = useState('');
   const [statsProductId, setStatsProductId] = useState('');
 
+  const [filters, setFilters] = useState<SaleListFilters>(() => ({
+    startDate: defaultStartDate,
+    endDate: defaultEndDate,
+    fullDetails: false,
+    pageSize: 10,
+    page: 1
+  }));
+
   const saleExtraction = useMemo(() => extractSaleRecords(listOperation.data), [listOperation.data]);
   const sales = useMemo(
     () => saleExtraction.items.map(mapSaleListItem).filter(notNull),
     [saleExtraction]
   );
   const totalCount = useMemo(() => extractTotalCount(listOperation.data), [listOperation.data]);
+  const totalPages = useMemo(() => {
+    if (totalCount === null) {
+      return null;
+    }
+    return Math.max(1, Math.ceil(totalCount / filters.pageSize));
+  }, [filters.pageSize, totalCount]);
   const saleDetail = useMemo(() => {
     if (!detailsOperation.data || !isRecord(detailsOperation.data)) {
       return null;
     }
     return mapSaleDetail(detailsOperation.data);
   }, [detailsOperation.data]);
+
+  const runListSales = useCallback(
+    async (currentFilters: SaleListFilters) => {
+      const search = new URLSearchParams();
+      search.set('start_date', currentFilters.startDate);
+      search.set('end_date', currentFilters.endDate);
+      search.set('page_size', String(currentFilters.pageSize));
+      search.set('page', String(currentFilters.page));
+      if (currentFilters.status) {
+        search.set('status', currentFilters.status);
+      }
+      if (currentFilters.paymentMethod) {
+        search.set('payment_method', currentFilters.paymentMethod);
+      }
+      if (currentFilters.productId) {
+        search.set('product_id', currentFilters.productId);
+      }
+      if (currentFilters.fullDetails) {
+        search.set('full_details', 'true');
+      }
+
+      await listOperation.run(() =>
+        callKiwifyAdminApi(`/api/kfy/sales?${search.toString()}`, {}, 'Erro ao listar vendas.')
+      );
+    },
+    [listOperation]
+  );
+
+  useEffect(() => {
+    void runListSales(filters);
+  }, [filters, runListSales]);
 
   const runSaleDetails = useCallback(
     async (saleId: string) => {
@@ -371,33 +442,25 @@ export default function SalesPage() {
         return;
       }
 
-      const search = new URLSearchParams();
-      search.set('start_date', startDate);
-      search.set('end_date', endDate);
-      if (status.trim() !== '') {
-        search.set('status', status.trim());
-      }
-      if (paymentMethod.trim() !== '') {
-        search.set('payment_method', paymentMethod.trim());
-      }
-      if (productId.trim() !== '') {
-        search.set('product_id', productId.trim());
-      }
-      if (fullDetails) {
-        search.set('full_details', 'true');
-      }
-      if (pageSize.trim() !== '') {
-        search.set('page_size', pageSize.trim());
-      }
-      if (page.trim() !== '') {
-        search.set('page', page.trim());
-      }
+      const sanitizedPageSize = Math.max(1, Number.parseInt(pageSize.trim(), 10) || 10);
+      setPageSize(String(sanitizedPageSize));
 
-      await listOperation.run(() =>
-        callKiwifyAdminApi(`/api/kfy/sales?${search.toString()}`, {}, 'Erro ao listar vendas.')
-      );
+      const trimmedStatus = status.trim();
+      const trimmedPaymentMethod = paymentMethod.trim();
+      const trimmedProductId = productId.trim();
+
+      setFilters({
+        startDate,
+        endDate,
+        status: trimmedStatus === '' ? undefined : trimmedStatus,
+        paymentMethod: trimmedPaymentMethod === '' ? undefined : trimmedPaymentMethod,
+        productId: trimmedProductId === '' ? undefined : trimmedProductId,
+        fullDetails,
+        pageSize: sanitizedPageSize,
+        page: 1
+      });
     },
-    [endDate, fullDetails, listOperation, page, pageSize, paymentMethod, productId, startDate, status]
+    [endDate, fullDetails, listOperation, pageSize, paymentMethod, productId, startDate, status]
   );
 
   const handleSaleDetails = useCallback(
@@ -417,6 +480,35 @@ export default function SalesPage() {
     },
     [runSaleDetails]
   );
+
+  const handlePreviousPage = useCallback(() => {
+    setFilters(currentFilters => {
+      const previousPage = Math.max(1, currentFilters.page - 1);
+      if (previousPage === currentFilters.page) {
+        return currentFilters;
+      }
+      return { ...currentFilters, page: previousPage };
+    });
+  }, []);
+
+  const handleNextPage = useCallback(() => {
+    setFilters(currentFilters => {
+      const limit = totalPages ?? Infinity;
+      const nextPage = Math.min(limit, currentFilters.page + 1);
+      if (nextPage === currentFilters.page) {
+        return currentFilters;
+      }
+      return { ...currentFilters, page: nextPage };
+    });
+  }, [totalPages]);
+
+  const canGoPrevious = filters.page > 1;
+  const canGoNext = useMemo(() => {
+    if (totalPages !== null) {
+      return filters.page < totalPages;
+    }
+    return sales.length === filters.pageSize;
+  }, [filters.page, filters.pageSize, sales.length, totalPages]);
 
   const handleRefund = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -476,122 +568,10 @@ export default function SalesPage() {
       <section>
         <Card>
           <CardHeader>
-          <CardTitle>Listar vendas</CardTitle>
-          <CardDescription>
-            Informe o intervalo obrigatório de datas e, opcionalmente, utilize filtros adicionais para refinar o resultado.
-          </CardDescription>
+            <CardTitle>Lista de vendas</CardTitle>
+            <CardDescription>As últimas vendas retornadas pelos filtros atuais.</CardDescription>
           </CardHeader>
           <CardContent>
-          <form className="space-y-4" onSubmit={handleListSales}>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                Data de início
-                <input
-                  type="date"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={startDate}
-                  onChange={event => setStartDate(event.target.value)}
-                  required
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                Data de fim
-                <input
-                  type="date"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={endDate}
-                  onChange={event => setEndDate(event.target.value)}
-                  required
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                Status
-                <input
-                  type="text"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={status}
-                  onChange={event => setStatus(event.target.value)}
-                  placeholder="approved"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                Método de pagamento
-                <input
-                  type="text"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={paymentMethod}
-                  onChange={event => setPaymentMethod(event.target.value)}
-                  placeholder="credit_card"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                ID do produto
-                <input
-                  type="text"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={productId}
-                  onChange={event => setProductId(event.target.value)}
-                  placeholder="prod_xxxxx"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                Tamanho da página
-                <input
-                  type="number"
-                  min={1}
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={pageSize}
-                  onChange={event => setPageSize(event.target.value)}
-                  placeholder="20"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                Número da página
-                <input
-                  type="number"
-                  min={1}
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={page}
-                  onChange={event => setPage(event.target.value)}
-                  placeholder="1"
-                />
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border border-slate-300"
-                  checked={fullDetails}
-                  onChange={event => setFullDetails(event.target.checked)}
-                />
-                Retornar detalhes completos
-              </label>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Button type="submit" disabled={listOperation.loading}>
-                {listOperation.loading ? 'Consultando…' : 'Listar vendas'}
-              </Button>
-              {!!listOperation.data && !listOperation.loading && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setStatus('');
-                    setPaymentMethod('');
-                    setProductId('');
-                    setPageSize('');
-                    setPage('');
-                    setFullDetails(false);
-                    setDetailSaleId('');
-                    detailsOperation.reset();
-                    listOperation.reset();
-                  }}
-                >
-                  Limpar resultado
-                </Button>
-              )}
-            </div>
-          </form>
-          <div className="mt-6 space-y-4">
             {listOperation.loading ? (
               <TableSkeleton rows={6} />
             ) : listOperation.error ? (
@@ -650,6 +630,32 @@ export default function SalesPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-slate-500">
+                      Página {filters.page}
+                      {totalPages !== null ? ` de ${totalPages}` : ''}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePreviousPage}
+                        disabled={!canGoPrevious || listOperation.loading}
+                      >
+                        Anterior
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleNextPage}
+                        disabled={!canGoNext || listOperation.loading}
+                      >
+                        Próxima
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <p className="text-sm text-slate-600">Nenhuma venda encontrada para os filtros selecionados.</p>
@@ -660,10 +666,125 @@ export default function SalesPage() {
               </pre>
             ) : (
               <p className="text-sm text-slate-500">
-                Informe o período desejado e clique em &quot;Listar vendas&quot; para carregar os resultados.
+                Ajuste os filtros abaixo para atualizar a listagem automaticamente.
               </p>
             )}
-          </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section>
+        <Card>
+          <CardHeader>
+            <CardTitle>Filtrar vendas</CardTitle>
+            <CardDescription>
+              Informe o intervalo obrigatório de datas e utilize filtros adicionais para refinar o resultado mostrado acima.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-4" onSubmit={handleListSales}>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  Data de início
+                  <input
+                    type="date"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={startDate}
+                    onChange={event => setStartDate(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  Data de fim
+                  <input
+                    type="date"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={endDate}
+                    onChange={event => setEndDate(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  Status
+                  <input
+                    type="text"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={status}
+                    onChange={event => setStatus(event.target.value)}
+                    placeholder="approved"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  Método de pagamento
+                  <input
+                    type="text"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={paymentMethod}
+                    onChange={event => setPaymentMethod(event.target.value)}
+                    placeholder="credit_card"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  ID do produto
+                  <input
+                    type="text"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={productId}
+                    onChange={event => setProductId(event.target.value)}
+                    placeholder="prod_xxxxx"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  Tamanho da página
+                  <input
+                    type="number"
+                    min={1}
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={pageSize}
+                    onChange={event => setPageSize(event.target.value)}
+                    placeholder="10"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border border-slate-300"
+                    checked={fullDetails}
+                    onChange={event => setFullDetails(event.target.checked)}
+                  />
+                  Retornar detalhes completos
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button type="submit" disabled={listOperation.loading}>
+                  {listOperation.loading ? 'Consultando…' : 'Aplicar filtros'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setStartDate(defaultStartDate);
+                    setEndDate(defaultEndDate);
+                    setStatus('');
+                    setPaymentMethod('');
+                    setProductId('');
+                    setPageSize('10');
+                    setFullDetails(false);
+                    setDetailSaleId('');
+                    detailsOperation.reset();
+                    setFilters({
+                      startDate: defaultStartDate,
+                      endDate: defaultEndDate,
+                      fullDetails: false,
+                      pageSize: 10,
+                      page: 1
+                    });
+                  }}
+                >
+                  Limpar filtros
+                </Button>
+              </div>
+            </form>
           </CardContent>
         </Card>
       </section>

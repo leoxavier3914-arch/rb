@@ -79,7 +79,8 @@ describe('SalesPage', () => {
     fireEvent.change(startInput, { target: { value: '2024-01-01' } });
     fireEvent.change(endInput, { target: { value: '2024-01-31' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /listar vendas/i }));
+    const submitButton = await screen.findByRole('button', { name: /aplicar filtros/i });
+    fireEvent.click(submitButton);
 
     await screen.findByText('Cliente Teste');
 
