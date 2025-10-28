@@ -16,37 +16,50 @@ describe('SalesPage', () => {
   });
 
   it('lista vendas e permite abrir os detalhes pela tabela', async () => {
-    const now = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const formatDateInput = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    const ninetyDayWindowMs = (90 - 1) * 24 * 60 * 60 * 1000;
+    const defaultEndDate = formatDateInput(now);
+    const defaultStartDate = formatDateInput(new Date(now.getTime() - ninetyDayWindowMs));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.url;
 
-      if (url.includes('/api/kfy/sales?')) {
+      if (url.includes('/api/hub/sales?')) {
         return Promise.resolve({
           ok: true,
           status: 200,
           json: async () => ({
             ok: true,
-            data: [
+            page: 1,
+            page_size: 20,
+            total: 1,
+            items: [
               {
                 id: 'sale_1',
-                customer_name: 'Cliente Teste',
+                customer: 'Cliente Teste',
                 status: 'paid',
-                total_amount_cents: 120000,
-                paid_at: now
+                total_cents: 120000,
+                created_at: nowIso
               }
             ]
           })
         });
       }
 
-      if (url.includes('/api/kfy/sales/sale_1')) {
+      if (url.includes('/api/hub/sales/sale_1')) {
         expect(init?.method ?? 'GET').toBe('GET');
         return Promise.resolve({
           ok: true,
           status: 200,
           json: async () => ({
             ok: true,
-            data: {
+            sale: {
               id: 'sale_1',
               status: 'paid',
               total_amount_cents: 120000,
@@ -54,10 +67,13 @@ describe('SalesPage', () => {
               fee_amount_cents: 20000,
               customer_id: 'cust_1',
               product_id: 'prod_1',
-              created_at: now,
-              paid_at: now,
-              updated_at: now
-            }
+              created_at: nowIso,
+              paid_at: nowIso,
+              updated_at: nowIso
+            },
+            events: [],
+            notes: [],
+            versions: []
           })
         });
       }
@@ -75,16 +91,36 @@ describe('SalesPage', () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining('start_date=1970-01-01'),
-        expect.anything()
+        expect.stringContaining('/api/hub/sales?'),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'x-admin-role': 'true' })
+        })
       )
     );
+
+    const listCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === 'string' ? input : input.url;
+      return url.includes('/api/hub/sales?');
+    });
+
+    expect(listCall).toBeDefined();
+    const listUrl = typeof listCall![0] === 'string' ? listCall![0] : listCall![0].url;
+    expect(listUrl).toContain(`date_from=${defaultStartDate}`);
+    expect(listUrl).toContain(`date_to=${defaultEndDate}`);
+    expect(listUrl).toContain('page=1');
 
     await screen.findByText('Cliente Teste');
 
     fireEvent.click(screen.getByText('Cliente Teste'));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/kfy/sales/sale_1'), expect.anything()));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/hub/sales/sale_1'),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'x-admin-role': 'true' })
+        })
+      )
+    );
 
     await screen.findByText('prod_1');
   });
