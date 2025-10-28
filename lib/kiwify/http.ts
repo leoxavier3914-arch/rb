@@ -1,5 +1,6 @@
 import { getAccessToken } from './client';
 import { loadEnv } from '@/lib/env';
+import { resolveApiUrl } from './baseUrl';
 
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
@@ -79,9 +80,7 @@ export async function kiwifyFetch(path: string, init: KiwifyRequestInit = {}): P
     const id = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const baseUrl = (env.KIWIFY_API_BASE_URL ?? '').replace(/\/+$/, '');
-      const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-      const url = `${baseUrl}${normalizedPath}`;
+      const url = resolveApiUrl(env.KIWIFY_API_BASE_URL, path);
       const response = await fetch(url, requestInit);
 
       if ((response.status === 401 || response.status === 403) && attempt === 1) {
