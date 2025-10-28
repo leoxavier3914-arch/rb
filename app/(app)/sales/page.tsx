@@ -72,7 +72,8 @@ const DATE_KEYS = [
   'updated_at',
   'updatedAt'
 ] as const;
-const DEFAULT_START_DATE = '1970-01-01';
+const MAX_SALES_RANGE_DAYS = 90;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const CUSTOMER_KEYS = [
   'customer',
@@ -331,8 +332,20 @@ export default function SalesPage() {
   const refundOperation = useOperation<unknown>();
   const statsOperation = useOperation<unknown>();
 
+  const runListOperation = listOperation.run;
+  const runDetailsOperation = detailsOperation.run;
+  const resetDetailsOperation = detailsOperation.reset;
+  const runRefundOperation = refundOperation.run;
+  const resetRefundOperation = refundOperation.reset;
+  const runStatsOperation = statsOperation.run;
+  const resetStatsOperation = statsOperation.reset;
+
   const defaultEndDate = useMemo(() => formatDateInput(new Date()), []);
-  const defaultStartDate = useMemo(() => DEFAULT_START_DATE, []);
+  const defaultStartDate = useMemo(() => {
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - (MAX_SALES_RANGE_DAYS - 1) * MILLISECONDS_PER_DAY);
+    return formatDateInput(startDate);
+  }, []);
 
   const [detailSaleId, setDetailSaleId] = useState('');
   const [refundSaleId, setRefundSaleId] = useState('');
@@ -376,11 +389,11 @@ export default function SalesPage() {
       search.set('page_size', String(currentFilters.pageSize));
       search.set('page', String(currentFilters.page));
 
-      await listOperation.run(() =>
+      await runListOperation(() =>
         callKiwifyAdminApi(`/api/kfy/sales?${search.toString()}`, {}, 'Erro ao listar vendas.')
       );
     },
-    [listOperation]
+    [runListOperation]
   );
 
   useEffect(() => {
@@ -391,10 +404,10 @@ export default function SalesPage() {
     async (saleId: string) => {
       const normalized = saleId.trim();
       if (normalized === '') {
-        detailsOperation.reset();
+        resetDetailsOperation();
         return;
       }
-      await detailsOperation.run(() =>
+      await runDetailsOperation(() =>
         callKiwifyAdminApi(
           `/api/kfy/sales/${encodeURIComponent(normalized)}`,
           {},
@@ -402,7 +415,7 @@ export default function SalesPage() {
         )
       );
     },
-    [detailsOperation]
+    [resetDetailsOperation, runDetailsOperation]
   );
 
   const handleSaleDetails = useCallback(
@@ -456,11 +469,11 @@ export default function SalesPage() {
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (refundSaleId.trim() === '') {
-        refundOperation.reset();
+        resetRefundOperation();
         return;
       }
 
-      await refundOperation.run(async () => {
+      await runRefundOperation(async () => {
         const result = await callKiwifyAdminApi(
           `/api/kfy/sales/${encodeURIComponent(refundSaleId.trim())}/refund`,
           {
@@ -473,14 +486,14 @@ export default function SalesPage() {
         return result ?? { success: true };
       });
     },
-    [refundOperation, refundPixKey, refundSaleId]
+    [refundPixKey, refundSaleId, resetRefundOperation, runRefundOperation]
   );
 
   const handleStats = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (statsStartDate.trim() === '' || statsEndDate.trim() === '') {
-        statsOperation.reset();
+        resetStatsOperation();
         return;
       }
 
@@ -491,11 +504,11 @@ export default function SalesPage() {
         search.set('product_id', statsProductId.trim());
       }
 
-      await statsOperation.run(() =>
+      await runStatsOperation(() =>
         callKiwifyAdminApi(`/api/kfy/sales/stats?${search.toString()}`, {}, 'Erro ao consultar estatísticas.')
       );
     },
-    [statsEndDate, statsOperation, statsProductId, statsStartDate]
+    [resetStatsOperation, runStatsOperation, statsEndDate, statsProductId, statsStartDate]
   );
 
   return (
@@ -512,7 +525,7 @@ export default function SalesPage() {
           <CardHeader>
             <CardTitle>Lista de vendas</CardTitle>
             <CardDescription>
-              Todas as vendas retornadas pela API, do início do histórico até a data atual.
+              Todas as vendas retornadas pela API nos últimos 90 dias, até a data atual.
             </CardDescription>
           </CardHeader>
           <CardContent>
