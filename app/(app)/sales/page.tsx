@@ -39,10 +39,6 @@ interface SaleDetail {
 interface SaleListFilters {
   readonly startDate: string;
   readonly endDate: string;
-  readonly status?: string;
-  readonly paymentMethod?: string;
-  readonly productId?: string;
-  readonly fullDetails: boolean;
   readonly pageSize: number;
   readonly page: number;
 }
@@ -338,14 +334,6 @@ export default function SalesPage() {
   const defaultEndDate = useMemo(() => formatDateInput(new Date()), []);
   const defaultStartDate = useMemo(() => DEFAULT_START_DATE, []);
 
-  const [startDate, setStartDate] = useState(defaultStartDate);
-  const [endDate, setEndDate] = useState(defaultEndDate);
-  const [status, setStatus] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('');
-  const [productId, setProductId] = useState('');
-  const [pageSize, setPageSize] = useState('10');
-  const [fullDetails, setFullDetails] = useState(false);
-
   const [detailSaleId, setDetailSaleId] = useState('');
   const [refundSaleId, setRefundSaleId] = useState('');
   const [refundPixKey, setRefundPixKey] = useState('');
@@ -357,7 +345,6 @@ export default function SalesPage() {
   const [filters, setFilters] = useState<SaleListFilters>(() => ({
     startDate: defaultStartDate,
     endDate: defaultEndDate,
-    fullDetails: false,
     pageSize: 10,
     page: 1
   }));
@@ -388,18 +375,6 @@ export default function SalesPage() {
       search.set('end_date', currentFilters.endDate);
       search.set('page_size', String(currentFilters.pageSize));
       search.set('page', String(currentFilters.page));
-      if (currentFilters.status) {
-        search.set('status', currentFilters.status);
-      }
-      if (currentFilters.paymentMethod) {
-        search.set('payment_method', currentFilters.paymentMethod);
-      }
-      if (currentFilters.productId) {
-        search.set('product_id', currentFilters.productId);
-      }
-      if (currentFilters.fullDetails) {
-        search.set('full_details', 'true');
-      }
 
       await listOperation.run(() =>
         callKiwifyAdminApi(`/api/kfy/sales?${search.toString()}`, {}, 'Erro ao listar vendas.')
@@ -428,35 +403,6 @@ export default function SalesPage() {
       );
     },
     [detailsOperation]
-  );
-
-  const handleListSales = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (startDate.trim() === '' || endDate.trim() === '') {
-        listOperation.reset();
-        return;
-      }
-
-      const sanitizedPageSize = Math.max(1, Number.parseInt(pageSize.trim(), 10) || 10);
-      setPageSize(String(sanitizedPageSize));
-
-      const trimmedStatus = status.trim();
-      const trimmedPaymentMethod = paymentMethod.trim();
-      const trimmedProductId = productId.trim();
-
-      setFilters({
-        startDate,
-        endDate,
-        status: trimmedStatus === '' ? undefined : trimmedStatus,
-        paymentMethod: trimmedPaymentMethod === '' ? undefined : trimmedPaymentMethod,
-        productId: trimmedProductId === '' ? undefined : trimmedProductId,
-        fullDetails,
-        pageSize: sanitizedPageSize,
-        page: 1
-      });
-    },
-    [endDate, fullDetails, listOperation, pageSize, paymentMethod, productId, startDate, status]
   );
 
   const handleSaleDetails = useCallback(
@@ -565,7 +511,9 @@ export default function SalesPage() {
         <Card>
           <CardHeader>
             <CardTitle>Lista de vendas</CardTitle>
-            <CardDescription>As últimas vendas retornadas pelos filtros atuais.</CardDescription>
+            <CardDescription>
+              Todas as vendas retornadas pela API, do início do histórico até a data atual.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {listOperation.loading ? (
@@ -654,133 +602,15 @@ export default function SalesPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-600">Nenhuma venda encontrada para os filtros selecionados.</p>
+                <p className="text-sm text-slate-600">Nenhuma venda encontrada para o intervalo completo consultado.</p>
               )
             ) : listOperation.data ? (
               <pre className="max-h-80 overflow-y-auto rounded-md bg-slate-900 p-4 text-xs text-slate-100">
                 {formatJson(listOperation.data)}
               </pre>
             ) : (
-              <p className="text-sm text-slate-500">
-                Ajuste os filtros abaixo para atualizar a listagem automaticamente.
-              </p>
+              <p className="text-sm text-slate-500">As vendas serão carregadas automaticamente.</p>
             )}
-          </CardContent>
-        </Card>
-      </section>
-
-      <section>
-        <Card>
-          <CardHeader>
-            <CardTitle>Filtrar vendas</CardTitle>
-            <CardDescription>
-              Informe o intervalo obrigatório de datas e utilize filtros adicionais para refinar o resultado mostrado acima.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleListSales}>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <label className="flex flex-col gap-1 text-sm text-slate-700">
-                  Data de início
-                  <input
-                    type="date"
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    value={startDate}
-                    onChange={event => setStartDate(event.target.value)}
-                    required
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-700">
-                  Data de fim
-                  <input
-                    type="date"
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    value={endDate}
-                    onChange={event => setEndDate(event.target.value)}
-                    required
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-700">
-                  Status
-                  <input
-                    type="text"
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    value={status}
-                    onChange={event => setStatus(event.target.value)}
-                    placeholder="approved"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-700">
-                  Método de pagamento
-                  <input
-                    type="text"
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    value={paymentMethod}
-                    onChange={event => setPaymentMethod(event.target.value)}
-                    placeholder="credit_card"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-700">
-                  ID do produto
-                  <input
-                    type="text"
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    value={productId}
-                    onChange={event => setProductId(event.target.value)}
-                    placeholder="prod_xxxxx"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-700">
-                  Tamanho da página
-                  <input
-                    type="number"
-                    min={1}
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    value={pageSize}
-                    onChange={event => setPageSize(event.target.value)}
-                    placeholder="10"
-                  />
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border border-slate-300"
-                    checked={fullDetails}
-                    onChange={event => setFullDetails(event.target.checked)}
-                  />
-                  Retornar detalhes completos
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button type="submit" disabled={listOperation.loading}>
-                  {listOperation.loading ? 'Consultando…' : 'Aplicar filtros'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setStartDate(defaultStartDate);
-                    setEndDate(defaultEndDate);
-                    setStatus('');
-                    setPaymentMethod('');
-                    setProductId('');
-                    setPageSize('10');
-                    setFullDetails(false);
-                    setDetailSaleId('');
-                    detailsOperation.reset();
-                    setFilters({
-                      startDate: defaultStartDate,
-                      endDate: defaultEndDate,
-                      fullDetails: false,
-                      pageSize: 10,
-                      page: 1
-                    });
-                  }}
-                >
-                  Limpar filtros
-                </Button>
-              </div>
-            </form>
           </CardContent>
         </Card>
       </section>
