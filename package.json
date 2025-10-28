@@ -1,0 +1,21 @@
+{
+  "name": "rb",
+  "private": true,
+  "workspaces": [
+    "hub"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace hub",
+    "build": "npm run build --workspace hub",
+    "start": "npm run start --workspace hub",
+    "lint": "npm run lint --workspace hub",
+    "vercel-build": "npm install --workspace hub --include=dev && npm run build --workspace hub"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "next": "16.0.0"
+  },
+  "packageManager": "npm@11.4.2"
+}
