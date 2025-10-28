@@ -40,7 +40,6 @@ interface SaleListFilters {
   readonly startDate: string;
   readonly endDate: string;
   readonly pageSize: number;
-  readonly page: number;
 }
 
 const SALE_KEYS = ['sales', 'data', 'items', 'results', 'orders', 'list', 'values', 'entries'] as const;
@@ -72,7 +71,8 @@ const DATE_KEYS = [
   'updated_at',
   'updatedAt'
 ] as const;
-const DEFAULT_START_DATE = '1970-01-01';
+const MAX_SALES_RANGE_DAYS = 90;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const CUSTOMER_KEYS = [
   'customer',
@@ -331,8 +331,20 @@ export default function SalesPage() {
   const refundOperation = useOperation<unknown>();
   const statsOperation = useOperation<unknown>();
 
+  const runListOperation = listOperation.run;
+  const runDetailsOperation = detailsOperation.run;
+  const resetDetailsOperation = detailsOperation.reset;
+  const runRefundOperation = refundOperation.run;
+  const resetRefundOperation = refundOperation.reset;
+  const runStatsOperation = statsOperation.run;
+  const resetStatsOperation = statsOperation.reset;
+
   const defaultEndDate = useMemo(() => formatDateInput(new Date()), []);
-  const defaultStartDate = useMemo(() => DEFAULT_START_DATE, []);
+  const defaultStartDate = useMemo(() => {
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - (MAX_SALES_RANGE_DAYS - 1) * MILLISECONDS_PER_DAY);
+    return formatDateInput(startDate);
+  }, []);
 
   const [detailSaleId, setDetailSaleId] = useState('');
   const [refundSaleId, setRefundSaleId] = useState('');
@@ -342,12 +354,14 @@ export default function SalesPage() {
   const [statsEndDate, setStatsEndDate] = useState('');
   const [statsProductId, setStatsProductId] = useState('');
 
-  const [filters, setFilters] = useState<SaleListFilters>(() => ({
-    startDate: defaultStartDate,
-    endDate: defaultEndDate,
-    pageSize: 10,
-    page: 1
-  }));
+  const filters = useMemo<SaleListFilters>(
+    () => ({
+      startDate: defaultStartDate,
+      endDate: defaultEndDate,
+      pageSize: 10
+    }),
+    [defaultEndDate, defaultStartDate]
+  );
 
   const saleExtraction = useMemo(() => extractSaleRecords(listOperation.data), [listOperation.data]);
   const sales = useMemo(
@@ -355,12 +369,6 @@ export default function SalesPage() {
     [saleExtraction]
   );
   const totalCount = useMemo(() => extractTotalCount(listOperation.data), [listOperation.data]);
-  const totalPages = useMemo(() => {
-    if (totalCount === null) {
-      return null;
-    }
-    return Math.max(1, Math.ceil(totalCount / filters.pageSize));
-  }, [filters.pageSize, totalCount]);
   const saleDetail = useMemo(() => {
     if (!detailsOperation.data || !isRecord(detailsOperation.data)) {
       return null;
@@ -374,13 +382,12 @@ export default function SalesPage() {
       search.set('start_date', currentFilters.startDate);
       search.set('end_date', currentFilters.endDate);
       search.set('page_size', String(currentFilters.pageSize));
-      search.set('page', String(currentFilters.page));
 
-      await listOperation.run(() =>
+      await runListOperation(() =>
         callKiwifyAdminApi(`/api/kfy/sales?${search.toString()}`, {}, 'Erro ao listar vendas.')
       );
     },
-    [listOperation]
+    [runListOperation]
   );
 
   useEffect(() => {
@@ -391,10 +398,10 @@ export default function SalesPage() {
     async (saleId: string) => {
       const normalized = saleId.trim();
       if (normalized === '') {
-        detailsOperation.reset();
+        resetDetailsOperation();
         return;
       }
-      await detailsOperation.run(() =>
+      await runDetailsOperation(() =>
         callKiwifyAdminApi(
           `/api/kfy/sales/${encodeURIComponent(normalized)}`,
           {},
@@ -402,7 +409,7 @@ export default function SalesPage() {
         )
       );
     },
-    [detailsOperation]
+    [resetDetailsOperation, runDetailsOperation]
   );
 
   const handleSaleDetails = useCallback(
@@ -423,44 +430,15 @@ export default function SalesPage() {
     [runSaleDetails]
   );
 
-  const handlePreviousPage = useCallback(() => {
-    setFilters(currentFilters => {
-      const previousPage = Math.max(1, currentFilters.page - 1);
-      if (previousPage === currentFilters.page) {
-        return currentFilters;
-      }
-      return { ...currentFilters, page: previousPage };
-    });
-  }, []);
-
-  const handleNextPage = useCallback(() => {
-    setFilters(currentFilters => {
-      const limit = totalPages ?? Infinity;
-      const nextPage = Math.min(limit, currentFilters.page + 1);
-      if (nextPage === currentFilters.page) {
-        return currentFilters;
-      }
-      return { ...currentFilters, page: nextPage };
-    });
-  }, [totalPages]);
-
-  const canGoPrevious = filters.page > 1;
-  const canGoNext = useMemo(() => {
-    if (totalPages !== null) {
-      return filters.page < totalPages;
-    }
-    return sales.length === filters.pageSize;
-  }, [filters.page, filters.pageSize, sales.length, totalPages]);
-
   const handleRefund = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (refundSaleId.trim() === '') {
-        refundOperation.reset();
+        resetRefundOperation();
         return;
       }
 
-      await refundOperation.run(async () => {
+      await runRefundOperation(async () => {
         const result = await callKiwifyAdminApi(
           `/api/kfy/sales/${encodeURIComponent(refundSaleId.trim())}/refund`,
           {
@@ -473,14 +451,14 @@ export default function SalesPage() {
         return result ?? { success: true };
       });
     },
-    [refundOperation, refundPixKey, refundSaleId]
+    [refundPixKey, refundSaleId, resetRefundOperation, runRefundOperation]
   );
 
   const handleStats = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (statsStartDate.trim() === '' || statsEndDate.trim() === '') {
-        statsOperation.reset();
+        resetStatsOperation();
         return;
       }
 
@@ -491,11 +469,11 @@ export default function SalesPage() {
         search.set('product_id', statsProductId.trim());
       }
 
-      await statsOperation.run(() =>
+      await runStatsOperation(() =>
         callKiwifyAdminApi(`/api/kfy/sales/stats?${search.toString()}`, {}, 'Erro ao consultar estatísticas.')
       );
     },
-    [statsEndDate, statsOperation, statsProductId, statsStartDate]
+    [resetStatsOperation, runStatsOperation, statsEndDate, statsProductId, statsStartDate]
   );
 
   return (
@@ -512,7 +490,7 @@ export default function SalesPage() {
           <CardHeader>
             <CardTitle>Lista de vendas</CardTitle>
             <CardDescription>
-              Todas as vendas retornadas pela API, do início do histórico até a data atual.
+              Todas as vendas retornadas pela API nos últimos 90 dias, até a data atual.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -573,32 +551,6 @@ export default function SalesPage() {
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-slate-500">
-                      Página {filters.page}
-                      {totalPages !== null ? ` de ${totalPages}` : ''}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handlePreviousPage}
-                        disabled={!canGoPrevious || listOperation.loading}
-                      >
-                        Anterior
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleNextPage}
-                        disabled={!canGoNext || listOperation.loading}
-                      >
-                        Próxima
-                      </Button>
-                    </div>
                   </div>
                 </div>
               ) : (
