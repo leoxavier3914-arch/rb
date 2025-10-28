@@ -11,6 +11,10 @@ import { formatMoneyFromCents, formatShortDate } from '@/lib/ui/format';
 import { callKiwifyAdminApi } from '@/lib/ui/kiwifyAdminApi';
 import { useOperation } from '@/lib/ui/useOperation';
 
+const MAX_SALES_RANGE_DAYS = 90;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const DEFAULT_PAGE_SIZE = 20;
+
 type UnknownRecord = Record<string, unknown>;
 
 interface SaleListItem {
@@ -19,13 +23,12 @@ interface SaleListItem {
   readonly totalCents: number;
   readonly createdAt: string | null;
   readonly customer: string;
-  readonly raw: UnknownRecord;
 }
 
 interface SaleDetail {
   readonly id: string;
   readonly status: string | null;
-  readonly totalCents: number | null;
+  readonly totalCents: number;
   readonly netCents: number | null;
   readonly feeCents: number | null;
   readonly customerId: string | null;
@@ -33,7 +36,7 @@ interface SaleDetail {
   readonly createdAt: string | null;
   readonly paidAt: string | null;
   readonly updatedAt: string | null;
-  readonly raw: UnknownRecord;
+  readonly raw: HubSaleDetailResponse;
 }
 
 interface SaleListFilters {
@@ -42,69 +45,42 @@ interface SaleListFilters {
   readonly pageSize: number;
 }
 
-const SALE_KEYS = ['sales', 'data', 'items', 'results', 'orders', 'list', 'values', 'entries'] as const;
-const SALE_ID_KEYS = ['id', 'uuid', 'sale_id', 'saleId', 'order_id', 'orderId'] as const;
-const STATUS_KEYS = ['status', 'state', 'situation'] as const;
-const TOTAL_KEYS = [
-  'total_amount_cents',
-  'total_amount',
-  'amount_cents',
-  'amount',
-  'total',
-  'value',
-  'price'
-] as const;
-const DATE_KEYS = [
-  'paid_at',
-  'paidAt',
-  'approved_at',
-  'approvedAt',
-  'completed_at',
-  'completedAt',
-  'created_at',
-  'createdAt',
-  'inserted_at',
-  'insertedAt',
-  'date',
-  'purchased_at',
-  'purchasedAt',
-  'updated_at',
-  'updatedAt'
-] as const;
-const MAX_SALES_RANGE_DAYS = 90;
-const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+interface HubSaleItem {
+  readonly id: string;
+  readonly customer: string;
+  readonly status: string;
+  readonly total_cents: number | null;
+  readonly created_at: string | null;
+}
 
-const CUSTOMER_KEYS = [
-  'customer',
-  'customer_name',
-  'customerName',
-  'customer_full_name',
-  'customerFullName',
-  'buyer',
-  'buyer_name',
-  'buyerName',
-  'client',
-  'client_name',
-  'clientName'
-] as const;
-const CUSTOMER_STRING_KEYS = [
-  'customer',
-  'customer_name',
-  'customerName',
-  'customer_full_name',
-  'customerFullName',
-  'buyer',
-  'buyer_name',
-  'buyerName',
-  'client',
-  'client_name',
-  'clientName',
-  'customer_email',
-  'customerEmail',
-  'customer_document',
-  'customerDocument',
-  'email'
-] as const;
+interface HubSalesResponse extends UnknownRecord {
+  readonly ok: true;
+  readonly page: number;
+  readonly page_size: number;
+  readonly total: number | null;
+  readonly items: readonly HubSaleItem[];
+}
+
+interface HubSaleRecord {
+  readonly id: string;
+  readonly status: string | null;
+  readonly total_amount_cents: number | null;
+  readonly net_amount_cents: number | null;
+  readonly fee_amount_cents: number | null;
+  readonly customer_id: string | null;
+  readonly product_id: string | null;
+  readonly created_at: string | null;
+  readonly paid_at: string | null;
+  readonly updated_at: string | null;
+}
+
+interface HubSaleDetailResponse extends UnknownRecord {
+  readonly ok: true;
+  readonly sale: HubSaleRecord | null;
+  readonly events: readonly UnknownRecord[];
+  readonly notes: readonly UnknownRecord[];
+  readonly versions: readonly UnknownRecord[];
+}
 
 function formatDateInput(date: Date): string {
   const year = date.getFullYear();
@@ -117,204 +93,126 @@ function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function coerceId(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed !== '' ? trimmed : null;
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value.toString();
-  }
-  return null;
+function buildAdminHeaders(initHeaders: HeadersInit | undefined): Record<string, string> {
+  const headers = new Headers(initHeaders);
+  headers.set('x-admin-role', 'true');
+  const result: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
 }
 
-function coerceString(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed !== '' ? trimmed : null;
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value.toString();
-  }
-  return null;
+function extractError(payload: UnknownRecord, fallbackMessage: string): string {
+  const message = typeof payload.error === 'string' ? payload.error.trim() : '';
+  return message !== '' ? message : fallbackMessage;
 }
 
-function coerceDate(value: unknown): string | null {
-  if (!value) {
-    return null;
+async function callAdminEndpoint(
+  url: string,
+  options: RequestInit = {},
+  fallbackMessage = 'Erro ao executar operação.'
+): Promise<UnknownRecord> {
+  const response = await fetch(url, {
+    ...options,
+    headers: buildAdminHeaders(options.headers)
+  });
+
+  if (response.status === 204 || response.status === 205) {
+    return {};
   }
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+
+  const payload = (await response.json().catch(() => null)) as unknown;
+  if (!isRecord(payload)) {
+    throw new Error(fallbackMessage);
   }
-  const raw = typeof value === 'string' ? value.trim() : value?.toString?.() ?? '';
-  if (raw === '') {
-    return null;
+
+  if (!response.ok || payload.ok === false) {
+    throw new Error(extractError(payload, fallbackMessage));
   }
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+
+  return payload;
 }
 
-function toCents(value: unknown): number {
-  if (value === null || value === undefined || value === '') {
-    return 0;
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Number.isInteger(value) ? value : Math.round(value * 100);
-  }
-  const numeric = Number.parseFloat(String(value).replace(',', '.'));
-  return Number.isNaN(numeric) ? 0 : Math.round(numeric * 100);
-}
-
-function getValue(record: UnknownRecord, keys: readonly string[]): unknown {
-  for (const key of keys) {
-    if (key in record) {
-      const value = record[key];
-      if (value !== undefined && value !== null) {
-        return value;
-      }
-    }
-  }
-  return undefined;
-}
-
-function extractSaleRecords(data: unknown): { readonly found: boolean; readonly items: UnknownRecord[] } {
-  if (Array.isArray(data)) {
-    return { found: true, items: data.filter(isRecord) };
-  }
-  if (isRecord(data)) {
-    for (const key of SALE_KEYS) {
-      const nested = data[key];
-      if (nested === undefined) {
-        continue;
-      }
-      const result = extractSaleRecords(nested);
-      if (result.found) {
-        return result;
-      }
-    }
-  }
-  return { found: false, items: [] };
-}
-
-function resolveCustomerName(record: UnknownRecord): string {
-  const directValue = getValue(record, CUSTOMER_STRING_KEYS);
-  const direct = coerceString(directValue);
-  if (direct) {
-    return direct;
-  }
-
-  for (const key of CUSTOMER_KEYS) {
-    const nested = record[key];
-    if (!isRecord(nested)) {
-      continue;
-    }
-    const nestedName =
-      coerceString(getValue(nested, ['name', 'full_name', 'fullName', 'display_name', 'displayName'])) ??
-      coerceString(getValue(nested, ['email', 'document']));
-    if (nestedName) {
-      return nestedName;
-    }
-  }
-
-  const fallback =
-    coerceString(record['customer_email']) ??
-    coerceString(record['customerEmail']) ??
-    coerceString(record['email']) ??
-    null;
-
-  return fallback ?? 'Cliente desconhecido';
-}
-
-function mapSaleListItem(record: UnknownRecord): SaleListItem | null {
-  const idValue = getValue(record, SALE_ID_KEYS);
-  const id = coerceId(idValue);
-  if (!id) {
-    return null;
-  }
-
-  const statusValue = getValue(record, STATUS_KEYS);
-  const status = coerceString(statusValue) ?? 'desconhecido';
-  const totalValue = getValue(record, TOTAL_KEYS);
-  const totalCents = toCents(totalValue);
-  const dateValue = getValue(record, DATE_KEYS);
-  const createdAt = coerceDate(dateValue);
-  const customer = resolveCustomerName(record);
-
-  return { id, status, totalCents, createdAt, customer, raw: record };
-}
-
-function mapSaleDetail(record: UnknownRecord): SaleDetail | null {
-  const idValue = getValue(record, SALE_ID_KEYS);
-  const id = coerceId(idValue);
-  if (!id) {
-    return null;
-  }
-
-  const status = coerceString(getValue(record, STATUS_KEYS));
-  const totalCents = toCents(getValue(record, TOTAL_KEYS));
-  const netCents = record['net_amount_cents'] ?? record['net_amount'] ?? record['net'] ?? null;
-  const feeCents = record['fee_amount_cents'] ?? record['fee_amount'] ?? record['fees'] ?? null;
-  const customerId = coerceString(
-    getValue(record, ['customer_id', 'customerId', 'client_id', 'clientId']) ??
-      (isRecord(record['customer']) ? getValue(record['customer'], ['id', 'uuid']) : undefined)
+function isHubSaleItem(value: unknown): value is HubSaleItem {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.customer === 'string' &&
+    typeof value.status === 'string' &&
+    (value.total_cents === null || typeof value.total_cents === 'number') &&
+    (value.created_at === null || typeof value.created_at === 'string')
   );
-  const productId = coerceString(getValue(record, ['product_id', 'productId']));
-  const createdAt = coerceDate(getValue(record, ['created_at', 'createdAt', 'inserted_at', 'insertedAt']));
-  const paidAt = coerceDate(getValue(record, ['paid_at', 'paidAt', 'approved_at', 'approvedAt']));
-  const updatedAt = coerceDate(getValue(record, ['updated_at', 'updatedAt']));
+}
 
-  const normalizeCents = (value: unknown): number | null => {
-    if (value === null || value === undefined) {
-      return null;
-    }
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return Number.isInteger(value) ? value : Math.round(value * 100);
-    }
-    const numeric = Number.parseFloat(String(value).replace(',', '.'));
-    return Number.isNaN(numeric) ? null : Math.round(numeric * 100);
-  };
+function isHubSalesResponse(value: unknown): value is HubSalesResponse {
+  return (
+    isRecord(value) &&
+    value.ok === true &&
+    typeof value.page === 'number' &&
+    typeof value.page_size === 'number' &&
+    (value.total === null || typeof value.total === 'number') &&
+    Array.isArray(value.items) &&
+    value.items.every(isHubSaleItem)
+  );
+}
 
+function isHubSaleRecord(value: unknown): value is HubSaleRecord {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    (value.status === null || typeof value.status === 'string') &&
+    (value.total_amount_cents === null || typeof value.total_amount_cents === 'number') &&
+    (value.net_amount_cents === null || typeof value.net_amount_cents === 'number') &&
+    (value.fee_amount_cents === null || typeof value.fee_amount_cents === 'number') &&
+    (value.customer_id === null || typeof value.customer_id === 'string') &&
+    (value.product_id === null || typeof value.product_id === 'string') &&
+    (value.created_at === null || typeof value.created_at === 'string') &&
+    (value.paid_at === null || typeof value.paid_at === 'string') &&
+    (value.updated_at === null || typeof value.updated_at === 'string')
+  );
+}
+
+function isHubSaleDetailResponse(value: unknown): value is HubSaleDetailResponse {
+  return (
+    isRecord(value) &&
+    value.ok === true &&
+    (value.sale === null || isHubSaleRecord(value.sale)) &&
+    Array.isArray(value.events) &&
+    Array.isArray(value.notes) &&
+    Array.isArray(value.versions)
+  );
+}
+
+function mapSaleListItem(item: HubSaleItem): SaleListItem {
   return {
-    id,
-    status,
-    totalCents,
-    netCents: normalizeCents(netCents),
-    feeCents: normalizeCents(feeCents),
-    customerId,
-    productId,
-    createdAt,
-    paidAt,
-    updatedAt,
-    raw: record
+    id: item.id,
+    status: item.status,
+    totalCents: item.total_cents ?? 0,
+    createdAt: item.created_at ?? null,
+    customer: item.customer
   };
 }
 
-function extractTotalCount(data: unknown): number | null {
-  if (typeof data === 'number' && Number.isFinite(data)) {
-    return Math.max(0, Math.round(data));
+function mapSaleDetail(response: HubSaleDetailResponse | null): SaleDetail | null {
+  if (!response || !response.sale) {
+    return null;
   }
-  if (isRecord(data)) {
-    const direct = getValue(data, ['total', 'total_count', 'totalCount', 'count']);
-    if (typeof direct === 'number' && Number.isFinite(direct)) {
-      return Math.max(0, Math.round(direct));
-    }
-    if (typeof direct === 'string' && direct.trim() !== '') {
-      const parsed = Number.parseInt(direct.trim(), 10);
-      if (!Number.isNaN(parsed)) {
-        return Math.max(0, parsed);
-      }
-    }
-    const pagination = data.pagination ?? data.meta ?? null;
-    const nested = extractTotalCount(pagination);
-    if (nested !== null) {
-      return nested;
-    }
-  }
-  return null;
-}
 
-function notNull<T>(value: T | null | undefined): value is T {
-  return value !== null && value !== undefined;
+  const sale = response.sale;
+  return {
+    id: sale.id,
+    status: sale.status,
+    totalCents: sale.total_amount_cents ?? 0,
+    netCents: sale.net_amount_cents ?? null,
+    feeCents: sale.fee_amount_cents ?? null,
+    customerId: sale.customer_id ?? null,
+    productId: sale.product_id ?? null,
+    createdAt: sale.created_at ?? null,
+    paidAt: sale.paid_at ?? null,
+    updatedAt: sale.updated_at ?? null,
+    raw: response
+  };
 }
 
 function formatJson(value: unknown): string {
@@ -326,14 +224,16 @@ function formatJson(value: unknown): string {
 }
 
 export default function SalesPage() {
-  const listOperation = useOperation<unknown>();
-  const detailsOperation = useOperation<unknown>();
+  const listOperation = useOperation<HubSalesResponse>();
+  const detailsOperation = useOperation<HubSaleDetailResponse>();
+  const syncOperation = useOperation<UnknownRecord>();
   const refundOperation = useOperation<unknown>();
   const statsOperation = useOperation<unknown>();
 
   const runListOperation = listOperation.run;
   const runDetailsOperation = detailsOperation.run;
   const resetDetailsOperation = detailsOperation.reset;
+  const runSyncOperation = syncOperation.run;
   const runRefundOperation = refundOperation.run;
   const resetRefundOperation = refundOperation.reset;
   const runStatsOperation = statsOperation.run;
@@ -346,53 +246,69 @@ export default function SalesPage() {
     return formatDateInput(startDate);
   }, []);
 
+  const [page, setPage] = useState(1);
   const [detailSaleId, setDetailSaleId] = useState('');
   const [refundSaleId, setRefundSaleId] = useState('');
   const [refundPixKey, setRefundPixKey] = useState('');
-
   const [statsStartDate, setStatsStartDate] = useState('');
   const [statsEndDate, setStatsEndDate] = useState('');
   const [statsProductId, setStatsProductId] = useState('');
 
-  const filters = useMemo<SaleListFilters>(
-    () => ({
-      startDate: defaultStartDate,
-      endDate: defaultEndDate,
-      pageSize: 10
-    }),
+  const baseFilters = useMemo<SaleListFilters>(
+    () => ({ startDate: defaultStartDate, endDate: defaultEndDate, pageSize: DEFAULT_PAGE_SIZE }),
     [defaultEndDate, defaultStartDate]
   );
 
-  const saleExtraction = useMemo(() => extractSaleRecords(listOperation.data), [listOperation.data]);
-  const sales = useMemo(
-    () => saleExtraction.items.map(mapSaleListItem).filter(notNull),
-    [saleExtraction]
-  );
-  const totalCount = useMemo(() => extractTotalCount(listOperation.data), [listOperation.data]);
-  const saleDetail = useMemo(() => {
-    if (!detailsOperation.data || !isRecord(detailsOperation.data)) {
-      return null;
-    }
-    return mapSaleDetail(detailsOperation.data);
-  }, [detailsOperation.data]);
-
   const runListSales = useCallback(
-    async (currentFilters: SaleListFilters) => {
-      const search = new URLSearchParams();
-      search.set('start_date', currentFilters.startDate);
-      search.set('end_date', currentFilters.endDate);
-      search.set('page_size', String(currentFilters.pageSize));
+    async (currentFilters: SaleListFilters, currentPage: number) => {
+      await runListOperation(async () => {
+        const search = new URLSearchParams();
+        search.set('date_from', currentFilters.startDate);
+        search.set('date_to', currentFilters.endDate);
+        search.set('page_size', String(currentFilters.pageSize));
+        search.set('page', String(currentPage));
 
-      await runListOperation(() =>
-        callKiwifyAdminApi(`/api/kfy/sales?${search.toString()}`, {}, 'Erro ao listar vendas.')
-      );
+        const payload = await callAdminEndpoint(
+          `/api/hub/sales?${search.toString()}`,
+          {},
+          'Erro ao listar vendas.'
+        );
+        if (!isHubSalesResponse(payload)) {
+          throw new Error('Erro ao listar vendas.');
+        }
+        return payload;
+      });
     },
     [runListOperation]
   );
 
   useEffect(() => {
-    void runListSales(filters);
-  }, [filters, runListSales]);
+    void runListSales(baseFilters, page);
+  }, [baseFilters, page, runListSales]);
+
+  const sales = useMemo(() => {
+    return listOperation.data ? listOperation.data.items.map(mapSaleListItem) : [];
+  }, [listOperation.data]);
+
+  const saleDetail = useMemo(() => mapSaleDetail(detailsOperation.data), [detailsOperation.data]);
+  const totalCount = listOperation.data?.total ?? null;
+  const currentPage = listOperation.data?.page ?? page;
+  const currentPageSize = listOperation.data?.page_size ?? DEFAULT_PAGE_SIZE;
+  const totalPages = totalCount !== null ? Math.max(1, Math.ceil(totalCount / currentPageSize)) : null;
+  const hasPreviousPage = currentPage > 1;
+  const hasNextPage = totalCount !== null ? currentPage * currentPageSize < totalCount : sales.length === currentPageSize;
+
+  const handlePreviousPage = useCallback(() => {
+    if (hasPreviousPage) {
+      setPage(previous => Math.max(1, previous - 1));
+    }
+  }, [hasPreviousPage]);
+
+  const handleNextPage = useCallback(() => {
+    if (hasNextPage) {
+      setPage(previous => previous + 1);
+    }
+  }, [hasNextPage]);
 
   const runSaleDetails = useCallback(
     async (saleId: string) => {
@@ -401,13 +317,17 @@ export default function SalesPage() {
         resetDetailsOperation();
         return;
       }
-      await runDetailsOperation(() =>
-        callKiwifyAdminApi(
-          `/api/kfy/sales/${encodeURIComponent(normalized)}`,
+      await runDetailsOperation(async () => {
+        const payload = await callAdminEndpoint(
+          `/api/hub/sales/${encodeURIComponent(normalized)}`,
           {},
           'Erro ao consultar venda.'
-        )
-      );
+        );
+        if (!isHubSaleDetailResponse(payload)) {
+          throw new Error('Erro ao consultar venda.');
+        }
+        return payload;
+      });
     },
     [resetDetailsOperation, runDetailsOperation]
   );
@@ -429,6 +349,22 @@ export default function SalesPage() {
     },
     [runSaleDetails]
   );
+
+  const handleSync = useCallback(async () => {
+    await runSyncOperation(() =>
+      callAdminEndpoint(
+        '/api/kfy/sync',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ resources: ['sales'], persist: true })
+        },
+        'Erro ao sincronizar vendas.'
+      )
+    );
+    await runListSales(baseFilters, 1);
+    setPage(1);
+  }, [baseFilters, runListSales, runSyncOperation]);
 
   const handleRefund = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -470,7 +406,11 @@ export default function SalesPage() {
       }
 
       await runStatsOperation(() =>
-        callKiwifyAdminApi(`/api/kfy/sales/stats?${search.toString()}`, {}, 'Erro ao consultar estatísticas.')
+        callKiwifyAdminApi(
+          `/api/hub/sales/stats?${search.toString()}`,
+          {},
+          'Erro ao consultar estatísticas.'
+        )
       );
     },
     [resetStatsOperation, runStatsOperation, statsEndDate, statsProductId, statsStartDate]
@@ -481,7 +421,8 @@ export default function SalesPage() {
       <header>
         <h1 className="text-3xl font-semibold text-slate-900">Vendas</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Consulte transações, detalhes completos, reembolsos e estatísticas diretamente da API pública da Kiwify.
+          Trabalhe com as vendas sincronizadas no Supabase e utilize a API oficial da Kiwify apenas para ações manuais, como
+          reembolsos ou atualizações emergenciais.
         </p>
       </header>
 
@@ -490,24 +431,42 @@ export default function SalesPage() {
           <CardHeader>
             <CardTitle>Lista de vendas</CardTitle>
             <CardDescription>
-              Todas as vendas retornadas pela API nos últimos 90 dias, até a data atual.
+              Vendas coletadas via sincronização e armazenadas no Supabase. Atualize manualmente antes de consultar, se
+              necessário.
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <p className="text-xs text-slate-500">
+                Intervalo padrão: {defaultStartDate} até {defaultEndDate}. Página {currentPage}
+                {totalPages ? ` de ${totalPages}` : ''}.
+              </p>
+              <Button onClick={handleSync} disabled={syncOperation.loading}>
+                {syncOperation.loading ? 'Sincronizando…' : 'Sincronizar vendas'}
+              </Button>
+            </div>
+
+            <OperationResult
+              loading={syncOperation.loading}
+              error={syncOperation.error}
+              data={syncOperation.data}
+              className="mb-4"
+            />
+
             {listOperation.loading ? (
               <TableSkeleton rows={6} />
             ) : listOperation.error ? (
               <p className="text-sm text-red-600">{listOperation.error}</p>
-            ) : saleExtraction.found ? (
+            ) : listOperation.data ? (
               sales.length > 0 ? (
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-slate-600">
                       {totalCount !== null
-                        ? `Mostrando ${sales.length} de ${totalCount} vendas encontradas.`
-                        : `${sales.length} ${sales.length === 1 ? 'venda encontrada' : 'vendas encontradas'}.`}
+                        ? `Mostrando ${sales.length} de ${totalCount} vendas sincronizadas.`
+                        : `${sales.length} ${sales.length === 1 ? 'venda sincronizada' : 'vendas sincronizadas'}.`}
                     </p>
-                    <p className="text-xs text-slate-500">Clique em uma venda para ver os detalhes.</p>
+                    <p className="text-xs text-slate-500">Clique em uma venda para ver os detalhes armazenados.</p>
                   </div>
                   <div className="overflow-hidden rounded-md border border-slate-200">
                     <Table>
@@ -552,16 +511,36 @@ export default function SalesPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-slate-500">
+                      Página {currentPage}
+                      {totalPages ? ` de ${totalPages}` : ''} · {currentPageSize} itens por página.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePreviousPage}
+                        disabled={!hasPreviousPage || listOperation.loading}
+                      >
+                        Anterior
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleNextPage}
+                        disabled={!hasNextPage || listOperation.loading}
+                      >
+                        Próxima
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-600">Nenhuma venda encontrada para o intervalo completo consultado.</p>
+                <p className="text-sm text-slate-600">Nenhuma venda sincronizada para o intervalo consultado.</p>
               )
-            ) : listOperation.data ? (
-              <pre className="max-h-80 overflow-y-auto rounded-md bg-slate-900 p-4 text-xs text-slate-100">
-                {formatJson(listOperation.data)}
-              </pre>
             ) : (
-              <p className="text-sm text-slate-500">As vendas serão carregadas automaticamente.</p>
+              <p className="text-sm text-slate-500">As vendas serão carregadas automaticamente após a sincronização.</p>
             )}
           </CardContent>
         </Card>
@@ -571,97 +550,97 @@ export default function SalesPage() {
         <section>
           <Card>
             <CardHeader>
-            <CardTitle>Consultar venda</CardTitle>
-            <CardDescription>Busque uma venda específica enviando o ID retornado nas listagens.</CardDescription>
+              <CardTitle>Consultar venda</CardTitle>
+              <CardDescription>Busque uma venda específica a partir dos dados armazenados no Supabase.</CardDescription>
             </CardHeader>
             <CardContent>
-            <form className="space-y-4" onSubmit={handleSaleDetails}>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                ID da venda
-                <input
-                  type="text"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={detailSaleId}
-                  onChange={event => setDetailSaleId(event.target.value)}
-                  placeholder="sale_xxxxx"
-                />
-              </label>
-              <Button type="submit" disabled={detailsOperation.loading}>
-                {detailsOperation.loading ? 'Consultando…' : 'Consultar venda'}
-              </Button>
-            </form>
-            <div className="mt-4 space-y-4">
-              {detailsOperation.loading ? (
-                <p className="text-sm text-slate-500">Consultando venda…</p>
-              ) : detailsOperation.error ? (
-                <p className="text-sm text-red-600">{detailsOperation.error}</p>
-              ) : saleDetail ? (
-                <div className="space-y-4">
-                  <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-                    <dl className="grid gap-4 text-sm text-slate-700 sm:grid-cols-2">
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">ID</dt>
-                        <dd className="font-mono text-xs text-slate-700">{saleDetail.id}</dd>
-                      </div>
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Status</dt>
-                        <dd className="capitalize">{saleDetail.status ?? 'desconhecido'}</dd>
-                      </div>
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Total bruto</dt>
-                        <dd className="font-medium text-slate-900">{formatMoneyFromCents(saleDetail.totalCents)}</dd>
-                      </div>
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Total líquido</dt>
-                        <dd className="font-medium text-slate-900">
-                          {saleDetail.netCents !== null ? formatMoneyFromCents(saleDetail.netCents) : '—'}
-                        </dd>
-                      </div>
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Taxas</dt>
-                        <dd className="font-medium text-slate-900">
-                          {saleDetail.feeCents !== null ? formatMoneyFromCents(saleDetail.feeCents) : '—'}
-                        </dd>
-                      </div>
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Cliente</dt>
-                        <dd className="font-mono text-xs text-slate-700">{saleDetail.customerId ?? '—'}</dd>
-                      </div>
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Produto</dt>
-                        <dd className="font-mono text-xs text-slate-700">{saleDetail.productId ?? '—'}</dd>
-                      </div>
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Criada em</dt>
-                        <dd>{saleDetail.createdAt ? formatShortDate(saleDetail.createdAt) : '—'}</dd>
-                      </div>
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Pago em</dt>
-                        <dd>{saleDetail.paidAt ? formatShortDate(saleDetail.paidAt) : '—'}</dd>
-                      </div>
-                      <div className="space-y-1">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Atualizado em</dt>
-                        <dd>{saleDetail.updatedAt ? formatShortDate(saleDetail.updatedAt) : '—'}</dd>
-                      </div>
-                    </dl>
+              <form className="space-y-4" onSubmit={handleSaleDetails}>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  ID da venda
+                  <input
+                    type="text"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={detailSaleId}
+                    onChange={event => setDetailSaleId(event.target.value)}
+                    placeholder="sale_xxxxx"
+                  />
+                </label>
+                <Button type="submit" disabled={detailsOperation.loading}>
+                  {detailsOperation.loading ? 'Consultando…' : 'Consultar venda'}
+                </Button>
+              </form>
+              <div className="mt-4 space-y-4">
+                {detailsOperation.loading ? (
+                  <p className="text-sm text-slate-500">Consultando venda…</p>
+                ) : detailsOperation.error ? (
+                  <p className="text-sm text-red-600">{detailsOperation.error}</p>
+                ) : saleDetail ? (
+                  <div className="space-y-4">
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+                      <dl className="grid gap-4 text-sm text-slate-700 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">ID</dt>
+                          <dd className="font-mono text-xs text-slate-700">{saleDetail.id}</dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Status</dt>
+                          <dd className="capitalize">{saleDetail.status ?? 'desconhecido'}</dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Total bruto</dt>
+                          <dd className="font-medium text-slate-900">{formatMoneyFromCents(saleDetail.totalCents)}</dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Total líquido</dt>
+                          <dd className="font-medium text-slate-900">
+                            {saleDetail.netCents !== null ? formatMoneyFromCents(saleDetail.netCents) : '—'}
+                          </dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Taxas</dt>
+                          <dd className="font-medium text-slate-900">
+                            {saleDetail.feeCents !== null ? formatMoneyFromCents(saleDetail.feeCents) : '—'}
+                          </dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Cliente</dt>
+                          <dd className="font-mono text-xs text-slate-700">{saleDetail.customerId ?? '—'}</dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Produto</dt>
+                          <dd className="font-mono text-xs text-slate-700">{saleDetail.productId ?? '—'}</dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Criada em</dt>
+                          <dd>{saleDetail.createdAt ? formatShortDate(saleDetail.createdAt) : '—'}</dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Pago em</dt>
+                          <dd>{saleDetail.paidAt ? formatShortDate(saleDetail.paidAt) : '—'}</dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Atualizado em</dt>
+                          <dd>{saleDetail.updatedAt ? formatShortDate(saleDetail.updatedAt) : '—'}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Resposta completa</p>
+                      <pre className="mt-2 max-h-80 overflow-y-auto rounded-md bg-slate-900 p-4 text-xs text-slate-100">
+                        {formatJson(saleDetail.raw)}
+                      </pre>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Resposta completa</p>
-                    <pre className="mt-2 max-h-80 overflow-y-auto rounded-md bg-slate-900 p-4 text-xs text-slate-100">
-                      {formatJson(saleDetail.raw)}
-                    </pre>
-                  </div>
-                </div>
-              ) : detailsOperation.data ? (
-                <pre className="max-h-80 overflow-y-auto rounded-md bg-slate-900 p-4 text-xs text-slate-100">
-                  {formatJson(detailsOperation.data)}
-                </pre>
-              ) : (
-                <p className="text-sm text-slate-500">
-                  Selecione uma venda na tabela acima ou informe o identificador para consultar os detalhes.
-                </p>
-              )}
-            </div>
+                ) : detailsOperation.data ? (
+                  <pre className="max-h-80 overflow-y-auto rounded-md bg-slate-900 p-4 text-xs text-slate-100">
+                    {formatJson(detailsOperation.data)}
+                  </pre>
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    Selecione uma venda na tabela acima ou informe o identificador para consultar os detalhes.
+                  </p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </section>
@@ -669,42 +648,42 @@ export default function SalesPage() {
         <section>
           <Card>
             <CardHeader>
-            <CardTitle>Reembolsar venda</CardTitle>
-            <CardDescription>
-              Informe o ID da venda e, se necessário, a chave PIX que deve ser utilizada no processo de estorno.
-            </CardDescription>
+              <CardTitle>Reembolsar venda</CardTitle>
+              <CardDescription>
+                Informe o ID da venda e, se necessário, a chave PIX que deve ser utilizada no processo de estorno direto na Kiwify.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-            <form className="space-y-4" onSubmit={handleRefund}>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                ID da venda
-                <input
-                  type="text"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={refundSaleId}
-                  onChange={event => setRefundSaleId(event.target.value)}
-                  placeholder="sale_xxxxx"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                Chave PIX (opcional)
-                <input
-                  type="text"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={refundPixKey}
-                  onChange={event => setRefundPixKey(event.target.value)}
-                  placeholder="pix@cliente.com"
-                />
-              </label>
-              <Button type="submit" disabled={refundOperation.loading}>
-                {refundOperation.loading ? 'Processando…' : 'Reembolsar venda'}
-              </Button>
-            </form>
-            <OperationResult
-              loading={refundOperation.loading}
-              error={refundOperation.error}
-              data={refundOperation.data}
-            />
+              <form className="space-y-4" onSubmit={handleRefund}>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  ID da venda
+                  <input
+                    type="text"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={refundSaleId}
+                    onChange={event => setRefundSaleId(event.target.value)}
+                    placeholder="sale_xxxxx"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  Chave PIX (opcional)
+                  <input
+                    type="text"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={refundPixKey}
+                    onChange={event => setRefundPixKey(event.target.value)}
+                    placeholder="pix@cliente.com"
+                  />
+                </label>
+                <Button type="submit" disabled={refundOperation.loading}>
+                  {refundOperation.loading ? 'Processando…' : 'Reembolsar venda'}
+                </Button>
+              </form>
+              <OperationResult
+                loading={refundOperation.loading}
+                error={refundOperation.error}
+                data={refundOperation.data}
+              />
             </CardContent>
           </Card>
         </section>
@@ -713,50 +692,50 @@ export default function SalesPage() {
       <section>
         <Card>
           <CardHeader>
-          <CardTitle>Consultar estatísticas de vendas</CardTitle>
-          <CardDescription>
-            Resuma o desempenho das vendas dentro de um período específico e, se desejar, limite a um produto.
-          </CardDescription>
+            <CardTitle>Consultar estatísticas de vendas</CardTitle>
+            <CardDescription>
+              Resuma o desempenho das vendas a partir dos registros armazenados no Supabase e, se desejar, limite a um produto.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-          <form className="space-y-4" onSubmit={handleStats}>
-            <div className="grid gap-4 md:grid-cols-3">
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                Data de início
-                <input
-                  type="date"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={statsStartDate}
-                  onChange={event => setStatsStartDate(event.target.value)}
-                  required
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                Data de fim
-                <input
-                  type="date"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={statsEndDate}
-                  onChange={event => setStatsEndDate(event.target.value)}
-                  required
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-700">
-                ID do produto (opcional)
-                <input
-                  type="text"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={statsProductId}
-                  onChange={event => setStatsProductId(event.target.value)}
-                  placeholder="prod_xxxxx"
-                />
-              </label>
-            </div>
-            <Button type="submit" disabled={statsOperation.loading}>
-              {statsOperation.loading ? 'Consultando…' : 'Ver estatísticas'}
-            </Button>
-          </form>
-          <OperationResult loading={statsOperation.loading} error={statsOperation.error} data={statsOperation.data} />
+            <form className="space-y-4" onSubmit={handleStats}>
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  Data de início
+                  <input
+                    type="date"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={statsStartDate}
+                    onChange={event => setStatsStartDate(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  Data de fim
+                  <input
+                    type="date"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={statsEndDate}
+                    onChange={event => setStatsEndDate(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-700">
+                  ID do produto (opcional)
+                  <input
+                    type="text"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    value={statsProductId}
+                    onChange={event => setStatsProductId(event.target.value)}
+                    placeholder="prod_xxxxx"
+                  />
+                </label>
+              </div>
+              <Button type="submit" disabled={statsOperation.loading}>
+                {statsOperation.loading ? 'Consultando…' : 'Ver estatísticas'}
+              </Button>
+            </form>
+            <OperationResult loading={statsOperation.loading} error={statsOperation.error} data={statsOperation.data} />
           </CardContent>
         </Card>
       </section>
