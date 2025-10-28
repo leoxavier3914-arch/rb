@@ -239,7 +239,7 @@ async function fetchResourceItems(options: FetchOptions): Promise<UnknownRecord[
 
   while (Date.now() < budgetEndsAt) {
     const searchParams = new URLSearchParams({
-      page_number: String(page),
+      page: String(page),
       page_size: String(pageSize)
     });
 
@@ -375,15 +375,26 @@ function extractPagination(payload: UnknownRecord): {
   readonly nextPage: number | null;
 } {
   const meta = (payload.meta as UnknownRecord | undefined)?.pagination as UnknownRecord | undefined;
-  const page = chooseNumber([payload.page_number, payload.pageNumber, meta?.page, meta?.current_page]);
+  const page = chooseNumber([
+    payload.page,
+    payload.page_number,
+    payload.pageNumber,
+    meta?.page,
+    meta?.current_page
+  ]);
   const totalPages = chooseNumber([payload.total_pages, payload.totalPages, meta?.total_pages]);
   const nextPage = chooseNumber([
     payload.next_page,
     payload.nextPage,
     meta?.next_page,
     meta?.nextPage,
-    payload.page_number && payload.page_size && payload.total ?
-      Math.ceil(Number(payload.total) / Number(payload.page_size)) > Number(payload.page_number)
+    payload.page && payload.page_size && payload.total
+      ? Math.ceil(Number(payload.total) / Number(payload.page_size)) > Number(payload.page)
+        ? Number(payload.page) + 1
+        : null
+      : null,
+    payload.page_number && payload.page_size && payload.total
+      ? Math.ceil(Number(payload.total) / Number(payload.page_size)) > Number(payload.page_number)
         ? Number(payload.page_number) + 1
         : null
       : null
