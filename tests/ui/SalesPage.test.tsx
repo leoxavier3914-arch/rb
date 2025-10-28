@@ -73,14 +73,12 @@ describe('SalesPage', () => {
       </AppProviders>
     );
 
-    const [startInput] = screen.getAllByLabelText(/data de início/i);
-    const [endInput] = screen.getAllByLabelText(/data de fim/i);
-
-    fireEvent.change(startInput, { target: { value: '2024-01-01' } });
-    fireEvent.change(endInput, { target: { value: '2024-01-31' } });
-
-    const submitButton = await screen.findByRole('button', { name: /aplicar filtros/i });
-    fireEvent.click(submitButton);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('start_date=1970-01-01'),
+        expect.anything()
+      )
+    );
 
     await screen.findByText('Cliente Teste');
 
