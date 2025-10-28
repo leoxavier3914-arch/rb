@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { assertIsAdmin } from '@/lib/auth';
 
 function buildRequest(headers: Record<string, string | undefined>) {
+  const normalized = Object.entries(headers).filter((entry): entry is [string, string] => entry[1] !== undefined);
   return new Request('https://example.com/api/test', {
-    headers: new Headers(headers)
+    headers: new Headers(normalized)
   }) as unknown as import('next/server').NextRequest;
 }
 

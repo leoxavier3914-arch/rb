@@ -25,13 +25,13 @@ vi.mock('@/lib/kiwify/writes', () => ({
 }));
 
 function createClient(): SupabaseClient {
-  const saleQuery = {
+  const saleQuery: any = {
     select: vi.fn(() => saleQuery),
     eq: vi.fn(() => saleQuery),
     limit: vi.fn(async () => ({ data: [], error: null }))
   };
 
-  const entitySelect = {
+  const entitySelect: any = {
     select: vi.fn(() => entitySelect),
     eq: vi.fn(() => entitySelect),
     order: vi.fn(() => entitySelect),

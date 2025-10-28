@@ -3,7 +3,26 @@
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { type LucideIcon, LayoutDashboard, ShoppingCart, Boxes, Users, Repeat, GraduationCap, Ticket, RotateCcw, Banknote, Import, Settings, Activity, X } from 'lucide-react';
+import {
+  type LucideIcon,
+  Activity,
+  Boxes,
+  CalendarCheck,
+  GraduationCap,
+  Handshake,
+  Import,
+  LayoutDashboard,
+  Repeat,
+  RotateCcw,
+  Settings,
+  ShoppingCart,
+  Ticket,
+  Users,
+  Wallet,
+  Webhook,
+  UserCircle2,
+  X
+} from 'lucide-react';
 import { cn } from '@/lib/ui/classnames';
 
 interface SidebarProps {
@@ -19,14 +38,18 @@ interface SidebarItem {
 
 const items: SidebarItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Conta', href: '/account', icon: UserCircle2 },
   { label: 'Vendas', href: '/sales', icon: ShoppingCart },
   { label: 'Produtos', href: '/products', icon: Boxes },
+  { label: 'Afiliados', href: '/affiliates', icon: Handshake },
+  { label: 'Webhooks', href: '/webhooks', icon: Webhook },
+  { label: 'Eventos', href: '/events', icon: CalendarCheck },
+  { label: 'Financeiro', href: '/payouts', icon: Wallet },
   { label: 'Clientes', href: '/customers', icon: Users },
   { label: 'Assinaturas', href: '/subscriptions', icon: Repeat },
   { label: 'Cursos', href: '/courses', icon: GraduationCap },
   { label: 'Cupons', href: '/coupons', icon: Ticket },
   { label: 'Reembolsos', href: '/refunds', icon: RotateCcw },
-  { label: 'Payouts', href: '/payouts', icon: Banknote },
   { label: 'Export/Import', href: '/export-import', icon: Import },
   { label: 'Config/Sync', href: '/config-sync', icon: Settings },
   { label: 'Status', href: '/status', icon: Activity }
