@@ -222,12 +222,18 @@ async function fetchResourceItems(options: FetchOptions): Promise<UnknownRecord[
   let effectiveUntil = until;
 
   if (resource === 'sales') {
-    const range = ensureSalesRange(since, until);
-    effectiveSince = range.since;
-    effectiveUntil = range.until;
+    if (since || until) {
+      const range = ensureSalesRange(since, until);
+      effectiveSince = range.since;
+      effectiveUntil = range.until;
 
-    if (!since || !until) {
-      logs.push('resource_range_defaulted:sales');
+      if (!since || !until) {
+        logs.push('resource_range_defaulted:sales');
+      }
+    } else {
+      effectiveSince = null;
+      effectiveUntil = null;
+      logs.push('resource_range_unbounded:sales');
     }
   }
 

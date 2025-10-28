@@ -178,6 +178,24 @@ describe('runSync - simple engine', () => {
     mocks.envMock.KFY_PAGE_SIZE = previousPageSize;
   });
 
+  it('requests the full sales history when no range is provided', async () => {
+    const seenPaths: string[] = [];
+    mocks.fetchMock.mockImplementation(async (path: string) => {
+      seenPaths.push(path);
+      return defaultFetch(path);
+    });
+
+    const result = await runSync({ resources: ['sales'] });
+
+    expect(result.ok).toBe(true);
+    expect(seenPaths.some((path) => path.startsWith('/sales'))).toBe(true);
+    for (const path of seenPaths.filter((value) => value.startsWith('/sales'))) {
+      expect(path).not.toContain('start_date=');
+      expect(path).not.toContain('end_date=');
+    }
+    expect(result.logs).toContain('resource_range_unbounded:sales');
+  });
+
   it('increments sales stats when sales array is provided at the top level', async () => {
     mocks.fetchMock.mockImplementation(async (path: string) => {
       if (path.startsWith('/sales')) {
