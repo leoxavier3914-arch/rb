@@ -331,6 +331,14 @@ export default function SalesPage() {
   const refundOperation = useOperation<unknown>();
   const statsOperation = useOperation<unknown>();
 
+  const runListOperation = listOperation.run;
+  const runDetailsOperation = detailsOperation.run;
+  const resetDetailsOperation = detailsOperation.reset;
+  const runRefundOperation = refundOperation.run;
+  const resetRefundOperation = refundOperation.reset;
+  const runStatsOperation = statsOperation.run;
+  const resetStatsOperation = statsOperation.reset;
+
   const defaultEndDate = useMemo(() => formatDateInput(new Date()), []);
   const defaultStartDate = useMemo(() => DEFAULT_START_DATE, []);
 
@@ -376,11 +384,11 @@ export default function SalesPage() {
       search.set('page_size', String(currentFilters.pageSize));
       search.set('page', String(currentFilters.page));
 
-      await listOperation.run(() =>
+      await runListOperation(() =>
         callKiwifyAdminApi(`/api/kfy/sales?${search.toString()}`, {}, 'Erro ao listar vendas.')
       );
     },
-    [listOperation]
+    [runListOperation]
   );
 
   useEffect(() => {
@@ -391,10 +399,10 @@ export default function SalesPage() {
     async (saleId: string) => {
       const normalized = saleId.trim();
       if (normalized === '') {
-        detailsOperation.reset();
+        resetDetailsOperation();
         return;
       }
-      await detailsOperation.run(() =>
+      await runDetailsOperation(() =>
         callKiwifyAdminApi(
           `/api/kfy/sales/${encodeURIComponent(normalized)}`,
           {},
@@ -402,7 +410,7 @@ export default function SalesPage() {
         )
       );
     },
-    [detailsOperation]
+    [resetDetailsOperation, runDetailsOperation]
   );
 
   const handleSaleDetails = useCallback(
@@ -456,11 +464,11 @@ export default function SalesPage() {
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (refundSaleId.trim() === '') {
-        refundOperation.reset();
+        resetRefundOperation();
         return;
       }
 
-      await refundOperation.run(async () => {
+      await runRefundOperation(async () => {
         const result = await callKiwifyAdminApi(
           `/api/kfy/sales/${encodeURIComponent(refundSaleId.trim())}/refund`,
           {
@@ -473,14 +481,14 @@ export default function SalesPage() {
         return result ?? { success: true };
       });
     },
-    [refundOperation, refundPixKey, refundSaleId]
+    [refundPixKey, refundSaleId, resetRefundOperation, runRefundOperation]
   );
 
   const handleStats = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (statsStartDate.trim() === '' || statsEndDate.trim() === '') {
-        statsOperation.reset();
+        resetStatsOperation();
         return;
       }
 
@@ -491,11 +499,11 @@ export default function SalesPage() {
         search.set('product_id', statsProductId.trim());
       }
 
-      await statsOperation.run(() =>
+      await runStatsOperation(() =>
         callKiwifyAdminApi(`/api/kfy/sales/stats?${search.toString()}`, {}, 'Erro ao consultar estatísticas.')
       );
     },
-    [statsEndDate, statsOperation, statsProductId, statsStartDate]
+    [resetStatsOperation, runStatsOperation, statsEndDate, statsProductId, statsStartDate]
   );
 
   return (
