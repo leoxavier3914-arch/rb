@@ -40,7 +40,6 @@ interface SaleListFilters {
   readonly startDate: string;
   readonly endDate: string;
   readonly pageSize: number;
-  readonly page: number;
 }
 
 const SALE_KEYS = ['sales', 'data', 'items', 'results', 'orders', 'list', 'values', 'entries'] as const;
@@ -355,12 +354,14 @@ export default function SalesPage() {
   const [statsEndDate, setStatsEndDate] = useState('');
   const [statsProductId, setStatsProductId] = useState('');
 
-  const [filters, setFilters] = useState<SaleListFilters>(() => ({
-    startDate: defaultStartDate,
-    endDate: defaultEndDate,
-    pageSize: 10,
-    page: 1
-  }));
+  const filters = useMemo<SaleListFilters>(
+    () => ({
+      startDate: defaultStartDate,
+      endDate: defaultEndDate,
+      pageSize: 10
+    }),
+    [defaultEndDate, defaultStartDate]
+  );
 
   const saleExtraction = useMemo(() => extractSaleRecords(listOperation.data), [listOperation.data]);
   const sales = useMemo(
@@ -368,12 +369,6 @@ export default function SalesPage() {
     [saleExtraction]
   );
   const totalCount = useMemo(() => extractTotalCount(listOperation.data), [listOperation.data]);
-  const totalPages = useMemo(() => {
-    if (totalCount === null) {
-      return null;
-    }
-    return Math.max(1, Math.ceil(totalCount / filters.pageSize));
-  }, [filters.pageSize, totalCount]);
   const saleDetail = useMemo(() => {
     if (!detailsOperation.data || !isRecord(detailsOperation.data)) {
       return null;
@@ -387,7 +382,6 @@ export default function SalesPage() {
       search.set('start_date', currentFilters.startDate);
       search.set('end_date', currentFilters.endDate);
       search.set('page_size', String(currentFilters.pageSize));
-      search.set('page', String(currentFilters.page));
 
       await runListOperation(() =>
         callKiwifyAdminApi(`/api/kfy/sales?${search.toString()}`, {}, 'Erro ao listar vendas.')
@@ -435,35 +429,6 @@ export default function SalesPage() {
     },
     [runSaleDetails]
   );
-
-  const handlePreviousPage = useCallback(() => {
-    setFilters(currentFilters => {
-      const previousPage = Math.max(1, currentFilters.page - 1);
-      if (previousPage === currentFilters.page) {
-        return currentFilters;
-      }
-      return { ...currentFilters, page: previousPage };
-    });
-  }, []);
-
-  const handleNextPage = useCallback(() => {
-    setFilters(currentFilters => {
-      const limit = totalPages ?? Infinity;
-      const nextPage = Math.min(limit, currentFilters.page + 1);
-      if (nextPage === currentFilters.page) {
-        return currentFilters;
-      }
-      return { ...currentFilters, page: nextPage };
-    });
-  }, [totalPages]);
-
-  const canGoPrevious = filters.page > 1;
-  const canGoNext = useMemo(() => {
-    if (totalPages !== null) {
-      return filters.page < totalPages;
-    }
-    return sales.length === filters.pageSize;
-  }, [filters.page, filters.pageSize, sales.length, totalPages]);
 
   const handleRefund = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -586,32 +551,6 @@ export default function SalesPage() {
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-slate-500">
-                      Página {filters.page}
-                      {totalPages !== null ? ` de ${totalPages}` : ''}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handlePreviousPage}
-                        disabled={!canGoPrevious || listOperation.loading}
-                      >
-                        Anterior
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleNextPage}
-                        disabled={!canGoNext || listOperation.loading}
-                      >
-                        Próxima
-                      </Button>
-                    </div>
                   </div>
                 </div>
               ) : (
