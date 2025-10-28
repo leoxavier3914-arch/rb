@@ -47,45 +47,47 @@ function buildResponse(data: unknown): Response {
   } as Response;
 }
 
+async function defaultFetch(path: string): Promise<Response> {
+  if (path.startsWith('/products')) {
+    return buildResponse({ data: [{ id: 'prod_1', title: 'Course', price: 100 }] });
+  }
+  if (path.startsWith('/customers')) {
+    return buildResponse({ data: [{ id: 'cust_1', email: 'a@example.com' }] });
+  }
+  if (path.startsWith('/sales')) {
+    return buildResponse({
+      data: [
+        {
+          id: 'sale_1',
+          total_amount: 100,
+          customer: { id: 'cust_1', email: 'a@example.com' },
+          product: { id: 'prod_1', title: 'Course', price: 100 }
+        }
+      ]
+    });
+  }
+  if (path.startsWith('/subscriptions')) {
+    return buildResponse({ data: [{ id: 'sub_1' }] });
+  }
+  if (path.startsWith('/enrollments')) {
+    return buildResponse({ data: [{ id: 'enroll_1' }] });
+  }
+  if (path.startsWith('/coupons')) {
+    return buildResponse({ data: [{ id: 'coupon_1' }] });
+  }
+  if (path.startsWith('/refunds')) {
+    return buildResponse({ data: [{ id: 'refund_1', sale_id: 'sale_1' }] });
+  }
+  if (path.startsWith('/payouts')) {
+    return buildResponse({ data: [{ id: 'payout_1' }] });
+  }
+  throw new Error(`Unhandled path ${path}`);
+}
+
 describe('runSync - simple engine', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.fetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/products')) {
-        return buildResponse({ data: [{ id: 'prod_1', title: 'Course', price: 100 }] });
-      }
-      if (path.startsWith('/customers')) {
-        return buildResponse({ data: [{ id: 'cust_1', email: 'a@example.com' }] });
-      }
-      if (path.startsWith('/sales')) {
-        return buildResponse({
-          data: [
-            {
-              id: 'sale_1',
-              total_amount: 100,
-              customer: { id: 'cust_1', email: 'a@example.com' },
-              product: { id: 'prod_1', title: 'Course', price: 100 }
-            }
-          ]
-        });
-      }
-      if (path.startsWith('/subscriptions')) {
-        return buildResponse({ data: [{ id: 'sub_1' }] });
-      }
-      if (path.startsWith('/enrollments')) {
-        return buildResponse({ data: [{ id: 'enroll_1' }] });
-      }
-      if (path.startsWith('/coupons')) {
-        return buildResponse({ data: [{ id: 'coupon_1' }] });
-      }
-      if (path.startsWith('/refunds')) {
-        return buildResponse({ data: [{ id: 'refund_1', sale_id: 'sale_1' }] });
-      }
-      if (path.startsWith('/payouts')) {
-        return buildResponse({ data: [{ id: 'payout_1' }] });
-      }
-      throw new Error(`Unhandled path ${path}`);
-    });
+    mocks.fetchMock.mockImplementation(defaultFetch);
   });
 
   it('processes all resources and derives customers and products from sales', async () => {
@@ -174,5 +176,30 @@ describe('runSync - simple engine', () => {
     );
 
     mocks.envMock.KFY_PAGE_SIZE = previousPageSize;
+  });
+
+  it('increments sales stats when sales array is provided at the top level', async () => {
+    mocks.fetchMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/sales')) {
+        return buildResponse({
+          sales: [
+            {
+              id: 'sale_2',
+              total_amount: 150,
+              customer: { id: 'cust_1', email: 'a@example.com' },
+              product: { id: 'prod_1', title: 'Course', price: 150 }
+            }
+          ],
+          meta: { pagination: { current_page: 1, total_pages: 1 } }
+        });
+      }
+      return defaultFetch(path);
+    });
+
+    const result = await runSync({ resources: ['sales'] });
+
+    expect(result.ok).toBe(true);
+    expect(result.stats.sales).toBe(1);
+    expect(mocks.writesMock.upsertSales).toHaveBeenCalledTimes(1);
   });
 });

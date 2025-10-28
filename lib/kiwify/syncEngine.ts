@@ -281,7 +281,7 @@ async function fetchResourceItems(options: FetchOptions): Promise<UnknownRecord[
     }
 
     const payload = (await response.json()) as UnknownRecord;
-    const parsed = parsePage(payload, page);
+    const parsed = parsePage(payload, resource, page);
 
     items.push(...parsed.items);
 
@@ -295,12 +295,12 @@ async function fetchResourceItems(options: FetchOptions): Promise<UnknownRecord[
   return items;
 }
 
-function parsePage(payload: UnknownRecord, fallbackPage: number): {
+export function parsePage(payload: UnknownRecord, resource: SyncResource, fallbackPage: number): {
   readonly items: UnknownRecord[];
   readonly hasMore: boolean;
   readonly nextPage: number | null;
 } {
-  const items = extractItems(payload);
+  const items = extractItems(payload, resource);
   const pagination = extractPagination(payload);
   const page = pagination.page ?? fallbackPage;
   const totalPages = pagination.totalPages;
@@ -309,16 +309,57 @@ function parsePage(payload: UnknownRecord, fallbackPage: number): {
   return { items, hasMore, nextPage };
 }
 
-function extractItems(payload: UnknownRecord): UnknownRecord[] {
-  if (Array.isArray(payload.data)) {
-    return payload.data as UnknownRecord[];
+function extractItems(payload: UnknownRecord, resource: SyncResource): UnknownRecord[] {
+  const directArrays = [payload.data, payload.items, payload.results];
+  for (const candidate of directArrays) {
+    if (Array.isArray(candidate)) {
+      return candidate as UnknownRecord[];
+    }
   }
-  if (Array.isArray(payload.items)) {
-    return payload.items as UnknownRecord[];
+
+  const visited = new Set<UnknownRecord>();
+  const queue: UnknownRecord[] = [];
+
+  const enqueue = (value: unknown) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const record = value as UnknownRecord;
+      if (!visited.has(record)) {
+        visited.add(record);
+        queue.push(record);
+      }
+    }
+  };
+
+  enqueue(payload);
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+
+    const resourceValue = current[resource];
+    if (Array.isArray(resourceValue)) {
+      return resourceValue as UnknownRecord[];
+    }
+
+    if (Array.isArray(current.data)) {
+      return current.data as UnknownRecord[];
+    }
+
+    if (Array.isArray(current.items)) {
+      return current.items as UnknownRecord[];
+    }
+
+    if (Array.isArray(current.results)) {
+      return current.results as UnknownRecord[];
+    }
+
+    for (const value of Object.values(current)) {
+      if (Array.isArray(value)) {
+        continue;
+      }
+      enqueue(value);
+    }
   }
-  if (Array.isArray(payload.results)) {
-    return payload.results as UnknownRecord[];
-  }
+
   return [];
 }
 
