@@ -72,7 +72,8 @@ const DATE_KEYS = [
   'updated_at',
   'updatedAt'
 ] as const;
-const DEFAULT_START_DATE = '1970-01-01';
+const MAX_SALES_RANGE_DAYS = 90;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const CUSTOMER_KEYS = [
   'customer',
@@ -340,7 +341,11 @@ export default function SalesPage() {
   const resetStatsOperation = statsOperation.reset;
 
   const defaultEndDate = useMemo(() => formatDateInput(new Date()), []);
-  const defaultStartDate = useMemo(() => DEFAULT_START_DATE, []);
+  const defaultStartDate = useMemo(() => {
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - (MAX_SALES_RANGE_DAYS - 1) * MILLISECONDS_PER_DAY);
+    return formatDateInput(startDate);
+  }, []);
 
   const [detailSaleId, setDetailSaleId] = useState('');
   const [refundSaleId, setRefundSaleId] = useState('');
@@ -520,7 +525,7 @@ export default function SalesPage() {
           <CardHeader>
             <CardTitle>Lista de vendas</CardTitle>
             <CardDescription>
-              Todas as vendas retornadas pela API, do início do histórico até a data atual.
+              Todas as vendas retornadas pela API nos últimos 90 dias, até a data atual.
             </CardDescription>
           </CardHeader>
           <CardContent>
