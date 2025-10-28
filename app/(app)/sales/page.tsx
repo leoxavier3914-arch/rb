@@ -76,6 +76,8 @@ const DATE_KEYS = [
   'updated_at',
   'updatedAt'
 ] as const;
+const DEFAULT_START_DATE = '1970-01-01';
+
 const CUSTOMER_KEYS = [
   'customer',
   'customer_name',
@@ -107,12 +109,6 @@ const CUSTOMER_STRING_KEYS = [
   'customerDocument',
   'email'
 ] as const;
-
-function subDays(date: Date, amount: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() - amount);
-  return result;
-}
 
 function formatDateInput(date: Date): string {
   const year = date.getFullYear();
@@ -340,7 +336,7 @@ export default function SalesPage() {
   const statsOperation = useOperation<unknown>();
 
   const defaultEndDate = useMemo(() => formatDateInput(new Date()), []);
-  const defaultStartDate = useMemo(() => formatDateInput(subDays(new Date(), 30)), []);
+  const defaultStartDate = useMemo(() => DEFAULT_START_DATE, []);
 
   const [startDate, setStartDate] = useState(defaultStartDate);
   const [endDate, setEndDate] = useState(defaultEndDate);
