@@ -30,33 +30,36 @@ describe('SalesPage', () => {
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.url;
 
-      if (url.includes('/api/kfy/sales?')) {
+      if (url.includes('/api/hub/sales?')) {
         return Promise.resolve({
           ok: true,
           status: 200,
           json: async () => ({
             ok: true,
-            data: [
+            page: 1,
+            page_size: 20,
+            total: 1,
+            items: [
               {
                 id: 'sale_1',
-                customer_name: 'Cliente Teste',
+                customer: 'Cliente Teste',
                 status: 'paid',
-                total_amount_cents: 120000,
-                paid_at: nowIso
+                total_cents: 120000,
+                created_at: nowIso
               }
             ]
           })
         });
       }
 
-      if (url.includes('/api/kfy/sales/sale_1')) {
+      if (url.includes('/api/hub/sales/sale_1')) {
         expect(init?.method ?? 'GET').toBe('GET');
         return Promise.resolve({
           ok: true,
           status: 200,
           json: async () => ({
             ok: true,
-            data: {
+            sale: {
               id: 'sale_1',
               status: 'paid',
               total_amount_cents: 120000,
@@ -67,7 +70,10 @@ describe('SalesPage', () => {
               created_at: nowIso,
               paid_at: nowIso,
               updated_at: nowIso
-            }
+            },
+            events: [],
+            notes: [],
+            versions: []
           })
         });
       }
@@ -84,25 +90,37 @@ describe('SalesPage', () => {
     );
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/kfy/sales?'), expect.anything())
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/hub/sales?'),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'x-admin-role': 'true' })
+        })
+      )
     );
 
     const listCall = fetchMock.mock.calls.find(([input]) => {
       const url = typeof input === 'string' ? input : input.url;
-      return url.includes('/api/kfy/sales?');
+      return url.includes('/api/hub/sales?');
     });
 
     expect(listCall).toBeDefined();
     const listUrl = typeof listCall![0] === 'string' ? listCall![0] : listCall![0].url;
-    expect(listUrl).toContain(`start_date=${defaultStartDate}`);
-    expect(listUrl).toContain(`end_date=${defaultEndDate}`);
-    expect(listUrl).not.toContain('page=');
+    expect(listUrl).toContain(`date_from=${defaultStartDate}`);
+    expect(listUrl).toContain(`date_to=${defaultEndDate}`);
+    expect(listUrl).toContain('page=1');
 
     await screen.findByText('Cliente Teste');
 
     fireEvent.click(screen.getByText('Cliente Teste'));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/kfy/sales/sale_1'), expect.anything()));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/hub/sales/sale_1'),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'x-admin-role': 'true' })
+        })
+      )
+    );
 
     await screen.findByText('prod_1');
   });
