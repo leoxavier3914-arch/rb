@@ -43,7 +43,6 @@ interface SaleListFilters {
   readonly startDate: string;
   readonly endDate: string;
   readonly pageSize: number;
-  readonly page: number;
 }
 
 interface HubSaleItem {
