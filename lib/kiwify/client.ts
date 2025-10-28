@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { loadEnv } from '@/lib/env';
+import { resolveTokenUrl } from './baseUrl';
 import { getServiceClient } from '@/lib/supabase';
 
 const TOKEN_STATE_ID = 'kiwify_token';
@@ -97,8 +98,8 @@ async function fetchAndPersistToken(): Promise<CachedToken> {
     client_secret: env.KIWIFY_CLIENT_SECRET
   });
 
-  const baseUrl = env.KIWIFY_API_BASE_URL.replace(/\/+$/, '');
-  const response = await fetch(`${baseUrl}/oauth/token`, {
+  const tokenUrl = resolveTokenUrl(env.KIWIFY_API_BASE_URL);
+  const response = await fetch(tokenUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: body.toString()
