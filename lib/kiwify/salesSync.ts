@@ -1,6 +1,6 @@
 import { loadEnv } from '@/lib/env';
-import { resolveApiUrl, resolveTokenUrl } from './baseUrl';
 import { upsertSales, type UpsertSaleInput } from '@/lib/sales';
+import { createKiwifyClient, type KiwifyClient } from '@/lib/kiwify/client';
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 100;
@@ -10,13 +10,11 @@ interface UnknownRecord {
 }
 
 interface FetchPageParams {
-  readonly token: string;
+  readonly client: KiwifyClient;
   readonly pageNumber: number;
   readonly pageSize: number;
   readonly startDate: string;
   readonly endDate: string;
-  readonly accountId?: string;
-  readonly baseUrl?: string;
 }
 
 interface ParsedPage {
@@ -42,7 +40,7 @@ export async function syncSalesFromKiwify(): Promise<SyncResult> {
 
   const endDate = new Date();
   const startDate = new Date(endDate.getTime() - 89 * DAY_IN_MS);
-  const token = await fetchAccessToken(env.KIWIFY_CLIENT_ID, env.KIWIFY_CLIENT_SECRET, env.KIWIFY_API_BASE_URL);
+  const kiwifyClient = await createKiwifyClient();
 
   let pageNumber = 1;
   let batches = 0;
@@ -54,13 +52,11 @@ export async function syncSalesFromKiwify(): Promise<SyncResult> {
 
   while (true) {
     const pageResult = await fetchSalesPage({
-      token,
+      client: kiwifyClient,
       pageNumber,
       pageSize,
       startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      accountId: env.KIWIFY_ACCOUNT_ID ?? undefined,
-      baseUrl: env.KIWIFY_API_BASE_URL
+      endDate: endDate.toISOString()
     });
 
     if (pageResult.items.length === 0) {
@@ -88,33 +84,6 @@ export async function syncSalesFromKiwify(): Promise<SyncResult> {
   };
 }
 
-async function fetchAccessToken(clientId: string, clientSecret: string, baseUrl: string | undefined): Promise<string> {
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: clientId,
-    client_secret: clientSecret
-  });
-
-  const response = await fetch(resolveTokenUrl(baseUrl), {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/x-www-form-urlencoded'
-    },
-    body: body.toString()
-  });
-
-  if (!response.ok) {
-    throw new Error(`Falha ao obter token OAuth da Kiwify: ${response.status}`);
-  }
-
-  const payload = (await response.json()) as UnknownRecord;
-  const token = typeof payload.access_token === 'string' ? payload.access_token : null;
-  if (!token) {
-    throw new Error('Resposta inválida ao solicitar token da Kiwify.');
-  }
-  return token;
-}
-
 async function fetchSalesPage(params: FetchPageParams): Promise<ParsedPage> {
   const search = new URLSearchParams({
     page_number: params.pageNumber.toString(),
@@ -124,9 +93,7 @@ async function fetchSalesPage(params: FetchPageParams): Promise<ParsedPage> {
     view_full_sale_details: 'true'
   });
 
-  const response = await fetch(resolveApiUrl(params.baseUrl, `/sales?${search.toString()}`), {
-    headers: buildKiwifyHeaders(params.token, params.accountId)
-  });
+  const response = await params.client.request(`/sales?${search.toString()}`);
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
@@ -141,15 +108,6 @@ async function fetchSalesPage(params: FetchPageParams): Promise<ParsedPage> {
   const items = extractItems(payload);
   const hasMore = computeHasMore(payload, params.pageNumber, params.pageSize, items.length);
   return { items, hasMore };
-}
-
-function buildKiwifyHeaders(token: string, accountId?: string) {
-  const headers = new Headers();
-  headers.set('authorization', `Bearer ${token}`);
-  if (accountId) {
-    headers.set('x-kiwify-account-id', accountId);
-  }
-  return headers;
 }
 
 function extractItems(payload: UnknownRecord): UnknownRecord[] {
