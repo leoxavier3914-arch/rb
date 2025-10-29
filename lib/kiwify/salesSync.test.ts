@@ -32,3 +32,15 @@ test('mapSalePayload keeps cent-based net amounts without scaling', () => {
   assert.ok(mapped, 'expected payload to be mapped');
   assert.strictEqual(mapped.net_amount_cents, 1116);
 });
+
+test('mapSalePayload keeps numeric cent net amounts without scaling', () => {
+  const payload: Record<string, unknown> = {
+    id: 'sale-cent-net-amount-numeric',
+    net_amount: 1116
+  };
+
+  const mapped = mapSalePayload(payload);
+
+  assert.ok(mapped, 'expected payload to be mapped');
+  assert.strictEqual(mapped.net_amount_cents, 1116);
+});
