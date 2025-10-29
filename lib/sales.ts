@@ -35,6 +35,13 @@ export interface SalesSummary {
   readonly lastSyncedAt: string | null;
 }
 
+export interface DailySalesRow {
+  readonly saleDate: string;
+  readonly totalSales: number;
+  readonly grossAmountCents: number;
+  readonly netAmountCents: number;
+}
+
 export interface UpsertSaleInput {
   readonly id: string;
   readonly status: string | null;
@@ -111,6 +118,43 @@ export async function listSales(
     page: currentPage,
     pageSize: limit
   };
+}
+
+export async function listDailySales(): Promise<DailySalesRow[]> {
+  const client = getServiceClient();
+  type DailySalesQueryRow = {
+    readonly sale_date: string | null;
+    readonly total_sales: number | null;
+    readonly gross_amount_cents: number | null;
+    readonly net_amount_cents: number | null;
+  };
+
+  const { data, error } = await client
+    .from('sales')
+    .select(
+      `
+        sale_date:created_at::date,
+        total_sales:count(id),
+        gross_amount_cents:sum(total_amount_cents),
+        net_amount_cents:sum(net_amount_cents)
+      `
+    )
+    .group('sale_date')
+    .order('sale_date', { ascending: true, nullsFirst: false })
+    .returns<DailySalesQueryRow[]>();
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? [])
+    .filter(row => typeof row.sale_date === 'string' && row.sale_date.length > 0)
+    .map(row => ({
+      saleDate: row.sale_date as string,
+      totalSales: Number(row.total_sales ?? 0),
+      grossAmountCents: Number(row.gross_amount_cents ?? 0),
+      netAmountCents: Number(row.net_amount_cents ?? 0)
+    }));
 }
 
 export async function getSalesSummary(): Promise<SalesSummary> {
