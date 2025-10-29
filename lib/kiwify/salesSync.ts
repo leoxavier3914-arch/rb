@@ -211,8 +211,8 @@ export function mapSalePayload(payload: UnknownRecord): UpsertSaleInput | null {
 
   const netAmountCents = coalesceCents(
     payload.net_amount_cents,
-    toMajorUnitCents(payload.net_amount),
-    toMajorUnitCents(payload.net),
+    toMajorUnitOrCents(payload.net_amount),
+    toMajorUnitOrCents(payload.net),
     payment?.net_amount
   );
 
@@ -288,6 +288,20 @@ function toMajorUnitCents(value: unknown): number | null {
     return null;
   }
   return Math.round(num * 100);
+}
+
+function toMajorUnitOrCents(value: unknown): number | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return null;
+    }
+    if (trimmed.includes('.') || trimmed.includes(',')) {
+      return toMajorUnitCents(trimmed);
+    }
+    return toNullableCents(trimmed);
+  }
+  return toMajorUnitCents(value);
 }
 
 function coalesceCents(...candidates: readonly unknown[]): number | null {
