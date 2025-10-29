@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { listSales } from '@/lib/sales';
+import { listDailySales, listSales } from '@/lib/sales';
 import { formatMoneyFromCentsWithCurrency, formatShortDate } from '@/lib/ui/format';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import SalesPerDayChart from '@/components/charts/SalesPerDayChart';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,11 @@ function parsePage(value: string | string[] | undefined): number {
 
 export default async function VendasPage({ searchParams }: SalesPageProps) {
   const page = parsePage(searchParams?.page);
-  const { items, total } = await listSales(page, PAGE_SIZE);
+  const [salesPage, dailySales] = await Promise.all([
+    listSales(page, PAGE_SIZE),
+    listDailySales()
+  ]);
+  const { items, total } = salesPage;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = total === 0 ? 0 : Math.min(page * PAGE_SIZE, total);
@@ -42,6 +47,15 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
           registros.
         </p>
       </header>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl">Vendas por dia</CardTitle>
+        </CardHeader>
+        <CardContent className="h-80 px-6 pb-6 pt-0">
+          <SalesPerDayChart data={dailySales} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
