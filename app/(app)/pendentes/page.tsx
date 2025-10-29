@@ -7,11 +7,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 export const dynamic = 'force-dynamic';
 
-interface SalesPageProps {
+interface PendingSalesPageProps {
   readonly searchParams?: Record<string, string | string[]>;
 }
 
 const PAGE_SIZE = 10;
+const PENDING_STATUSES = ['pending', 'waiting-payment', 'waiting_payment', 'wayting-payment'] as const;
 
 function parsePage(value: string | string[] | undefined): number {
   if (typeof value === 'string') {
@@ -23,9 +24,9 @@ function parsePage(value: string | string[] | undefined): number {
   return 1;
 }
 
-export default async function VendasPage({ searchParams }: SalesPageProps) {
+export default async function PendingSalesPage({ searchParams }: PendingSalesPageProps) {
   const page = parsePage(searchParams?.page);
-  const { items, total } = await listSales(page, PAGE_SIZE);
+  const { items, total } = await listSales(page, PAGE_SIZE, PENDING_STATUSES);
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = total === 0 ? 0 : Math.min(page * PAGE_SIZE, total);
@@ -36,10 +37,10 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Vendas</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Vendas pendentes</h1>
         <p className="text-sm text-slate-500">
-          Lista completa das vendas armazenadas no Supabase a partir das sincronizações realizadas. Cada página exibe 10
-          registros.
+          Lista completa das vendas com pagamento pendente armazenadas no Supabase a partir das sincronizações
+          realizadas. Cada página exibe 10 registros.
         </p>
       </header>
 
@@ -103,7 +104,7 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
             <div className="flex items-center gap-2">
               {prevPage ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/vendas?page=${prevPage}`}>Página anterior</Link>
+                  <Link href={`/pendentes?page=${prevPage}`}>Página anterior</Link>
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" disabled>
@@ -112,7 +113,7 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
               )}
               {nextPage ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/vendas?page=${nextPage}`}>Próxima página</Link>
+                  <Link href={`/pendentes?page=${nextPage}`}>Próxima página</Link>
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" disabled>
