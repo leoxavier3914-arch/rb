@@ -56,14 +56,19 @@ export interface UpsertSaleInput {
 
 const UPSERT_BATCH_SIZE = 500;
 
-export async function listSales(page: number, pageSize: number): Promise<SalesPage> {
+export async function listSales(
+  page: number,
+  pageSize: number,
+  statuses: readonly string[] = ['paid']
+): Promise<SalesPage> {
   const client = getServiceClient();
   const currentPage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const limit = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 10;
   const from = (currentPage - 1) * limit;
   const to = from + limit - 1;
+  const appliedStatuses = statuses.length > 0 ? statuses : ['paid'];
 
-  const { data, error, count } = await client
+  let query = client
     .from('sales')
     .select(
       `
@@ -86,9 +91,15 @@ export async function listSales(page: number, pageSize: number): Promise<SalesPa
       `,
       { count: 'exact' }
     )
-    .eq('status', 'paid')
-    .order('created_at', { ascending: false, nullsFirst: false })
-    .range(from, to);
+    .order('created_at', { ascending: false, nullsFirst: false });
+
+  if (appliedStatuses.length === 1) {
+    query = query.eq('status', appliedStatuses[0]);
+  } else {
+    query = query.in('status', appliedStatuses as string[]);
+  }
+
+  const { data, error, count } = await query.range(from, to);
 
   if (error) {
     throw error;
