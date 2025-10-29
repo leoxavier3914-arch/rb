@@ -182,7 +182,7 @@ function computeHasMore(
   return itemCount === pageSize;
 }
 
-function mapSalePayload(payload: UnknownRecord): UpsertSaleInput | null {
+export function mapSalePayload(payload: UnknownRecord): UpsertSaleInput | null {
   const idRaw = payload.id ?? payload.uuid;
   if (!idRaw) {
     return null;
@@ -191,6 +191,7 @@ function mapSalePayload(payload: UnknownRecord): UpsertSaleInput | null {
 
   const product = isRecord(payload.product) ? payload.product : null;
   const customer = isRecord(payload.customer) ? payload.customer : null;
+  const payment = isRecord(payload.payment) ? payload.payment : null;
 
   const productId = toNullableString(payload.product_id ?? product?.id);
   const productTitle = toNullableString(payload.product_title ?? product?.title ?? product?.name);
@@ -200,6 +201,28 @@ function mapSalePayload(payload: UnknownRecord): UpsertSaleInput | null {
   );
   const customerEmail = toNullableString(payload.customer_email ?? customer?.email);
 
+  const totalAmountCents = coalesceCents(
+    payload.total_amount_cents,
+    toMajorUnitCents(payload.total_amount),
+    toMajorUnitCents(payload.total),
+    toMajorUnitCents(payload.amount),
+    payment?.charge_amount
+  );
+
+  const netAmountCents = coalesceCents(
+    payload.net_amount_cents,
+    toMajorUnitCents(payload.net_amount),
+    toMajorUnitCents(payload.net),
+    payment?.net_amount
+  );
+
+  const feeAmountCents = coalesceCents(
+    payload.fee_amount_cents,
+    toMajorUnitCents(payload.fee_amount),
+    toMajorUnitCents(payload.fees),
+    payment?.fee
+  );
+
   return {
     id,
     status: toNullableString(payload.status),
@@ -208,11 +231,9 @@ function mapSalePayload(payload: UnknownRecord): UpsertSaleInput | null {
     customer_id: customerId,
     customer_name: customerName,
     customer_email: customerEmail,
-    total_amount_cents: toNullableCents(
-      payload.total_amount_cents ?? payload.total_amount ?? payload.total ?? payload.amount
-    ),
-    net_amount_cents: toNullableCents(payload.net_amount_cents ?? payload.net_amount ?? payload.net ?? null),
-    fee_amount_cents: toNullableCents(payload.fee_amount_cents ?? payload.fee_amount ?? payload.fees ?? null),
+    total_amount_cents: totalAmountCents,
+    net_amount_cents: netAmountCents,
+    fee_amount_cents: feeAmountCents,
     currency: toNullableString(payload.currency ?? payload.currency_code) ?? 'BRL',
     installments: toNullableNumber(payload.installments ?? payload.installments_count),
     created_at: toIso(payload.created_at ?? payload.createdAt ?? payload.inserted_at ?? null),
@@ -259,6 +280,27 @@ function toNullableCents(value: unknown): number | null {
     return null;
   }
   return Math.round(num);
+}
+
+function toMajorUnitCents(value: unknown): number | null {
+  const num = toNullableNumber(value);
+  if (num === null || Number.isNaN(num)) {
+    return null;
+  }
+  return Math.round(num * 100);
+}
+
+function coalesceCents(...candidates: readonly unknown[]): number | null {
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) {
+      continue;
+    }
+    const cents = toNullableCents(candidate);
+    if (cents !== null) {
+      return cents;
+    }
+  }
+  return null;
 }
 
 function toIso(value: unknown): string | null {
