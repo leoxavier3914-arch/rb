@@ -86,6 +86,7 @@ export async function listSales(page: number, pageSize: number): Promise<SalesPa
       `,
       { count: 'exact' }
     )
+    .eq('status', 'paid')
     .order('created_at', { ascending: false, nullsFirst: false })
     .range(from, to);
 
