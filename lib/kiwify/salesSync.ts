@@ -301,6 +301,12 @@ function toMajorUnitOrCents(value: unknown): number | null {
     }
     return toNullableCents(trimmed);
   }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (Number.isInteger(value)) {
+      return value;
+    }
+    return toMajorUnitCents(value);
+  }
   return toMajorUnitCents(value);
 }
 
