@@ -56,14 +56,42 @@ export interface UpsertSaleInput {
 
 const UPSERT_BATCH_SIZE = 500;
 
-export async function listSales(page: number, pageSize: number): Promise<SalesPage> {
+type StatusFilterableQuery<T> = {
+  eq(column: string, value: string): T;
+  in(column: string, values: readonly string[]): T;
+};
+
+function applyStatusFilter<T>(
+  query: T & StatusFilterableQuery<T>,
+  status?: string | readonly string[]
+): T {
+  if (!status) {
+    return query;
+  }
+
+  if (Array.isArray(status)) {
+    const normalized = status.filter(Boolean);
+    if (normalized.length === 0) {
+      return query;
+    }
+    return query.in('status', normalized);
+  }
+
+  return query.eq('status', status);
+}
+
+export async function listSales(
+  page: number,
+  pageSize: number,
+  status?: string | readonly string[]
+): Promise<SalesPage> {
   const client = getServiceClient();
   const currentPage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const limit = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 10;
   const from = (currentPage - 1) * limit;
   const to = from + limit - 1;
 
-  const { data, error, count } = await client
+  const baseQuery = client
     .from('sales')
     .select(
       `
@@ -86,9 +114,10 @@ export async function listSales(page: number, pageSize: number): Promise<SalesPa
       `,
       { count: 'exact' }
     )
-    .eq('status', 'paid')
-    .order('created_at', { ascending: false, nullsFirst: false })
-    .range(from, to);
+    .order('created_at', { ascending: false, nullsFirst: false });
+
+  const filteredQuery = applyStatusFilter(baseQuery, status);
+  const { data, error, count } = await filteredQuery.range(from, to);
 
   if (error) {
     throw error;
@@ -100,6 +129,12 @@ export async function listSales(page: number, pageSize: number): Promise<SalesPa
     page: currentPage,
     pageSize: limit
   };
+}
+
+export const PENDING_SALE_STATUSES = ['waiting_payment', 'pending_payment'] as const;
+
+export async function listPendingSales(page: number, pageSize: number): Promise<SalesPage> {
+  return listSales(page, pageSize, PENDING_SALE_STATUSES);
 }
 
 export async function getSalesSummary(): Promise<SalesSummary> {
