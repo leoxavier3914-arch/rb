@@ -11,7 +11,7 @@ interface UnknownRecord {
 
 interface FetchPageParams {
   readonly token: string;
-  readonly page: number;
+  readonly pageNumber: number;
   readonly pageSize: number;
   readonly startDate: string;
   readonly endDate: string;
@@ -44,7 +44,7 @@ export async function syncSalesFromKiwify(): Promise<SyncResult> {
   const startDate = new Date(endDate.getTime() - 89 * DAY_IN_MS);
   const token = await fetchAccessToken(env.KIWIFY_CLIENT_ID, env.KIWIFY_CLIENT_SECRET, env.KIWIFY_API_BASE_URL);
 
-  let page = 1;
+  let pageNumber = 1;
   let batches = 0;
   let totalFetched = 0;
   const pageSize =
@@ -55,7 +55,7 @@ export async function syncSalesFromKiwify(): Promise<SyncResult> {
   while (true) {
     const pageResult = await fetchSalesPage({
       token,
-      page,
+      pageNumber,
       pageSize,
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
@@ -77,7 +77,7 @@ export async function syncSalesFromKiwify(): Promise<SyncResult> {
     if (!pageResult.hasMore) {
       break;
     }
-    page += 1;
+    pageNumber += 1;
   }
 
   return {
@@ -117,11 +117,11 @@ async function fetchAccessToken(clientId: string, clientSecret: string, baseUrl:
 
 async function fetchSalesPage(params: FetchPageParams): Promise<ParsedPage> {
   const search = new URLSearchParams({
-    page: params.page.toString(),
+    page_number: params.pageNumber.toString(),
     page_size: params.pageSize.toString(),
     start_date: params.startDate,
     end_date: params.endDate,
-    full_details: 'true'
+    view_full_sale_details: 'true'
   });
 
   const response = await fetch(resolveApiUrl(params.baseUrl, `/sales?${search.toString()}`), {
@@ -139,7 +139,7 @@ async function fetchSalesPage(params: FetchPageParams): Promise<ParsedPage> {
   }
 
   const items = extractItems(payload);
-  const hasMore = computeHasMore(payload, params.page, params.pageSize, items.length);
+  const hasMore = computeHasMore(payload, params.pageNumber, params.pageSize, items.length);
   return { items, hasMore };
 }
 
@@ -164,15 +164,20 @@ function extractItems(payload: UnknownRecord): UnknownRecord[] {
   return [];
 }
 
-function computeHasMore(payload: UnknownRecord, page: number, pageSize: number, itemCount: number): boolean {
+function computeHasMore(
+  payload: UnknownRecord,
+  pageNumber: number,
+  pageSize: number,
+  itemCount: number
+): boolean {
   const pagination = isRecord(payload.pagination) ? payload.pagination : null;
   const totalPages = toNumber(pagination?.total_pages ?? payload.total_pages ?? payload.totalPages);
   if (typeof totalPages === 'number' && totalPages >= 0) {
-    return page < totalPages;
+    return pageNumber < totalPages;
   }
   const total = toNumber(pagination?.total ?? payload.total);
   if (typeof total === 'number' && total >= 0) {
-    return page * pageSize < total;
+    return pageNumber * pageSize < total;
   }
   return itemCount === pageSize;
 }
