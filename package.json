@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "tsx --test lib/kiwify/salesSync.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "1.2.3",
@@ -30,6 +31,7 @@
     "eslint-config-next": "15.0.0-canary.144",
     "postcss": "8.4.38",
     "tailwindcss": "3.4.4",
+    "tsx": "^4.20.6",
     "typescript": "5.4.5"
   }
 }
