@@ -120,12 +120,6 @@ export async function listSales(
   };
 }
 
-function applyGroupBy<T>(builder: T, columns: string): T {
-  const target = builder as unknown as { url: URL };
-  target.url.searchParams.append('group', columns);
-  return builder;
-}
-
 export async function listDailySales(): Promise<DailySalesRow[]> {
   const client = getServiceClient();
   type DailySalesQueryRow = {
@@ -135,20 +129,18 @@ export async function listDailySales(): Promise<DailySalesRow[]> {
     readonly net_amount_cents: number | null;
   };
 
-  const { data, error } = await applyGroupBy(
-    client
-      .from('sales')
-      .select(
-        `
-          sale_date:created_at::date,
-          total_sales:count(id),
-          gross_amount_cents:sum(total_amount_cents),
-          net_amount_cents:sum(net_amount_cents)
-        `
-      )
-      .order('sale_date', { ascending: true, nullsFirst: false }),
-    'sale_date'
-  ).returns<DailySalesQueryRow[]>();
+  const { data, error } = await client
+    .from('sales')
+    .select(
+      `
+        sale_date:created_at::date,
+        total_sales:id.count(),
+        gross_amount_cents:total_amount_cents.sum(),
+        net_amount_cents:net_amount_cents.sum()
+      `
+    )
+    .order('sale_date', { ascending: true, nullsFirst: false })
+    .returns<DailySalesQueryRow[]>();
 
   if (error) {
     throw error;
