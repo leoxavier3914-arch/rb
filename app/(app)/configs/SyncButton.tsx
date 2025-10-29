@@ -8,16 +8,21 @@ import { cn } from '@/lib/ui/classnames';
 
 interface SyncButtonProps {
   readonly className?: string;
+  readonly disabled?: boolean;
 }
 
 type SyncState = 'idle' | 'loading' | 'success' | 'error';
 
-export function SyncButton({ className }: SyncButtonProps) {
+export function SyncButton({ className, disabled = false }: SyncButtonProps) {
   const router = useRouter();
   const [state, setState] = useState<SyncState>('idle');
   const [message, setMessage] = useState<string>('');
 
   async function handleSync() {
+    if (disabled) {
+      return;
+    }
+
     try {
       setState('loading');
       setMessage('Sincronizando vendas diretamente da Kiwify...');
@@ -45,14 +50,20 @@ export function SyncButton({ className }: SyncButtonProps) {
   }
 
   const isLoading = state === 'loading';
+  const isDisabled = disabled || isLoading;
 
   return (
     <div className={className}>
-      <Button onClick={handleSync} disabled={isLoading} className="gap-2">
+      <Button onClick={handleSync} disabled={isDisabled} className="gap-2">
         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <RefreshCcw className="h-4 w-4" aria-hidden />}
         Sincronizar
       </Button>
-      {state !== 'idle' ? (
+      {disabled && state === 'idle' ? (
+        <p className="mt-3 flex items-center gap-2 text-sm text-amber-600">
+          <AlertCircle className="h-4 w-4" aria-hidden />
+          <span>Corrija as verificações críticas antes de iniciar uma nova sincronização.</span>
+        </p>
+      ) : state !== 'idle' ? (
         <p
           className={cn(
             'mt-3 flex items-center gap-2 text-sm',

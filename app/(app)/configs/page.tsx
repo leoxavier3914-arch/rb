@@ -1,12 +1,34 @@
 import { SyncButton } from './SyncButton';
 import { getSalesSummary } from '@/lib/sales';
+import { runHealthCheck } from '@/lib/health';
 import { formatDateTime } from '@/lib/ui/format';
+import { cn } from '@/lib/ui/classnames';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ConfigsPage() {
-  const summary = await getSalesSummary();
+  const [summary, health] = await Promise.all([getSalesSummary(), runHealthCheck()]);
+
+  const statusStyles = {
+    healthy: {
+      indicator: 'bg-emerald-500',
+      container: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+      message: 'Todos os sistemas estão operacionais.'
+    },
+    attention: {
+      indicator: 'bg-amber-500',
+      container: 'border-amber-200 bg-amber-50 text-amber-700',
+      message: 'Algumas verificações requerem atenção.'
+    },
+    unhealthy: {
+      indicator: 'bg-rose-500',
+      container: 'border-rose-200 bg-rose-50 text-rose-700',
+      message: 'Falha crítica detectada. Ajustes necessários.'
+    }
+  } as const;
+
+  const currentStatus = statusStyles[health.status];
 
   return (
     <div className="space-y-6">
@@ -41,7 +63,7 @@ export default async function ConfigsPage() {
             </div>
           </div>
 
-          <SyncButton className="pt-2" />
+          <SyncButton className="pt-2" disabled={health.hasCriticalFailure} />
         </CardContent>
       </Card>
 
@@ -81,6 +103,53 @@ export default async function ConfigsPage() {
             3. Gravamos ou atualizamos cada venda na tabela <code className="bg-slate-100 px-1 py-0.5">sales</code> do Supabase,
             preservando o JSON original em <code className="bg-slate-100 px-1 py-0.5">raw</code> para auditoria.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl">Health check</CardTitle>
+          <CardDescription>
+            Validação automática das configurações críticas e acesso ao banco de dados antes da sincronização manual.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className={cn('flex items-center gap-3 rounded-md border p-3 text-sm font-medium', currentStatus.container)}>
+            <span className={cn('h-2.5 w-2.5 rounded-full', currentStatus.indicator)} aria-hidden />
+            <span>{currentStatus.message}</span>
+          </div>
+
+          <div className="space-y-3">
+            {health.checks.map(check => {
+              const isOk = check.status === 'ok';
+              return (
+                <div
+                  key={check.name}
+                  className={cn(
+                    'rounded-md border p-3',
+                    isOk ? 'border-emerald-100 bg-emerald-50/60' : 'border-rose-200 bg-rose-50/70'
+                  )}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={cn('h-2.5 w-2.5 rounded-full', isOk ? 'bg-emerald-500' : 'bg-rose-500')}
+                      aria-hidden
+                    />
+                    <p className="text-sm font-medium text-slate-800">{check.name}</p>
+                    {check.critical ? (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        Crítico
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className={cn('mt-2 text-sm', isOk ? 'text-slate-600' : 'text-rose-600')}>{check.message}</p>
+                  {check.details ? <p className="mt-1 text-xs text-rose-500">{check.details}</p> : null}
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="text-xs text-slate-400">Última verificação: {new Date(health.timestamp).toLocaleString('pt-BR')}</p>
         </CardContent>
       </Card>
     </div>
