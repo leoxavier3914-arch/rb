@@ -132,9 +132,15 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
   }
 
   const tables: readonly string[] = ['sales', 'sales_summary'];
+  const columnSelections: Record<string, string> = {
+    sales: 'id',
+    sales_summary: '*'
+  };
+
   for (const table of tables) {
     try {
-      const { error } = await client.from(table).select('id').limit(1);
+      const selection = columnSelections[table] ?? '*';
+      const { error } = await client.from(table).select(selection).limit(1);
       if (error) {
         throw error;
       }
