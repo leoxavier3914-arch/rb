@@ -54,7 +54,7 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
                 <TableHead>Cliente</TableHead>
                 <TableHead>Produto</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
+                <TableHead className="text-right">Valor líquido</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -84,7 +84,10 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
                       <span className="ml-2 text-xs text-slate-400">{formatShortDate(item.created_at ?? '')}</span>
                     </TableCell>
                     <TableCell className="text-right font-semibold text-slate-900">
-                      {formatMoneyFromCentsWithCurrency(item.total_amount_cents, item.currency ?? 'BRL')}
+                      {formatMoneyFromCentsWithCurrency(
+                        item.net_amount_cents ?? item.total_amount_cents,
+                        item.currency ?? 'BRL'
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
