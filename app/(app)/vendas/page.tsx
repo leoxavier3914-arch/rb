@@ -25,7 +25,7 @@ function parsePage(value: string | string[] | undefined): number {
 
 export default async function VendasPage({ searchParams }: SalesPageProps) {
   const page = parsePage(searchParams?.page);
-  const { items, total } = await listSales(page, PAGE_SIZE);
+  const { items, total } = await listSales(page, PAGE_SIZE, 'paid');
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = total === 0 ? 0 : Math.min(page * PAGE_SIZE, total);
