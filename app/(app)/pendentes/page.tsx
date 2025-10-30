@@ -24,16 +24,28 @@ function parsePage(value: string | string[] | undefined): number {
   return 1;
 }
 
+function parseSearch(value: string | string[] | undefined): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return undefined;
+}
+
 export default async function PendingSalesPage({ searchParams }: PendingSalesPageProps) {
   const page = parsePage(searchParams?.page);
-  const { items, total } = await listSales(page, PAGE_SIZE, PENDING_STATUSES, undefined);
+  const query = parseSearch(searchParams?.q);
+  const { items, total } = await listSales(page, PAGE_SIZE, PENDING_STATUSES, query);
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = total === 0 ? 0 : Math.min(page * PAGE_SIZE, total);
 
   const prevPage = page > 1 ? page - 1 : null;
   const nextPage = page < pageCount ? page + 1 : null;
-  const hasFiltersApplied = true;
+  const hasFiltersApplied = typeof query === 'string' && query.length > 0;
+  const pageQuerySuffix = hasFiltersApplied ? `&q=${encodeURIComponent(query ?? '')}` : '';
 
   return (
     <div className="space-y-6">
@@ -46,8 +58,27 @@ export default async function PendingSalesPage({ searchParams }: PendingSalesPag
       </header>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <CardTitle className="text-xl">Registros de vendas</CardTitle>
+          <form method="get" className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
+            <div className="flex w-full flex-1 items-center gap-2 md:w-80">
+              <input
+                type="search"
+                name="q"
+                placeholder="Buscar por ID, cliente ou e-mail"
+                defaultValue={query ?? ''}
+                className="flex-1 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              />
+            </div>
+            <div className="flex items-center gap-2 md:justify-end">
+              <Button type="submit" variant="outline">
+                Buscar
+              </Button>
+              <Button variant="ghost" asChild>
+                <Link href="/pendentes">Limpar</Link>
+              </Button>
+            </div>
+          </form>
         </CardHeader>
         <CardContent className="space-y-4 p-0">
           <Table>
@@ -66,9 +97,9 @@ export default async function PendingSalesPage({ searchParams }: PendingSalesPag
                   <TableCell colSpan={5} className="py-6 text-center text-slate-500">
                     {hasFiltersApplied ? (
                       <>
-                        Nenhuma venda encontrada para os filtros aplicados.
+                        Nenhuma venda encontrada para o filtro informado.
                         <br />
-                        Se ainda não houver dados sincronizados, acesse Configs e clique em &quot;Sincronizar&quot;.
+                        Ajuste a busca ou limpe os filtros para tentar novamente.
                       </>
                     ) : (
                       <>Nenhum dado sincronizado ainda. Acesse Configs e clique em &quot;Sincronizar&quot;.</>
@@ -113,7 +144,9 @@ export default async function PendingSalesPage({ searchParams }: PendingSalesPag
             <div className="flex items-center gap-2">
               {prevPage ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/pendentes?page=${prevPage}`}>Página anterior</Link>
+                  <Link href={`/pendentes?page=${prevPage}${pageQuerySuffix}`}>
+                    Página anterior
+                  </Link>
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" disabled>
@@ -122,7 +155,9 @@ export default async function PendingSalesPage({ searchParams }: PendingSalesPag
               )}
               {nextPage ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/pendentes?page=${nextPage}`}>Próxima página</Link>
+                  <Link href={`/pendentes?page=${nextPage}${pageQuerySuffix}`}>
+                    Próxima página
+                  </Link>
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" disabled>
