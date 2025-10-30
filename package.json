@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test lib/kiwify/salesSync.test.ts"
+    "test": "tsx --test lib/kiwify/salesSync.test.ts lib/webhooks.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "1.2.3",

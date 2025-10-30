@@ -13,6 +13,7 @@ type NavItem = {
 const items: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/financeiro', label: 'Financeiro' },
+  { href: '/webhooks', label: 'Webhooks' },
   { href: '/vendas', label: 'Vendas' },
   { href: '/pendentes', label: 'Pendentes' },
   { href: '/reembolsados', label: 'Reembolsados' },
