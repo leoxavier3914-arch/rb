@@ -35,6 +35,13 @@ export interface SalesSummary {
   readonly lastSyncedAt: string | null;
 }
 
+export interface DailySalesRow {
+  readonly saleDate: string;
+  readonly totalSales: number;
+  readonly grossAmountCents: number;
+  readonly netAmountCents: number;
+}
+
 export interface UpsertSaleInput {
   readonly id: string;
   readonly status: string | null;
@@ -111,6 +118,64 @@ export async function listSales(
     page: currentPage,
     pageSize: limit
   };
+}
+
+export async function listDailySales(): Promise<DailySalesRow[]> {
+  const client = getServiceClient();
+
+  type DailySaleSourceRow = {
+    readonly created_at: string | null;
+    readonly total_amount_cents: number | null;
+    readonly net_amount_cents: number | null;
+  };
+
+  const { data, error } = await client
+    .from('sales')
+    .select('created_at,total_amount_cents,net_amount_cents')
+    .eq('status', 'paid')
+    .order('created_at', { ascending: true, nullsFirst: false })
+    .returns<DailySaleSourceRow[]>();
+
+  if (error) {
+    throw error;
+  }
+
+  const aggregate = new Map<
+    string,
+    { totalSales: number; grossAmountCents: number; netAmountCents: number }
+  >();
+
+  for (const row of data ?? []) {
+    if (typeof row.created_at !== 'string' || row.created_at.length === 0) {
+      continue;
+    }
+
+    const saleDate = row.created_at.slice(0, 10);
+    const gross = Number(row.total_amount_cents ?? 0);
+    const net = Number(row.net_amount_cents ?? 0);
+
+    const current =
+      aggregate.get(saleDate) ?? {
+        totalSales: 0,
+        grossAmountCents: 0,
+        netAmountCents: 0
+      };
+
+    current.totalSales += 1;
+    current.grossAmountCents += Number.isFinite(gross) ? gross : 0;
+    current.netAmountCents += Number.isFinite(net) ? net : 0;
+
+    aggregate.set(saleDate, current);
+  }
+
+  return Array.from(aggregate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([saleDate, totals]) => ({
+      saleDate,
+      totalSales: totals.totalSales,
+      grossAmountCents: totals.grossAmountCents,
+      netAmountCents: totals.netAmountCents
+    }));
 }
 
 export async function getSalesSummary(): Promise<SalesSummary> {
