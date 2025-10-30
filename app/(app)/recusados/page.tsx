@@ -26,13 +26,14 @@ function parsePage(value: string | string[] | undefined): number {
 
 export default async function RefusedSalesPage({ searchParams }: RefusedSalesPageProps) {
   const page = parsePage(searchParams?.page);
-  const { items, total } = await listSales(page, PAGE_SIZE, REFUSED_STATUSES);
+  const { items, total } = await listSales(page, PAGE_SIZE, REFUSED_STATUSES, undefined);
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = total === 0 ? 0 : Math.min(page * PAGE_SIZE, total);
 
   const prevPage = page > 1 ? page - 1 : null;
   const nextPage = page < pageCount ? page + 1 : null;
+  const hasFiltersApplied = true;
 
   return (
     <div className="space-y-6">
@@ -63,7 +64,15 @@ export default async function RefusedSalesPage({ searchParams }: RefusedSalesPag
               {items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="py-6 text-center text-slate-500">
-                    Nenhum dado sincronizado ainda. Acesse Configs e clique em &quot;Sincronizar&quot;.
+                    {hasFiltersApplied ? (
+                      <>
+                        Nenhuma venda encontrada para os filtros aplicados.
+                        <br />
+                        Se ainda não houver dados sincronizados, acesse Configs e clique em &quot;Sincronizar&quot;.
+                      </>
+                    ) : (
+                      <>Nenhum dado sincronizado ainda. Acesse Configs e clique em &quot;Sincronizar&quot;.</>
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (

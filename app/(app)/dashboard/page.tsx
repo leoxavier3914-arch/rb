@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const [summary, recent] = await Promise.all([getSalesSummary(), listSales(1, 5)]);
+  const [summary, recent] = await Promise.all([getSalesSummary(), listSales(1, 5, undefined, undefined)]);
 
   const stats = [
     {

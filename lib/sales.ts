@@ -66,14 +66,15 @@ const UPSERT_BATCH_SIZE = 500;
 export async function listSales(
   page: number,
   pageSize: number,
-  statuses: readonly string[] = ['paid']
+  statuses?: readonly string[],
+  searchTerm?: string
 ): Promise<SalesPage> {
   const client = getServiceClient();
   const currentPage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const limit = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 10;
   const from = (currentPage - 1) * limit;
   const to = from + limit - 1;
-  const appliedStatuses = statuses.length > 0 ? statuses : ['paid'];
+  const appliedStatuses = statuses?.length ? statuses : ['paid'];
 
   let query = client
     .from('sales')
@@ -104,6 +105,23 @@ export async function listSales(
     query = query.eq('status', appliedStatuses[0]);
   } else {
     query = query.in('status', appliedStatuses as string[]);
+  }
+
+  const normalizedSearch =
+    typeof searchTerm === 'string' && searchTerm.trim().length > 0
+      ? searchTerm.trim()
+      : undefined;
+
+  if (normalizedSearch) {
+    const escapedSearch = normalizedSearch.replace(/[%_]/g, character => `\\${character}`);
+    const pattern = `%${escapedSearch}%`;
+    query = query.or(
+      [
+        `id.ilike.${pattern}`,
+        `customer_name.ilike.${pattern}`,
+        `customer_email.ilike.${pattern}`
+      ].join(',')
+    );
   }
 
   const { data, error, count } = await query.range(from, to);
