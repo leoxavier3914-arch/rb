@@ -13,6 +13,13 @@ import {
 
 type FormState = 'idle' | 'loading' | 'success' | 'error';
 
+/**
+ * Renders a form that lets users create a webhook, validates required fields, submits the webhook to /api/webhooks, and displays loading, success, or error feedback.
+ *
+ * The form validates that a URL is provided and at least one trigger is selected, normalizes optional inputs (name, products, token), posts a JSON payload to /api/webhooks, and on success resets the form and refreshes the page. On failure it displays an error message.
+ *
+ * @returns A React element containing the create-webhook form UI.
+ */
 export function CreateWebhookForm() {
   const router = useRouter();
   const [name, setName] = useState('');

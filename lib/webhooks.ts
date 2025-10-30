@@ -32,6 +32,11 @@ export interface UpdateWebhookInput {
   readonly token?: string | null;
 }
 
+/**
+ * Ensure a KiwifyClient instance is available, creating a new one if none is provided.
+ *
+ * @returns A KiwifyClient instance (the provided client or a newly created one)
+ */
 async function ensureClient(client?: KiwifyClient): Promise<KiwifyClient> {
   if (client) {
     return client;
@@ -56,6 +61,16 @@ export async function listWebhooks(client?: KiwifyClient): Promise<readonly Webh
     .filter((item): item is Webhook => item !== null);
 }
 
+/**
+ * Create a new webhook in Kiwify using the provided input.
+ *
+ * @param input - Payload for creating the webhook. Must include a valid `url` and at least one `triggers` entry; may include `name`, `products`, and `token`.
+ * @returns The created `Webhook` object as returned by the Kiwify API.
+ * @throws Error if `url` is invalid or missing.
+ * @throws Error if `triggers` is empty or invalid.
+ * @throws Error if the Kiwify API responds with a non-ok status (includes status and a short response snippet).
+ * @throws Error if the API response cannot be parsed into a valid webhook record.
+ */
 export async function createWebhook(input: CreateWebhookInput, client?: KiwifyClient): Promise<Webhook> {
   const url = normalizeUrl(input.url);
   if (!url) {
@@ -159,6 +174,13 @@ export async function deleteWebhook(id: string, client?: KiwifyClient): Promise<
   }
 }
 
+/**
+ * Constructs an update payload for a webhook from the provided input, validating any supplied fields.
+ *
+ * @param input - Input whose present properties will be validated and included in the payload; passing `null` for nullable fields will include the field with `null` to unset it.
+ * @returns An object containing validated fields suitable for a PATCH request, or `null` if the input contains no updatable fields.
+ * @throws Error if any provided field is invalid (e.g., invalid URL, empty triggers array, or invalid name/products/token).
+ */
 function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
   const payload: Record<string, unknown> = {};
 
@@ -246,6 +268,14 @@ function extractWebhookRecord(payload: unknown): UnknownRecord | null {
   return records[0] ?? null;
 }
 
+/**
+ * Parse a raw webhook record into a typed Webhook object.
+ *
+ * Converts and validates required fields (`id`, `url`) and maps optional fields (`name`, `products`, `triggers`, `token`, `createdAt`, `updatedAt`) to their normalized forms.
+ *
+ * @param payload - The raw record object to parse.
+ * @returns A Webhook object when `id` and `url` are present and valid; `null` otherwise. `createdAt` and `updatedAt` are returned as ISO strings or `null` if missing or invalid; `triggers` is returned as a string array.
+ */
 function parseWebhook(payload: UnknownRecord): Webhook | null {
   const id = toNullableString(payload.id);
   const url = toNullableString(payload.url);
@@ -300,6 +330,12 @@ function toIso(value: unknown): string | null {
   return null;
 }
 
+/**
+ * Normalizes a value into a canonical absolute URL string or returns null when it is not a valid URL.
+ *
+ * @param value - A value representing a URL; strings or values convertible to a string are accepted.
+ * @returns `null` if `value` is not a valid URL, otherwise the URL's absolute href string.
+ */
 function normalizeUrl(value: unknown): string | null {
   const url = toNullableString(value);
   if (!url) {
@@ -313,6 +349,12 @@ function normalizeUrl(value: unknown): string | null {
   }
 }
 
+/**
+ * Convert an optional triggers input into a normalized array of trigger strings.
+ *
+ * @param triggers - The raw triggers value (array or undefined) to normalize.
+ * @returns An array of normalized trigger strings; empty if no valid triggers were provided.
+ */
 function normalizeTriggers(triggers: readonly unknown[] | undefined): string[] {
   if (!triggers) {
     return [];
@@ -321,16 +363,33 @@ function normalizeTriggers(triggers: readonly unknown[] | undefined): string[] {
   return [...normalized];
 }
 
+/**
+ * Normalize an unknown value to a trimmed string or null.
+ *
+ * @returns `string` if `value` can be converted to a non-empty trimmed string, `null` otherwise.
+ */
 function normalizeOptionalString(value: unknown): string | null {
   const normalized = toNullableString(value);
   return normalized ? normalized : null;
 }
 
+/**
+ * Normalize an input value to an identifier.
+ *
+ * @param value - The value to normalize into an identifier
+ * @returns The normalized identifier string, or `null` if the input cannot be converted to a non-empty identifier
+ */
 function normalizeId(value: unknown): string | null {
   const id = toNullableString(value);
   return id ?? null;
 }
 
+/**
+ * Normalize a products value into a trimmed string or null.
+ *
+ * @param value - The input to normalize (may be string, number, bigint, or other)
+ * @returns The trimmed string representation of `value`, or `null` if it is missing, empty, or cannot be converted
+ */
 function normalizeProducts(value: unknown): string | null {
   const products = toNullableString(value);
   return products ? products : null;

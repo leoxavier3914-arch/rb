@@ -73,6 +73,12 @@ const TRIGGER_ORDER = new Map<WebhookTrigger, number>(
   WEBHOOK_TRIGGER_OPTIONS.map((option, index) => [option.value, index])
 );
 
+/**
+ * Normalize an array of arbitrary values into a deduplicated, ordered list of valid webhook triggers.
+ *
+ * @param values - Values to normalize; non-string entries and strings that do not match a known trigger are ignored.
+ * @returns An array of unique webhook triggers, sorted according to TRIGGER_ORDER (ascending).
+ */
 export function normalizeWebhookTriggers(values: readonly unknown[]): readonly WebhookTrigger[] {
   const seen = new Set<WebhookTrigger>();
 
@@ -92,6 +98,13 @@ export function normalizeWebhookTriggers(values: readonly unknown[]): readonly W
   return Array.from(seen).sort((a, b) => TRIGGER_ORDER.get(a)! - TRIGGER_ORDER.get(b)!);
 }
 
+/**
+ * Toggle a webhook trigger in the given selection and return the updated selection sorted by trigger order.
+ *
+ * @param values - Current selection of webhook triggers.
+ * @param trigger - Trigger to toggle: if present it will be removed, otherwise it will be added.
+ * @returns An array of unique webhook triggers sorted by their index in `TRIGGER_ORDER` (ascending).
+ */
 export function toggleWebhookTrigger(
   values: readonly WebhookTrigger[],
   trigger: WebhookTrigger
