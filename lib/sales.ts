@@ -122,37 +122,59 @@ export async function listSales(
 
 export async function listDailySales(): Promise<DailySalesRow[]> {
   const client = getServiceClient();
-  type DailySalesQueryRow = {
-    readonly sale_date: string | null;
-    readonly total_sales: number | null;
-    readonly gross_amount_cents: number | null;
+
+  type DailySaleSourceRow = {
+    readonly created_at: string | null;
+    readonly total_amount_cents: number | null;
     readonly net_amount_cents: number | null;
   };
 
   const { data, error } = await client
     .from('sales')
-    .select(
-      `
-        sale_date:created_at::date,
-        total_sales:id.count(),
-        gross_amount_cents:total_amount_cents.sum(),
-        net_amount_cents:net_amount_cents.sum()
-      `
-    )
-    .order('sale_date', { ascending: true, nullsFirst: false })
-    .returns<DailySalesQueryRow[]>();
+    .select('created_at,total_amount_cents,net_amount_cents')
+    .eq('status', 'paid')
+    .order('created_at', { ascending: true, nullsFirst: false })
+    .returns<DailySaleSourceRow[]>();
 
   if (error) {
     throw error;
   }
 
-  return (data ?? [])
-    .filter(row => typeof row.sale_date === 'string' && row.sale_date.length > 0)
-    .map(row => ({
-      saleDate: row.sale_date as string,
-      totalSales: Number(row.total_sales ?? 0),
-      grossAmountCents: Number(row.gross_amount_cents ?? 0),
-      netAmountCents: Number(row.net_amount_cents ?? 0)
+  const aggregate = new Map<
+    string,
+    { totalSales: number; grossAmountCents: number; netAmountCents: number }
+  >();
+
+  for (const row of data ?? []) {
+    if (typeof row.created_at !== 'string' || row.created_at.length === 0) {
+      continue;
+    }
+
+    const saleDate = row.created_at.slice(0, 10);
+    const gross = Number(row.total_amount_cents ?? 0);
+    const net = Number(row.net_amount_cents ?? 0);
+
+    const current =
+      aggregate.get(saleDate) ?? {
+        totalSales: 0,
+        grossAmountCents: 0,
+        netAmountCents: 0
+      };
+
+    current.totalSales += 1;
+    current.grossAmountCents += Number.isFinite(gross) ? gross : 0;
+    current.netAmountCents += Number.isFinite(net) ? net : 0;
+
+    aggregate.set(saleDate, current);
+  }
+
+  return Array.from(aggregate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([saleDate, totals]) => ({
+      saleDate,
+      totalSales: totals.totalSales,
+      grossAmountCents: totals.grossAmountCents,
+      netAmountCents: totals.netAmountCents
     }));
 }
 
