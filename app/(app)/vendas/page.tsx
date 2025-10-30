@@ -24,10 +24,21 @@ function parsePage(value: string | string[] | undefined): number {
   return 1;
 }
 
+function parseSearch(value: string | string[] | undefined): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return undefined;
+}
+
 export default async function VendasPage({ searchParams }: SalesPageProps) {
   const page = parsePage(searchParams?.page);
+  const query = parseSearch(searchParams?.q);
   const [salesPage, dailySales] = await Promise.all([
-    listSales(page, PAGE_SIZE),
+    listSales(page, PAGE_SIZE, undefined, query),
     listDailySales()
   ]);
   const { items, total } = salesPage;
@@ -37,6 +48,8 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
 
   const prevPage = page > 1 ? page - 1 : null;
   const nextPage = page < pageCount ? page + 1 : null;
+  const hasFiltersApplied = typeof query === 'string' && query.length > 0;
+  const pageQuerySuffix = hasFiltersApplied ? `&q=${encodeURIComponent(query ?? '')}` : '';
 
   return (
     <div className="space-y-6">
@@ -58,8 +71,27 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <CardTitle className="text-xl">Registros de vendas</CardTitle>
+          <form method="get" className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
+            <div className="flex w-full flex-1 items-center gap-2 md:w-80">
+              <input
+                type="search"
+                name="q"
+                placeholder="Buscar por ID, cliente ou e-mail"
+                defaultValue={query ?? ''}
+                className="flex-1 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              />
+            </div>
+            <div className="flex items-center gap-2 md:justify-end">
+              <Button type="submit" variant="outline">
+                Buscar
+              </Button>
+              <Button variant="ghost" asChild>
+                <Link href="/vendas">Limpar</Link>
+              </Button>
+            </div>
+          </form>
         </CardHeader>
         <CardContent className="space-y-4 p-0">
           <Table>
@@ -76,7 +108,15 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
               {items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="py-6 text-center text-slate-500">
-                    Nenhum dado sincronizado ainda. Acesse Configs e clique em &quot;Sincronizar&quot;.
+                    {hasFiltersApplied ? (
+                      <>
+                        Nenhuma venda encontrada para o filtro informado.
+                        <br />
+                        Ajuste a busca ou limpe os filtros para tentar novamente.
+                      </>
+                    ) : (
+                      <>Nenhum dado sincronizado ainda. Acesse Configs e clique em &quot;Sincronizar&quot;.</>
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -117,7 +157,9 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
             <div className="flex items-center gap-2">
               {prevPage ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/vendas?page=${prevPage}`}>Página anterior</Link>
+                  <Link href={`/vendas?page=${prevPage}${pageQuerySuffix}`}>
+                    Página anterior
+                  </Link>
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" disabled>
@@ -126,7 +168,9 @@ export default async function VendasPage({ searchParams }: SalesPageProps) {
               )}
               {nextPage ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/vendas?page=${nextPage}`}>Próxima página</Link>
+                  <Link href={`/vendas?page=${nextPage}${pageQuerySuffix}`}>
+                    Próxima página
+                  </Link>
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" disabled>
