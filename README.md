@@ -36,3 +36,5 @@ O endpoint `POST /api/sales/sync` usa as rotas documentadas em [Auth / OAuth](ht
 ### Fluxo de saques (`/financeiro`)
 
 A página Financeiro consome os dados sincronizados para montar a linha do tempo de liberações: exibe o saldo disponível imediato, os saques já programados e os lotes aguardando liberação. As informações são agrupadas por status de saque, facilitando a identificação de valores que podem ser solicitados e daqueles em análise.
+
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/leoxavier3914-arch/rb?utm_source=oss&utm_medium=github&utm_campaign=leoxavier3914-arch%2Frb&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
