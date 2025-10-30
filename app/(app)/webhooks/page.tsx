@@ -8,6 +8,12 @@ import { WebhookRowActions } from './WebhookRowActions';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Format an array of trigger identifiers into a single display string.
+ *
+ * @param triggers - The list of trigger strings to format
+ * @returns `'—'` if `triggers` is empty or falsy, otherwise the triggers joined by `, `
+ */
 function formatTriggers(triggers: readonly string[]): string {
   if (!triggers || triggers.length === 0) {
     return '—';
@@ -15,6 +21,12 @@ function formatTriggers(triggers: readonly string[]): string {
   return triggers.join(', ');
 }
 
+/**
+ * Normalize a products string into a user-facing label.
+ *
+ * @param products - The products identifier or list; may be `null`, empty, whitespace, `'all'`, or a specific product string.
+ * @returns `'Todos'` if `products` is `null`, empty, only whitespace, or exactly `'all'`; otherwise returns the original `products` string.
+ */
 function formatProducts(products: string | null): string {
   if (!products || products.trim().length === 0) {
     return 'Todos';
@@ -22,6 +34,14 @@ function formatProducts(products: string | null): string {
   return products === 'all' ? 'Todos' : products;
 }
 
+/**
+ * Render the Webhooks management page that displays configured webhooks and a form to create new ones.
+ *
+ * Fetches the current webhooks from Kiwify and renders a two-column layout: a table of existing webhooks
+ * (ID, name, URL, triggers, products, token, last update, and actions) and a form to create a new webhook.
+ *
+ * @returns A React element containing the webhooks list table and the create-webhook form
+ */
 export default async function WebhooksPage() {
   const client = await createKiwifyClient();
   const webhooks = await listWebhooks(client);

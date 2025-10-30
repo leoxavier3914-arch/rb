@@ -7,6 +7,16 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Normalize a raw value into a list of webhook triggers or indicate invalid input.
+ *
+ * Takes any value and attempts to produce a normalized, readonly array of WebhookTrigger objects.
+ *
+ * @param value - The raw payload field (expected to be an array of values, typically strings) to normalize into triggers.
+ * @returns `readonly WebhookTrigger[]` with normalized triggers when the input is an array with valid trigger strings;
+ * an empty array when the input is an array but contains no valid string entries;
+ * `null` when the input is not an array or when normalization yields no valid triggers (invalid input).
+ */
 function normalizeTriggers(value: unknown): readonly WebhookTrigger[] | null {
   if (!Array.isArray(value)) {
     return null;
@@ -25,6 +35,13 @@ function normalizeTriggers(value: unknown): readonly WebhookTrigger[] | null {
   return triggers;
 }
 
+/**
+ * Handle HTTP POST requests to create a webhook from a JSON payload.
+ *
+ * Validates required fields (URL and triggers), creates the webhook when valid, and returns a JSON response indicating success or failure.
+ *
+ * @returns A JSON object `{ ok: true, webhook }` containing the created webhook on success, or `{ ok: false, error }` with an explanatory error message on validation or server failure.
+ */
 export async function POST(request: Request) {
   try {
     const payload = (await request.json().catch(() => null)) as

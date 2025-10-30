@@ -19,6 +19,15 @@ type Props = {
   readonly webhook: Webhook;
 };
 
+/**
+ * Render action controls for editing, updating, and deleting a webhook entry.
+ *
+ * Displays an inline edit form (name, URL, triggers, products, token) and view-mode action buttons.
+ * When saving or removing, performs the corresponding PATCH or DELETE request to the webhook API and refreshes the route on success; shows loading, success, and error states with messages.
+ *
+ * @param webhook - The webhook object to manage and edit
+ * @returns A React element containing the webhook action UI (edit form, edit/remove buttons, and status messages)
+ */
 export function WebhookRowActions({ webhook }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);

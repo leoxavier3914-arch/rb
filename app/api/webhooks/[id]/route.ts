@@ -7,6 +7,12 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Normalize and validate a raw triggers input into a list of webhook triggers.
+ *
+ * @param value - The raw input to normalize; expected to be an array of strings (or undefined). Strings will be trimmed and empty entries ignored.
+ * @returns A readonly array of normalized `WebhookTrigger` when valid; `[]` if the input array contains only empty or whitespace strings; `null` if the input is not an array or normalizes to no valid triggers; `undefined` if `value` is `undefined`.
+ */
 function normalizeTriggers(value: unknown): readonly WebhookTrigger[] | null | undefined {
   if (value === undefined) {
     return undefined;
@@ -28,6 +34,15 @@ function normalizeTriggers(value: unknown): readonly WebhookTrigger[] | null | u
   return triggers;
 }
 
+/**
+ * Update an existing webhook identified by route `id` using fields from the request JSON payload.
+ *
+ * Validates and accepts partial updates for `url`, `triggers`, `name`, `products`, and `token`. Returns validation errors for malformed or missing input and returns the updated webhook on success.
+ *
+ * @param request - The incoming HTTP request containing a JSON payload with update fields.
+ * @param params - Route parameters object containing `id` (the webhook identifier).
+ * @returns A JSON response object: `{ ok: true, webhook }` on success; `{ ok: false, error }` with an explanatory message on validation or server errors.
+ */
 export async function PATCH(
   request: Request,
   { params }: { params: { id?: string } }
