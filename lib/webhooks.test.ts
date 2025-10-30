@@ -19,10 +19,11 @@ test('listWebhooks maps webhook payloads returned by the API', async () => {
     data: [
       {
         id: 'wh-1',
+        name: 'Webhook principal',
         url: 'https://example.com/webhooks',
-        status: 'active',
-        events: ['sale.created', 'sale.approved'],
-        secret: 'abc',
+        products: 'all',
+        triggers: ['compra_aprovada', 'chargeback'],
+        token: 'abc',
         created_at: '2024-06-01T10:00:00Z',
         updated_at: '2024-06-02T12:30:00Z'
       }
@@ -41,10 +42,11 @@ test('listWebhooks maps webhook payloads returned by the API', async () => {
   assert.strictEqual(webhooks.length, 1);
   const webhook = webhooks[0]!;
   assert.strictEqual(webhook.id, 'wh-1');
+  assert.strictEqual(webhook.name, 'Webhook principal');
   assert.strictEqual(webhook.url, 'https://example.com/webhooks');
-  assert.deepStrictEqual(webhook.events, ['sale.created', 'sale.approved']);
-  assert.strictEqual(webhook.status, 'active');
-  assert.strictEqual(webhook.secret, 'abc');
+  assert.deepStrictEqual(webhook.triggers, ['compra_aprovada', 'chargeback']);
+  assert.strictEqual(webhook.products, 'all');
+  assert.strictEqual(webhook.token, 'abc');
   assert.strictEqual(webhook.createdAt, new Date('2024-06-01T10:00:00Z').toISOString());
   assert.strictEqual(webhook.updatedAt, new Date('2024-06-02T12:30:00Z').toISOString());
 });
@@ -56,10 +58,11 @@ test('createWebhook normalizes payload before sending to the API', async () => {
     return new Response(
       JSON.stringify({
         id: 'wh-new',
+        name: 'Webhook Principal',
         url: 'https://example.com/webhooks',
-        status: 'active',
-        events: ['sale.created'],
-        secret: 'secret',
+        products: 'all',
+        triggers: ['compra_aprovada'],
+        token: 'secret',
         created_at: '2024-06-01T10:00:00Z',
         updated_at: '2024-06-01T10:00:00Z'
       }),
@@ -70,9 +73,10 @@ test('createWebhook normalizes payload before sending to the API', async () => {
   const webhook = await createWebhook(
     {
       url: ' https://example.com/webhooks ',
-      events: [' sale.created ', ''],
-      status: 'ACTIVE',
-      secret: ' secret '
+      triggers: [' compra_aprovada ', '', 'inexistente'],
+      name: ' Principal ',
+      products: ' all ',
+      token: ' secret '
     },
     client
   );
@@ -84,15 +88,18 @@ test('createWebhook normalizes payload before sending to the API', async () => {
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
     url: 'https://example.com/webhooks',
-    events: ['sale.created'],
-    status: 'active',
-    secret: 'secret'
+    triggers: ['compra_aprovada'],
+    products: 'all',
+    name: 'Principal',
+    token: 'secret'
   });
 
   assert.strictEqual(webhook.id, 'wh-new');
   assert.strictEqual(webhook.url, 'https://example.com/webhooks');
-  assert.deepStrictEqual(webhook.events, ['sale.created']);
-  assert.strictEqual(webhook.status, 'active');
+  assert.deepStrictEqual(webhook.triggers, ['compra_aprovada']);
+  assert.strictEqual(webhook.products, 'all');
+  assert.strictEqual(webhook.name, 'Webhook Principal');
+  assert.strictEqual(webhook.token, 'secret');
 });
 
 test('updateWebhook accepts partial updates and trims values', async () => {
@@ -103,8 +110,9 @@ test('updateWebhook accepts partial updates and trims values', async () => {
       JSON.stringify({
         id: 'wh-1',
         url: 'https://example.com/new-webhook',
-        status: 'inactive',
-        events: ['sale.canceled'],
+        products: 'produto-123',
+        triggers: ['compra_recusada'],
+        token: null,
         updated_at: '2024-06-05T08:00:00Z'
       }),
       { status: 200 }
@@ -115,8 +123,10 @@ test('updateWebhook accepts partial updates and trims values', async () => {
     'wh-1',
     {
       url: ' https://example.com/new-webhook ',
-      events: [' sale.canceled '],
-      status: 'INACTIVE'
+      triggers: [' compra_recusada '],
+      name: ' Atualizado ',
+      products: ' produto-123 ',
+      token: '  '
     },
     client
   );
@@ -129,13 +139,16 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
     url: 'https://example.com/new-webhook',
-    events: ['sale.canceled'],
-    status: 'inactive'
+    triggers: ['compra_recusada'],
+    name: 'Atualizado',
+    products: 'produto-123',
+    token: null
   });
 
   assert.strictEqual(webhook.id, 'wh-1');
   assert.strictEqual(webhook.url, 'https://example.com/new-webhook');
-  assert.deepStrictEqual(webhook.events, ['sale.canceled']);
-  assert.strictEqual(webhook.status, 'inactive');
+  assert.deepStrictEqual(webhook.triggers, ['compra_recusada']);
+  assert.strictEqual(webhook.products, 'produto-123');
+  assert.strictEqual(webhook.token, null);
 });
 
