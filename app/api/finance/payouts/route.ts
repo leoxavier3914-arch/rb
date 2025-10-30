@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
-import { createPayout } from '@/lib/finance';
+import * as finance from '@/lib/finance';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: Request) {
+type CreatePayoutExecutor = (amount: number) => Promise<finance.CreatePayoutResult>;
+
+export async function handleCreatePayoutRequest(
+  request: Request,
+  createPayoutImpl: CreatePayoutExecutor = finance.createPayout
+) {
   try {
     const payload = (await request.json().catch(() => null)) as { amount?: unknown } | null;
     const amountRaw = payload?.amount;
@@ -15,11 +20,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await createPayout(Math.round(amount));
+    const result = await createPayoutImpl(Math.round(amount));
     return NextResponse.json({ ok: true, payout: result });
   } catch (error) {
     console.error('create_payout_failed', error);
     const message = error instanceof Error ? error.message : 'Não foi possível solicitar o saque agora.';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  return handleCreatePayoutRequest(request);
 }
