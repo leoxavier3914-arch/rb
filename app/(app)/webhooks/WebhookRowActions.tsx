@@ -6,6 +6,12 @@ import { Loader2, CheckCircle2, AlertCircle, Pencil, Trash2, X } from 'lucide-re
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/ui/classnames';
 import type { Webhook } from '@/lib/webhooks';
+import {
+  WEBHOOK_EVENT_OPTIONS,
+  normalizeWebhookEvents,
+  toggleWebhookEvent,
+  type WebhookEventTrigger
+} from '@/lib/webhooks/triggers';
 
 type ActionState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -13,18 +19,13 @@ type Props = {
   readonly webhook: Webhook;
 };
 
-function parseEvents(raw: string): string[] {
-  return raw
-    .split(/[\n,]/)
-    .map(item => item.trim())
-    .filter(item => item.length > 0);
-}
-
 export function WebhookRowActions({ webhook }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [url, setUrl] = useState(webhook.url);
-  const [events, setEvents] = useState(webhook.events.join('\n'));
+  const [events, setEvents] = useState<readonly WebhookEventTrigger[]>(
+    () => normalizeWebhookEvents(webhook.events)
+  );
   const [status, setStatus] = useState(() => (webhook.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active'));
   const [state, setState] = useState<ActionState>('idle');
   const [message, setMessage] = useState('');
@@ -39,7 +40,7 @@ export function WebhookRowActions({ webhook }: Props) {
 
   function resetForm() {
     setUrl(webhook.url);
-    setEvents(webhook.events.join('\n'));
+    setEvents(normalizeWebhookEvents(webhook.events));
     setStatus(webhook.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active');
     setState('idle');
     setMessage('');
@@ -58,8 +59,7 @@ export function WebhookRowActions({ webhook }: Props) {
       return;
     }
 
-    const parsedEvents = parseEvents(events);
-    if (parsedEvents.length === 0) {
+    if (events.length === 0) {
       setState('error');
       setMessage('Informe pelo menos um evento para o webhook.');
       return;
@@ -73,7 +73,7 @@ export function WebhookRowActions({ webhook }: Props) {
         headers: {
           'content-type': 'application/json'
         },
-        body: JSON.stringify({ url: normalizedUrl, events: parsedEvents, status })
+        body: JSON.stringify({ url: normalizedUrl, events, status })
       });
       const payload = (await response.json().catch(() => null)) as
         | { ok: boolean; error?: string; webhook?: { id: string } }
@@ -150,17 +150,36 @@ export function WebhookRowActions({ webhook }: Props) {
           </div>
 
           <div className="space-y-1">
-            <label htmlFor={`webhook-events-${webhook.id}`} className="text-xs font-medium text-slate-700">
-              Eventos
-            </label>
-            <textarea
-              id={`webhook-events-${webhook.id}`}
-              value={events}
-              onChange={event => setEvents(event.target.value)}
-              rows={3}
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-            />
-            <p className="text-[10px] text-slate-500">Separe por vírgula ou quebra de linha.</p>
+            <span className="text-xs font-medium text-slate-700">Eventos</span>
+            <fieldset className="grid gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+              {WEBHOOK_EVENT_OPTIONS.map(option => {
+                const checked = events.includes(option.value);
+                return (
+                  <label key={option.value} className="flex items-start gap-2 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      value={option.value}
+                      checked={checked}
+                      onChange={() =>
+                        setEvents(current => toggleWebhookEvent(current, option.value))
+                      }
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-1 focus:ring-slate-200"
+                    />
+                    <span>
+                      <span className="font-medium text-slate-900">{option.label}</span>
+                      <span className="block text-[10px] text-slate-500">{option.description}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </fieldset>
+            <p className="text-[10px] text-slate-500">
+              {events.length === 0
+                ? 'Selecione pelo menos um evento para manter o webhook ativo.'
+                : `${events.length} evento${events.length > 1 ? 's' : ''} ativo${
+                    events.length > 1 ? 's' : ''
+                  }.`}
+            </p>
           </div>
 
           <div className="space-y-1">
