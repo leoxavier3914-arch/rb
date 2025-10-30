@@ -15,6 +15,7 @@ const items: NavItem[] = [
   { href: '/financeiro', label: 'Financeiro' },
   { href: '/vendas', label: 'Vendas' },
   { href: '/pendentes', label: 'Pendentes' },
+  { href: '/reembolsados', label: 'Reembolsados' },
   { href: '/recusados', label: 'Recusados' },
   { href: '/configs', label: 'Configs' }
 ];
