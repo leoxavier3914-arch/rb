@@ -1,96 +1,108 @@
-export type WebhookEventTrigger =
-  | 'sale.created'
-  | 'sale.pending'
-  | 'sale.approved'
-  | 'sale.overdue'
-  | 'sale.completed'
-  | 'sale.canceled'
-  | 'sale.refunded'
-  | 'sale.chargeback';
+export type WebhookTrigger =
+  | 'boleto_gerado'
+  | 'pix_gerado'
+  | 'carrinho_abandonado'
+  | 'compra_recusada'
+  | 'compra_aprovada'
+  | 'compra_reembolsada'
+  | 'chargeback'
+  | 'subscription_canceled'
+  | 'subscription_late'
+  | 'subscription_renewed';
 
-export interface WebhookEventOption {
-  readonly value: WebhookEventTrigger;
+export interface WebhookTriggerOption {
+  readonly value: WebhookTrigger;
   readonly label: string;
   readonly description: string;
 }
 
-export const WEBHOOK_EVENT_OPTIONS: readonly WebhookEventOption[] = [
+export const WEBHOOK_TRIGGER_OPTIONS: readonly WebhookTriggerOption[] = [
   {
-    value: 'sale.created',
-    label: 'Venda criada',
-    description: 'Disparado imediatamente após a criação de um pedido.'
+    value: 'boleto_gerado',
+    label: 'Boleto gerado',
+    description: 'Disparado quando um boleto é criado para o pedido.'
   },
   {
-    value: 'sale.pending',
-    label: 'Pagamento pendente',
-    description: 'Emitido quando uma venda permanece aguardando pagamento.'
+    value: 'pix_gerado',
+    label: 'Pix gerado',
+    description: 'Enviado assim que uma cobrança Pix é gerada.'
   },
   {
-    value: 'sale.approved',
-    label: 'Pagamento aprovado',
-    description: 'Enviado assim que o pagamento do pedido é confirmado.'
+    value: 'carrinho_abandonado',
+    label: 'Carrinho abandonado',
+    description: 'Notifica quando o comprador não conclui o checkout.'
   },
   {
-    value: 'sale.overdue',
-    label: 'Pagamento atrasado',
-    description: 'Disparado quando o boleto ou parcelamento expira sem pagamento.'
+    value: 'compra_recusada',
+    label: 'Compra recusada',
+    description: 'Emitido quando o pagamento é recusado pelo meio de pagamento.'
   },
   {
-    value: 'sale.completed',
-    label: 'Venda concluída',
-    description: 'Notifica a conclusão da entrega ou liberação do produto.'
+    value: 'compra_aprovada',
+    label: 'Compra aprovada',
+    description: 'Disparado quando o pagamento do pedido é aprovado.'
   },
   {
-    value: 'sale.canceled',
-    label: 'Venda cancelada',
-    description: 'Enviado quando o pedido é cancelado pelo comprador ou suporte.'
+    value: 'compra_reembolsada',
+    label: 'Compra reembolsada',
+    description: 'Enviado quando o pedido tem o valor reembolsado.'
   },
   {
-    value: 'sale.refunded',
-    label: 'Venda reembolsada',
-    description: 'Disparado quando o valor pago é devolvido ao cliente.'
-  },
-  {
-    value: 'sale.chargeback',
+    value: 'chargeback',
     label: 'Chargeback',
-    description: 'Emitido quando ocorre um estorno por contestação junto ao meio de pagamento.'
+    description: 'Notifica quando ocorre um chargeback no pedido.'
+  },
+  {
+    value: 'subscription_canceled',
+    label: 'Assinatura cancelada',
+    description: 'Emitido quando uma assinatura recorrente é cancelada.'
+  },
+  {
+    value: 'subscription_late',
+    label: 'Assinatura inadimplente',
+    description: 'Disparado quando o pagamento recorrente está atrasado.'
+  },
+  {
+    value: 'subscription_renewed',
+    label: 'Assinatura renovada',
+    description: 'Enviado quando a cobrança recorrente é renovada com sucesso.'
   }
 ];
 
-const EVENT_ORDER = new Map<WebhookEventTrigger, number>(
-  WEBHOOK_EVENT_OPTIONS.map((option, index) => [option.value, index])
+const TRIGGER_ORDER = new Map<WebhookTrigger, number>(
+  WEBHOOK_TRIGGER_OPTIONS.map((option, index) => [option.value, index])
 );
 
-export function normalizeWebhookEvents(values: readonly unknown[]): readonly WebhookEventTrigger[] {
-  const seen = new Set<WebhookEventTrigger>();
+export function normalizeWebhookTriggers(values: readonly unknown[]): readonly WebhookTrigger[] {
+  const seen = new Set<WebhookTrigger>();
 
   for (const value of values) {
     if (typeof value !== 'string') {
       continue;
     }
 
-    const normalized = value.trim() as WebhookEventTrigger;
-    if (!EVENT_ORDER.has(normalized)) {
+    const normalized = value.trim() as WebhookTrigger;
+    if (!TRIGGER_ORDER.has(normalized)) {
       continue;
     }
 
     seen.add(normalized);
   }
 
-  return Array.from(seen).sort((a, b) => EVENT_ORDER.get(a)! - EVENT_ORDER.get(b)!);
+  return Array.from(seen).sort((a, b) => TRIGGER_ORDER.get(a)! - TRIGGER_ORDER.get(b)!);
 }
 
-export function toggleWebhookEvent(
-  values: readonly WebhookEventTrigger[],
-  event: WebhookEventTrigger
-): readonly WebhookEventTrigger[] {
+export function toggleWebhookTrigger(
+  values: readonly WebhookTrigger[],
+  trigger: WebhookTrigger
+): readonly WebhookTrigger[] {
   const set = new Set(values);
 
-  if (set.has(event)) {
-    set.delete(event);
+  if (set.has(trigger)) {
+    set.delete(trigger);
   } else {
-    set.add(event);
+    set.add(trigger);
   }
 
-  return Array.from(set).sort((a, b) => EVENT_ORDER.get(a)! - EVENT_ORDER.get(b)!);
+  return Array.from(set).sort((a, b) => TRIGGER_ORDER.get(a)! - TRIGGER_ORDER.get(b)!);
 }

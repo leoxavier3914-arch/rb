@@ -1,16 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2, AlertCircle, Pencil, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/ui/classnames';
 import type { Webhook } from '@/lib/webhooks';
 import {
-  WEBHOOK_EVENT_OPTIONS,
-  normalizeWebhookEvents,
-  toggleWebhookEvent,
-  type WebhookEventTrigger
+  WEBHOOK_TRIGGER_OPTIONS,
+  normalizeWebhookTriggers,
+  toggleWebhookTrigger,
+  type WebhookTrigger
 } from '@/lib/webhooks/triggers';
 
 type ActionState = 'idle' | 'loading' | 'success' | 'error';
@@ -22,26 +22,22 @@ type Props = {
 export function WebhookRowActions({ webhook }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(webhook.name ?? '');
   const [url, setUrl] = useState(webhook.url);
-  const [events, setEvents] = useState<readonly WebhookEventTrigger[]>(
-    () => normalizeWebhookEvents(webhook.events)
+  const [products, setProducts] = useState(webhook.products ?? 'all');
+  const [triggers, setTriggers] = useState<readonly WebhookTrigger[]>(
+    () => normalizeWebhookTriggers(webhook.triggers)
   );
-  const [status, setStatus] = useState(() => (webhook.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active'));
+  const [token, setToken] = useState(webhook.token ?? '');
   const [state, setState] = useState<ActionState>('idle');
   const [message, setMessage] = useState('');
 
-  const statusOptions = useMemo(
-    () => [
-      { value: 'active', label: 'Ativo' },
-      { value: 'inactive', label: 'Inativo' }
-    ],
-    []
-  );
-
   function resetForm() {
+    setName(webhook.name ?? '');
     setUrl(webhook.url);
-    setEvents(normalizeWebhookEvents(webhook.events));
-    setStatus(webhook.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active');
+    setProducts(webhook.products ?? 'all');
+    setTriggers(normalizeWebhookTriggers(webhook.triggers));
+    setToken(webhook.token ?? '');
     setState('idle');
     setMessage('');
   }
@@ -59,21 +55,30 @@ export function WebhookRowActions({ webhook }: Props) {
       return;
     }
 
-    if (events.length === 0) {
+    if (triggers.length === 0) {
       setState('error');
-      setMessage('Informe pelo menos um evento para o webhook.');
+      setMessage('Informe pelo menos um gatilho para o webhook.');
       return;
     }
 
     try {
       setState('loading');
       setMessage('Atualizando webhook na Kiwify...');
+      const normalizedName = name.trim();
+      const normalizedProducts = products.trim();
+      const normalizedToken = token.trim();
       const response = await fetch(`/api/webhooks/${encodeURIComponent(webhook.id)}`, {
         method: 'PATCH',
         headers: {
           'content-type': 'application/json'
         },
-        body: JSON.stringify({ url: normalizedUrl, events, status })
+        body: JSON.stringify({
+          url: normalizedUrl,
+          triggers,
+          name: normalizedName.length > 0 ? normalizedName : null,
+          products: normalizedProducts.length > 0 ? normalizedProducts : 'all',
+          token: normalizedToken.length > 0 ? normalizedToken : null
+        })
       });
       const payload = (await response.json().catch(() => null)) as
         | { ok: boolean; error?: string; webhook?: { id: string } }
@@ -137,6 +142,20 @@ export function WebhookRowActions({ webhook }: Props) {
       {editing ? (
         <form onSubmit={handleUpdate} className="w-full max-w-xs space-y-3 text-left">
           <div className="space-y-1">
+            <label htmlFor={`webhook-name-${webhook.id}`} className="text-xs font-medium text-slate-700">
+              Nome
+            </label>
+            <input
+              id={`webhook-name-${webhook.id}`}
+              type="text"
+              value={name}
+              onChange={event => setName(event.target.value)}
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              placeholder="Opcional"
+            />
+          </div>
+
+          <div className="space-y-1">
             <label htmlFor={`webhook-url-${webhook.id}`} className="text-xs font-medium text-slate-700">
               URL
             </label>
@@ -150,10 +169,10 @@ export function WebhookRowActions({ webhook }: Props) {
           </div>
 
           <div className="space-y-1">
-            <span className="text-xs font-medium text-slate-700">Eventos</span>
+            <span className="text-xs font-medium text-slate-700">Gatilhos</span>
             <fieldset className="grid gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-              {WEBHOOK_EVENT_OPTIONS.map(option => {
-                const checked = events.includes(option.value);
+              {WEBHOOK_TRIGGER_OPTIONS.map(option => {
+                const checked = triggers.includes(option.value);
                 return (
                   <label key={option.value} className="flex items-start gap-2 text-xs text-slate-700">
                     <input
@@ -161,7 +180,7 @@ export function WebhookRowActions({ webhook }: Props) {
                       value={option.value}
                       checked={checked}
                       onChange={() =>
-                        setEvents(current => toggleWebhookEvent(current, option.value))
+                        setTriggers(current => toggleWebhookTrigger(current, option.value))
                       }
                       className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-1 focus:ring-slate-200"
                     />
@@ -174,30 +193,39 @@ export function WebhookRowActions({ webhook }: Props) {
               })}
             </fieldset>
             <p className="text-[10px] text-slate-500">
-              {events.length === 0
-                ? 'Selecione pelo menos um evento para manter o webhook ativo.'
-                : `${events.length} evento${events.length > 1 ? 's' : ''} ativo${
-                    events.length > 1 ? 's' : ''
+              {triggers.length === 0
+                ? 'Selecione pelo menos um gatilho para manter o webhook ativo.'
+                : `${triggers.length} gatilho${triggers.length > 1 ? 's' : ''} ativo${
+                    triggers.length > 1 ? 's' : ''
                   }.`}
             </p>
           </div>
 
           <div className="space-y-1">
-            <label htmlFor={`webhook-status-${webhook.id}`} className="text-xs font-medium text-slate-700">
-              Status
+            <label htmlFor={`webhook-products-${webhook.id}`} className="text-xs font-medium text-slate-700">
+              Produtos
             </label>
-            <select
-              id={`webhook-status-${webhook.id}`}
-              value={status}
-              onChange={event => setStatus(event.target.value === 'inactive' ? 'inactive' : 'active')}
+            <input
+              id={`webhook-products-${webhook.id}`}
+              type="text"
+              value={products}
+              onChange={event => setProducts(event.target.value)}
               className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-            >
-              {statusOptions.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            />
+            <p className="text-[10px] text-slate-500">Deixe <span className="font-mono">all</span> para monitorar todos os produtos.</p>
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor={`webhook-token-${webhook.id}`} className="text-xs font-medium text-slate-700">
+              Token (opcional)
+            </label>
+            <input
+              id={`webhook-token-${webhook.id}`}
+              type="text"
+              value={token}
+              onChange={event => setToken(event.target.value)}
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            />
           </div>
 
           <div className="flex justify-end gap-2">

@@ -1,18 +1,31 @@
 import { NextResponse } from 'next/server';
 import { deleteWebhook, updateWebhook } from '@/lib/webhooks';
+import {
+  normalizeWebhookTriggers,
+  type WebhookTrigger
+} from '@/lib/webhooks/triggers';
 
 export const dynamic = 'force-dynamic';
 
-function normalizeEvents(value: unknown): string[] | null | undefined {
+function normalizeTriggers(value: unknown): readonly WebhookTrigger[] | null | undefined {
   if (value === undefined) {
     return undefined;
   }
   if (!Array.isArray(value)) {
     return null;
   }
-  return value
-    .map(item => (typeof item === 'string' ? item.trim() : ''))
-    .filter(item => item.length > 0);
+
+  const rawValues = value.map(item => (typeof item === 'string' ? item.trim() : '')).filter(item => item.length > 0);
+  if (rawValues.length === 0) {
+    return [];
+  }
+
+  const triggers = normalizeWebhookTriggers(rawValues);
+  if (triggers.length === 0) {
+    return null;
+  }
+
+  return triggers;
 }
 
 export async function PATCH(
@@ -29,14 +42,24 @@ export async function PATCH(
 
   try {
     const payload = (await request.json().catch(() => null)) as
-      | { url?: unknown; events?: unknown; status?: unknown; secret?: unknown }
+      | {
+          url?: unknown;
+          triggers?: unknown;
+          name?: unknown;
+          products?: unknown;
+          token?: unknown;
+        }
       | null;
 
-    if (!payload ||
-      (payload.url === undefined &&
-        payload.events === undefined &&
-        payload.status === undefined &&
-        payload.secret === undefined)) {
+    const hasKnownKeys =
+      payload &&
+      (Object.prototype.hasOwnProperty.call(payload, 'url') ||
+        Object.prototype.hasOwnProperty.call(payload, 'triggers') ||
+        Object.prototype.hasOwnProperty.call(payload, 'name') ||
+        Object.prototype.hasOwnProperty.call(payload, 'products') ||
+        Object.prototype.hasOwnProperty.call(payload, 'token'));
+
+    if (!payload || !hasKnownKeys) {
       return NextResponse.json(
         { ok: false, error: 'Informe ao menos um campo para atualizar o webhook.' },
         { status: 400 }
@@ -51,30 +74,72 @@ export async function PATCH(
       );
     }
 
-    const events = normalizeEvents(payload.events);
-    if (events === null) {
+    const triggers = normalizeTriggers(payload.triggers);
+    if (triggers === null) {
       return NextResponse.json(
-        { ok: false, error: 'Informe os eventos como uma lista válida.' },
+        { ok: false, error: 'Informe os gatilhos como uma lista válida.' },
         { status: 400 }
       );
     }
-    if (events !== undefined && events.length === 0) {
+    if (triggers !== undefined && triggers.length === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Informe pelo menos um evento para o webhook.' },
+        { ok: false, error: 'Informe pelo menos um gatilho para o webhook.' },
         { status: 400 }
       );
     }
 
-    const status = typeof payload.status === 'string' ? payload.status.trim() : undefined;
-    if (payload.status !== undefined && (!status || status.length === 0)) {
-      return NextResponse.json(
-        { ok: false, error: 'Informe um status válido para o webhook.' },
-        { status: 400 }
-      );
+    let name: string | null | undefined = undefined;
+    if (Object.prototype.hasOwnProperty.call(payload, 'name')) {
+      if (payload?.name === null) {
+        name = null;
+      } else if (typeof payload?.name === 'string') {
+        const trimmed = payload.name.trim();
+        name = trimmed.length > 0 ? trimmed : null;
+      } else {
+        return NextResponse.json(
+          { ok: false, error: 'Informe um nome válido para o webhook.' },
+          { status: 400 }
+        );
+      }
     }
-    const secret = typeof payload.secret === 'string' ? payload.secret : undefined;
 
-    const webhook = await updateWebhook(id, { url, events, status, secret });
+    let products: string | null | undefined = undefined;
+    if (Object.prototype.hasOwnProperty.call(payload, 'products')) {
+      if (payload?.products === null) {
+        products = null;
+      } else if (typeof payload?.products === 'string') {
+        const trimmed = payload.products.trim();
+        products = trimmed.length > 0 ? trimmed : 'all';
+      } else {
+        return NextResponse.json(
+          { ok: false, error: 'Informe os produtos como uma string válida.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    let token: string | null | undefined = undefined;
+    if (Object.prototype.hasOwnProperty.call(payload, 'token')) {
+      if (payload?.token === null) {
+        token = null;
+      } else if (typeof payload?.token === 'string') {
+        const trimmed = payload.token.trim();
+        token = trimmed.length > 0 ? trimmed : null;
+      } else {
+        return NextResponse.json(
+          { ok: false, error: 'Informe um token válido para o webhook.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const webhook = await updateWebhook(id, {
+      url,
+      triggers,
+      name,
+      products,
+      token
+    });
     return NextResponse.json({ ok: true, webhook });
   } catch (error) {
     console.error('update_webhook_failed', error);

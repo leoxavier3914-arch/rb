@@ -1,22 +1,40 @@
 import { NextResponse } from 'next/server';
 import { createWebhook } from '@/lib/webhooks';
+import {
+  normalizeWebhookTriggers,
+  type WebhookTrigger
+} from '@/lib/webhooks/triggers';
 
 export const dynamic = 'force-dynamic';
 
-function normalizeEvents(value: unknown): string[] | null {
+function normalizeTriggers(value: unknown): readonly WebhookTrigger[] | null {
   if (!Array.isArray(value)) {
     return null;
   }
-  const events = value
-    .map(item => (typeof item === 'string' ? item.trim() : ''))
-    .filter(item => item.length > 0);
-  return events.length > 0 ? events : [];
+
+  const rawValues = value.map(item => (typeof item === 'string' ? item.trim() : '')).filter(item => item.length > 0);
+  if (rawValues.length === 0) {
+    return [];
+  }
+
+  const triggers = normalizeWebhookTriggers(rawValues);
+  if (triggers.length === 0) {
+    return null;
+  }
+
+  return triggers;
 }
 
 export async function POST(request: Request) {
   try {
     const payload = (await request.json().catch(() => null)) as
-      | { url?: unknown; events?: unknown; status?: unknown; secret?: unknown }
+      | {
+          url?: unknown;
+          triggers?: unknown;
+          name?: unknown;
+          products?: unknown;
+          token?: unknown;
+        }
       | null;
 
     const url = typeof payload?.url === 'string' ? payload.url.trim() : '';
@@ -27,26 +45,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const events = normalizeEvents(payload?.events);
-    if (!events) {
+    const triggers = normalizeTriggers(payload?.triggers);
+    if (!triggers) {
       return NextResponse.json(
-        { ok: false, error: 'Informe os eventos do webhook como uma lista.' },
+        { ok: false, error: 'Informe os gatilhos do webhook como uma lista válida.' },
         { status: 400 }
       );
     }
 
-    if (events.length === 0) {
+    if (triggers.length === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Informe pelo menos um evento para o webhook.' },
+        { ok: false, error: 'Informe pelo menos um gatilho para o webhook.' },
         { status: 400 }
       );
     }
 
-    const status = typeof payload?.status === 'string' ? payload.status : undefined;
-    const secret =
-      typeof payload?.secret === 'string' && payload.secret.trim() !== '' ? payload.secret : undefined;
+    const name = typeof payload?.name === 'string' ? payload.name.trim() : undefined;
+    const products = typeof payload?.products === 'string' ? payload.products.trim() : undefined;
+    const token = typeof payload?.token === 'string' ? payload.token.trim() : undefined;
 
-    const webhook = await createWebhook({ url, events, status, secret });
+    const webhook = await createWebhook({ url, triggers, name, products, token });
 
     return NextResponse.json({ ok: true, webhook });
   } catch (error) {

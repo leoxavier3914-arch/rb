@@ -8,15 +8,18 @@ import { WebhookRowActions } from './WebhookRowActions';
 
 export const dynamic = 'force-dynamic';
 
-function formatEvents(events: readonly string[]): string {
-  if (!events || events.length === 0) {
+function formatTriggers(triggers: readonly string[]): string {
+  if (!triggers || triggers.length === 0) {
     return '—';
   }
-  return events.join(', ');
+  return triggers.join(', ');
 }
 
-function formatStatus(status: string): string {
-  return status.replace(/_/g, ' ');
+function formatProducts(products: string | null): string {
+  if (!products || products.trim().length === 0) {
+    return 'Todos';
+  }
+  return products === 'all' ? 'Todos' : products;
 }
 
 export default async function WebhooksPage() {
@@ -43,9 +46,11 @@ export default async function WebhooksPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
+                  <TableHead>Nome</TableHead>
                   <TableHead>URL</TableHead>
-                  <TableHead>Eventos</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Gatilhos</TableHead>
+                  <TableHead>Produtos</TableHead>
+                  <TableHead>Token</TableHead>
                   <TableHead>Atualização</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -61,17 +66,15 @@ export default async function WebhooksPage() {
                   webhooks.map(webhook => (
                     <TableRow key={webhook.id}>
                       <TableCell className="font-mono text-xs text-slate-500">{webhook.id}</TableCell>
+                      <TableCell className="text-xs text-slate-700">{webhook.name ?? '—'}</TableCell>
                       <TableCell className="max-w-xs truncate text-sm text-slate-900" title={webhook.url}>
                         {webhook.url}
                       </TableCell>
-                      <TableCell className="text-xs text-slate-600" title={formatEvents(webhook.events)}>
-                        {formatEvents(webhook.events)}
+                      <TableCell className="text-xs text-slate-600" title={formatTriggers(webhook.triggers)}>
+                        {formatTriggers(webhook.triggers)}
                       </TableCell>
-                      <TableCell>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium uppercase text-slate-600">
-                          {formatStatus(webhook.status)}
-                        </span>
-                      </TableCell>
+                      <TableCell className="text-xs text-slate-600">{formatProducts(webhook.products)}</TableCell>
+                      <TableCell className="text-xs text-slate-500">{webhook.token ?? '—'}</TableCell>
                       <TableCell className="text-xs text-slate-500">
                         {webhook.updatedAt ? formatDateTime(webhook.updatedAt) : '—'}
                       </TableCell>

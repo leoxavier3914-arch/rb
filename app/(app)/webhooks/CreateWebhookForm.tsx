@@ -6,23 +6,20 @@ import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/ui/classnames';
 import {
-  WEBHOOK_EVENT_OPTIONS,
-  toggleWebhookEvent,
-  type WebhookEventTrigger
+  WEBHOOK_TRIGGER_OPTIONS,
+  toggleWebhookTrigger,
+  type WebhookTrigger
 } from '@/lib/webhooks/triggers';
-
-const statusOptions = [
-  { value: 'active', label: 'Ativo' },
-  { value: 'inactive', label: 'Inativo' }
-];
 
 type FormState = 'idle' | 'loading' | 'success' | 'error';
 
 export function CreateWebhookForm() {
   const router = useRouter();
+  const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [events, setEvents] = useState<readonly WebhookEventTrigger[]>([]);
-  const [status, setStatus] = useState<'active' | 'inactive'>('active');
+  const [products, setProducts] = useState('all');
+  const [triggers, setTriggers] = useState<readonly WebhookTrigger[]>([]);
+  const [token, setToken] = useState('');
   const [state, setState] = useState<FormState>('idle');
   const [message, setMessage] = useState('');
 
@@ -39,21 +36,30 @@ export function CreateWebhookForm() {
       return;
     }
 
-    if (events.length === 0) {
+    if (triggers.length === 0) {
       setState('error');
-      setMessage('Selecione pelo menos um evento para receber notificações.');
+      setMessage('Selecione pelo menos um gatilho para receber notificações.');
       return;
     }
 
     try {
       setState('loading');
       setMessage('Registrando webhook na Kiwify...');
+      const normalizedName = name.trim();
+      const normalizedProducts = products.trim();
+      const normalizedToken = token.trim();
       const response = await fetch('/api/webhooks', {
         method: 'POST',
         headers: {
           'content-type': 'application/json'
         },
-        body: JSON.stringify({ url: normalizedUrl, events, status })
+        body: JSON.stringify({
+          url: normalizedUrl,
+          triggers,
+          ...(normalizedName ? { name: normalizedName } : {}),
+          ...(normalizedProducts ? { products: normalizedProducts } : {}),
+          ...(normalizedToken ? { token: normalizedToken } : {})
+        })
       });
       const payload = (await response.json().catch(() => null)) as
         | { ok: boolean; error?: string; webhook?: { id: string } }
@@ -66,9 +72,11 @@ export function CreateWebhookForm() {
         return;
       }
 
+      setName('');
       setUrl('');
-      setEvents([]);
-      setStatus('active');
+      setProducts('all');
+      setTriggers([]);
+      setToken('');
       setState('success');
       setMessage('Webhook criado com sucesso.');
       router.refresh();
@@ -81,6 +89,21 @@ export function CreateWebhookForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-1">
+        <label htmlFor="webhook-name" className="text-sm font-medium text-slate-700">
+          Nome (opcional)
+        </label>
+        <input
+          id="webhook-name"
+          name="name"
+          type="text"
+          value={name}
+          onChange={event => setName(event.target.value)}
+          placeholder="Ex: Integração CRM"
+          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+        />
+      </div>
+
       <div className="space-y-1">
         <label htmlFor="webhook-url" className="text-sm font-medium text-slate-700">
           URL do webhook
@@ -98,19 +121,19 @@ export function CreateWebhookForm() {
       </div>
 
       <div className="space-y-2">
-        <span className="text-sm font-medium text-slate-700">Eventos monitorados</span>
+        <span className="text-sm font-medium text-slate-700">Gatilhos monitorados</span>
         <fieldset className="grid gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-          {WEBHOOK_EVENT_OPTIONS.map(option => {
-            const checked = events.includes(option.value);
+          {WEBHOOK_TRIGGER_OPTIONS.map(option => {
+            const checked = triggers.includes(option.value);
             return (
               <label key={option.value} className="flex items-start gap-2 text-sm text-slate-700">
                 <input
                   type="checkbox"
-                  name="events"
+                  name="triggers"
                   value={option.value}
                   checked={checked}
                   onChange={() =>
-                    setEvents(current => toggleWebhookEvent(current, option.value))
+                    setTriggers(current => toggleWebhookTrigger(current, option.value))
                   }
                   className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-2 focus:ring-slate-200"
                 />
@@ -123,31 +146,45 @@ export function CreateWebhookForm() {
           })}
         </fieldset>
         <p className="text-xs text-slate-500">
-          {events.length === 0
-            ? 'Selecione pelo menos um evento para ativar o webhook.'
-            : `${events.length} evento${events.length > 1 ? 's' : ''} selecionado${
-                events.length > 1 ? 's' : ''
+          {triggers.length === 0
+            ? 'Selecione pelo menos um gatilho para ativar o webhook.'
+            : `${triggers.length} gatilho${triggers.length > 1 ? 's' : ''} selecionado${
+                triggers.length > 1 ? 's' : ''
               }.`}
         </p>
       </div>
 
       <div className="space-y-1">
-        <label htmlFor="webhook-status" className="text-sm font-medium text-slate-700">
-          Status inicial
+        <label htmlFor="webhook-products" className="text-sm font-medium text-slate-700">
+          Produtos monitorados
         </label>
-        <select
-          id="webhook-status"
-          name="status"
+        <input
+          id="webhook-products"
+          name="products"
+          type="text"
+          value={products}
+          onChange={event => setProducts(event.target.value)}
+          placeholder="all"
           className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-          value={status}
-          onChange={event => setStatus(event.target.value === 'inactive' ? 'inactive' : 'active')}
-        >
-          {statusOptions.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        />
+        <p className="text-xs text-slate-500">
+          Use <span className="font-mono text-[11px]">all</span> para receber eventos de todos os produtos ou informe o ID de um produto específico.
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="webhook-token" className="text-sm font-medium text-slate-700">
+          Token de verificação (opcional)
+        </label>
+        <input
+          id="webhook-token"
+          name="token"
+          type="text"
+          value={token}
+          onChange={event => setToken(event.target.value)}
+          placeholder="Informe um token personalizado"
+          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+        />
       </div>
 
       <Button type="submit" className="gap-2" disabled={state === 'loading'}>

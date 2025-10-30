@@ -1,4 +1,5 @@
 import { createKiwifyClient, type KiwifyClient } from '@/lib/kiwify/client';
+import { normalizeWebhookTriggers } from '@/lib/webhooks/triggers';
 
 interface UnknownRecord {
   readonly [key: string]: unknown;
@@ -6,26 +7,29 @@ interface UnknownRecord {
 
 export interface Webhook {
   readonly id: string;
+  readonly name: string | null;
   readonly url: string;
-  readonly status: string;
-  readonly events: readonly string[];
-  readonly secret: string | null;
+  readonly products: string | null;
+  readonly triggers: readonly string[];
+  readonly token: string | null;
   readonly createdAt: string | null;
   readonly updatedAt: string | null;
 }
 
 export interface CreateWebhookInput {
   readonly url: string;
-  readonly events: readonly string[];
-  readonly status?: string;
-  readonly secret?: string | null;
+  readonly triggers: readonly string[];
+  readonly name?: string | null;
+  readonly products?: string | null;
+  readonly token?: string | null;
 }
 
 export interface UpdateWebhookInput {
   readonly url?: string;
-  readonly events?: readonly string[];
-  readonly status?: string;
-  readonly secret?: string | null;
+  readonly triggers?: readonly string[];
+  readonly name?: string | null;
+  readonly products?: string | null;
+  readonly token?: string | null;
 }
 
 async function ensureClient(client?: KiwifyClient): Promise<KiwifyClient> {
@@ -58,13 +62,14 @@ export async function createWebhook(input: CreateWebhookInput, client?: KiwifyCl
     throw new Error('Informe uma URL válida para o webhook.');
   }
 
-  const events = normalizeEvents(input.events);
-  if (events.length === 0) {
-    throw new Error('Selecione ao menos um evento para o webhook.');
+  const triggers = normalizeTriggers(input.triggers);
+  if (triggers.length === 0) {
+    throw new Error('Selecione ao menos um gatilho para o webhook.');
   }
 
-  const status = normalizeStatus(input.status) ?? 'active';
-  const secret = normalizeOptionalString(input.secret);
+  const name = normalizeOptionalString(input.name);
+  const products = normalizeProducts(input.products) ?? 'all';
+  const token = normalizeOptionalString(input.token);
 
   const resolvedClient = await ensureClient(client);
   const response = await resolvedClient.request('/webhooks', {
@@ -72,7 +77,13 @@ export async function createWebhook(input: CreateWebhookInput, client?: KiwifyCl
     headers: {
       'content-type': 'application/json'
     },
-    body: JSON.stringify({ url, events, status, ...(secret ? { secret } : {}) })
+    body: JSON.stringify({
+      url,
+      triggers,
+      products,
+      ...(name ? { name } : {}),
+      ...(token ? { token } : {})
+    })
   });
 
   if (!response.ok) {
@@ -158,28 +169,44 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
     throw new Error('Informe uma URL válida para o webhook.');
   }
 
-  if (input.events !== undefined) {
-    const events = normalizeEvents(input.events);
-    if (events.length === 0) {
-      throw new Error('Selecione ao menos um evento para o webhook.');
+  if (input.triggers !== undefined) {
+    const triggers = normalizeTriggers(input.triggers);
+    if (triggers.length === 0) {
+      throw new Error('Selecione ao menos um gatilho para o webhook.');
     }
-    payload.events = events;
+    payload.triggers = triggers;
   }
 
-  if (input.status !== undefined) {
-    const status = normalizeStatus(input.status);
-    if (!status) {
-      throw new Error('Status inválido informado para o webhook.');
+  if (input.name !== undefined) {
+    if (input.name === null) {
+      payload.name = null;
+    } else if (typeof input.name === 'string') {
+      const name = normalizeOptionalString(input.name);
+      payload.name = name;
+    } else {
+      throw new Error('Informe um nome válido para o webhook.');
     }
-    payload.status = status;
   }
 
-  if (input.secret !== undefined) {
-    const secret = normalizeOptionalString(input.secret);
-    if (secret) {
-      payload.secret = secret;
-    } else if (input.secret) {
-      throw new Error('Informe um segredo válido para o webhook.');
+  if (input.products !== undefined) {
+    const products = normalizeProducts(input.products);
+    if (products) {
+      payload.products = products;
+    } else if (input.products) {
+      throw new Error('Informe um escopo de produtos válido para o webhook.');
+    } else {
+      payload.products = 'all';
+    }
+  }
+
+  if (input.token !== undefined) {
+    if (input.token === null) {
+      payload.token = null;
+    } else if (typeof input.token === 'string') {
+      const token = normalizeOptionalString(input.token);
+      payload.token = token;
+    } else {
+      throw new Error('Informe um token válido para o webhook.');
     }
   }
 
@@ -228,10 +255,11 @@ function parseWebhook(payload: UnknownRecord): Webhook | null {
 
   return {
     id,
+    name: toNullableString(payload.name),
     url,
-    status: toNullableString(payload.status) ?? 'inactive',
-    events: extractStringArray(payload.events),
-    secret: toNullableString(payload.secret),
+    products: toNullableString(payload.products),
+    triggers: extractStringArray(payload.triggers),
+    token: toNullableString(payload.token),
     createdAt: toIso(payload.created_at ?? payload.createdAt ?? null),
     updatedAt: toIso(payload.updated_at ?? payload.updatedAt ?? null)
   };
@@ -285,27 +313,12 @@ function normalizeUrl(value: unknown): string | null {
   }
 }
 
-function normalizeEvents(events: readonly unknown[] | undefined): string[] {
-  if (!events) {
+function normalizeTriggers(triggers: readonly unknown[] | undefined): string[] {
+  if (!triggers) {
     return [];
   }
-  return events
-    .map(toNullableString)
-    .filter((item): item is string => Boolean(item))
-    .map(item => item.trim())
-    .filter(item => item.length > 0);
-}
-
-function normalizeStatus(status: unknown): 'active' | 'inactive' | null {
-  const value = toNullableString(status);
-  if (!value) {
-    return null;
-  }
-  const normalized = value.toLowerCase();
-  if (normalized === 'active' || normalized === 'inactive') {
-    return normalized;
-  }
-  return null;
+  const normalized = normalizeWebhookTriggers(triggers);
+  return [...normalized];
 }
 
 function normalizeOptionalString(value: unknown): string | null {
@@ -316,4 +329,9 @@ function normalizeOptionalString(value: unknown): string | null {
 function normalizeId(value: unknown): string | null {
   const id = toNullableString(value);
   return id ?? null;
+}
+
+function normalizeProducts(value: unknown): string | null {
+  const products = toNullableString(value);
+  return products ? products : null;
 }
