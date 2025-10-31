@@ -1,90 +1,272 @@
 import { listSales, getSalesSummary } from '@/lib/sales';
 import { formatDateTime, formatMoneyFromCentsWithCurrency, formatShortDate } from '@/lib/ui/format';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  CalendarClock,
+  CreditCard,
+  PiggyBank,
+  RefreshCcw,
+  ShoppingCart,
+  Ticket,
+  Trophy,
+  Wallet2
+} from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const [summary, recent] = await Promise.all([getSalesSummary(), listSales(1, 5, undefined, undefined)]);
 
-  const stats = [
+  const averageNetCents = summary.totalSales > 0 ? Math.round(summary.netAmountCents / summary.totalSales) : 0;
+  const goalAmountCents = 100_000_00;
+  const goalProgress = Math.min(100, Math.round((summary.netAmountCents / goalAmountCents) * 100));
+
+  const insightCards = [
     {
-      label: 'Total de vendas',
-      value: summary.totalSales.toLocaleString('pt-BR'),
-      helper: summary.lastSaleAt ? `Última venda em ${formatDateTime(summary.lastSaleAt)}` : 'Sem vendas ainda'
-    },
-    {
-      label: 'Receita bruta',
+      label: 'Total em vendas',
       value: formatMoneyFromCentsWithCurrency(summary.grossAmountCents, 'BRL'),
-      helper: 'Valor acumulado das vendas'
+      helper: 'Valor bruto acumulado',
+      icon: PiggyBank
     },
     {
       label: 'Receita líquida',
       value: formatMoneyFromCentsWithCurrency(summary.netAmountCents, 'BRL'),
-      helper: 'Total após taxas'
+      helper: 'Saldo após taxas',
+      icon: Wallet2
     },
     {
       label: 'Taxas Kiwify',
       value: formatMoneyFromCentsWithCurrency(summary.feeAmountCents, 'BRL'),
-      helper: 'Soma das taxas retidas'
+      helper: 'Somatório de taxas retidas',
+      icon: CreditCard
+    },
+    {
+      label: 'Ticket médio líquido',
+      value: summary.totalSales > 0 ? formatMoneyFromCentsWithCurrency(averageNetCents, 'BRL') : '—',
+      helper: 'Média por venda concluída',
+      icon: Ticket
+    },
+    {
+      label: 'Última venda',
+      value: summary.lastSaleAt ? formatDateTime(summary.lastSaleAt) : 'Sem vendas registradas',
+      helper: 'Atualizado automaticamente',
+      icon: ShoppingCart
+    },
+    {
+      label: 'Última sincronização',
+      value: summary.lastSyncedAt ? formatDateTime(summary.lastSyncedAt) : 'Nenhuma sincronização registrada',
+      helper: 'Via botão "Sincronizar"',
+      icon: RefreshCcw
     }
+  ];
+
+  const filters = [
+    { label: 'Todo o período', icon: CalendarClock },
+    { label: 'Todas as moedas', icon: Wallet2 },
+    { label: 'Todos os produtos', icon: ShoppingCart }
   ];
 
   return (
     <div className="space-y-8">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-500">
-          Visão geral das vendas sincronizadas com a API oficial da Kiwify e armazenadas no Supabase.
+        <p className="max-w-2xl text-sm text-slate-500">
+          Visão geral das vendas sincronizadas com a API oficial da Kiwify e armazenadas no Supabase, com um layout
+          inspirado no painel Frutify.
         </p>
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map(stat => (
-          <Card key={stat.label}>
-            <CardHeader>
-              <CardDescription>{stat.label}</CardDescription>
-              <CardTitle className="text-2xl">{stat.value}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-slate-500">{stat.helper}</CardContent>
-          </Card>
-        ))}
-      </section>
-
-      <section className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl">Sincronização</CardTitle>
-            <CardDescription>Histórico resumido da importação via botão &quot;Sincronizar&quot;.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-slate-600">Vendas sincronizadas</span>
-              <span className="text-slate-900">{summary.totalSales.toLocaleString('pt-BR')}</span>
+      <div className="grid gap-6 xl:grid-cols-[2fr,1fr]">
+        <section className="space-y-6">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_20px_45px_rgba(15,23,42,0.08)]">
+            <div className="flex flex-wrap gap-3">
+              {filters.map(filter => {
+                const Icon = filter.icon;
+                return (
+                  <button
+                    key={filter.label}
+                    type="button"
+                    className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-[#0231b1] hover:text-[#0231b1]"
+                  >
+                    <Icon className="h-4 w-4" />
+                    {filter.label}
+                  </button>
+                );
+              })}
             </div>
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-slate-600">Última sincronização</span>
-              <span className="text-slate-900">
-                {summary.lastSyncedAt ? formatDateTime(summary.lastSyncedAt) : 'Nenhuma sincronização registrada'}
+
+            <div className="mt-6 space-y-6">
+              <div className="rounded-3xl border border-slate-100 bg-gradient-to-b from-[#0f5ef7]/10 via-white to-white p-6">
+                <div className="flex items-center justify-between text-sm text-slate-500">
+                  <span>Volume de vendas</span>
+                  <span>{new Date().getFullYear()}</span>
+                </div>
+                <svg viewBox="0 0 400 200" className="mt-4 h-56 w-full" role="img" aria-label="Evolução mensal das vendas">
+                  <defs>
+                    <linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%" stopColor="#0231b1" stopOpacity="0.4" />
+                      <stop offset="100%" stopColor="#0231b1" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <path
+                    d="M0 160 C35 120 70 130 100 90 C140 30 170 110 210 60 C250 10 290 150 330 90 C360 50 390 120 400 140 L400 200 L0 200 Z"
+                    fill="url(#chartFill)"
+                  />
+                  <path
+                    d="M0 160 C35 120 70 130 100 90 C140 30 170 110 210 60 C250 10 290 150 330 90 C360 50 390 120 400 140"
+                    fill="none"
+                    stroke="#0231b1"
+                    strokeWidth="6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <div className="mt-2 grid grid-cols-6 text-center text-xs font-semibold text-slate-400 sm:grid-cols-12">
+                  {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map(month => (
+                    <span key={month}>{month}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {insightCards.map(card => {
+                  const Icon = card.icon;
+                  return (
+                    <Card
+                      key={card.label}
+                      className="rounded-3xl border-none bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5"
+                    >
+                      <CardHeader className="border-b-0 p-0">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <CardDescription className="text-xs uppercase tracking-wide text-slate-400">
+                              {card.label}
+                            </CardDescription>
+                            <CardTitle className="mt-2 text-2xl text-slate-900">{card.value}</CardTitle>
+                          </div>
+                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                            <Icon className="h-6 w-6" />
+                          </span>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="px-0 pt-4 text-xs text-slate-500">{card.helper}</CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside className="space-y-6">
+          <Card className="rounded-3xl border-none bg-white p-6 shadow-[0_20px_50px_rgba(2,49,177,0.18)]">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-500">Meta de faturamento</p>
+                <p className="mt-2 text-3xl font-semibold text-slate-900">
+                  {formatMoneyFromCentsWithCurrency(summary.netAmountCents, 'BRL')}
+                </p>
+                <p className="text-xs text-slate-400">
+                  de {formatMoneyFromCentsWithCurrency(goalAmountCents, 'BRL')} alcançados
+                </p>
+              </div>
+              <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[#0231b1]/10 text-[#0231b1]">
+                <Trophy className="h-8 w-8" />
               </span>
             </div>
-          </CardContent>
-        </Card>
+            <div className="mt-6 h-2 rounded-full bg-slate-200">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#0231b1] via-[#1767ff] to-[#3abff8]"
+                style={{ width: `${goalProgress}%` }}
+              />
+            </div>
+            <p className="mt-3 text-xs text-slate-500">Próxima premiação: placa exclusiva Frutify Gold.</p>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl">Vendas recentes</CardTitle>
-            <CardDescription>Últimas cinco vendas disponíveis no Supabase.</CardDescription>
+          <Card className="rounded-3xl border-none bg-white p-6 shadow-[0_20px_40px_rgba(15,23,42,0.1)]">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-500">Financeiro</p>
+                <p className="mt-2 text-3xl font-bold text-slate-900">
+                  {formatMoneyFromCentsWithCurrency(summary.netAmountCents, 'BRL')}
+                </p>
+                <p className="text-xs text-slate-400">Saldo disponível para saque imediato.</p>
+              </div>
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0231b1]/10 text-[#0231b1]">
+                <Wallet2 className="h-7 w-7" />
+              </span>
+            </div>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <button className="flex-1 rounded-full bg-[#0231b1] py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#0231b1]/30 transition hover:bg-[#052170]">
+                Sacar agora
+              </button>
+              <button className="flex-1 rounded-full border border-slate-200 py-2.5 text-sm font-semibold text-[#0231b1] transition hover:border-[#0231b1]">
+                Ver extrato
+              </button>
+            </div>
+          </Card>
+
+          <Card className="rounded-3xl border-none bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-500">Sincronização</p>
+                <p className="text-base font-semibold text-slate-900">Resumo das vendas</p>
+              </div>
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
+                <RefreshCcw className="h-6 w-6" />
+              </span>
+            </div>
+            <div className="mt-5 space-y-3 text-sm">
+              <div className="flex items-center justify-between text-slate-500">
+                <span>Vendas sincronizadas</span>
+                <span className="text-sm font-semibold text-slate-900">
+                  {summary.totalSales.toLocaleString('pt-BR')}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-500">
+                <span>Última venda</span>
+                <span className="text-sm font-semibold text-slate-900">
+                  {summary.lastSaleAt ? formatShortDate(summary.lastSaleAt) : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-500">
+                <span>Última sincronização</span>
+                <span className="text-right text-sm font-semibold text-slate-900">
+                  {summary.lastSyncedAt ? formatDateTime(summary.lastSyncedAt) : 'Nenhuma sincronização registrada'}
+                </span>
+              </div>
+            </div>
+          </Card>
+        </aside>
+      </div>
+
+      <section>
+        <Card className="rounded-3xl border-none bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+          <CardHeader className="border-b-0 p-0">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <CardTitle className="text-2xl text-slate-900">Vendas recentes</CardTitle>
+                <CardDescription className="text-sm text-slate-500">
+                  Últimas cinco vendas sincronizadas com a plataforma.
+                </CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Produto</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Valor líquido</TableHead>
+          <CardContent className="px-0 pt-6">
+            <Table className="text-sm">
+              <TableHeader className="bg-white text-xs text-slate-400">
+                <TableRow className="border-b border-slate-100">
+                  <TableHead className="text-slate-400">Cliente</TableHead>
+                  <TableHead className="text-slate-400">Produto</TableHead>
+                  <TableHead className="text-slate-400">Status</TableHead>
+                  <TableHead className="text-right text-slate-400">Valor líquido</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -96,22 +278,22 @@ export default async function DashboardPage() {
                   </TableRow>
                 ) : (
                   recent.items.map(item => (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} className="border-b border-slate-100 hover:bg-slate-50/60">
                       <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-medium text-slate-900">{item.customer_name ?? 'Cliente'}</span>
-                          <span className="text-xs text-slate-500">{formatShortDate(item.created_at ?? '')}</span>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-semibold text-slate-900">{item.customer_name ?? 'Cliente'}</span>
+                          <span className="text-xs text-slate-400">{formatShortDate(item.created_at ?? '')}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="max-w-[160px] truncate text-slate-600">
+                      <TableCell className="max-w-[200px] truncate text-slate-500">
                         {item.product_title ?? 'Produto'}
                       </TableCell>
                       <TableCell>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium uppercase text-slate-600">
+                        <span className="rounded-full bg-[#0231b1]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#0231b1]">
                           {item.status ?? 'desconhecido'}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right font-medium text-slate-900">
+                      <TableCell className="text-right font-semibold text-slate-900">
                         {formatMoneyFromCentsWithCurrency(
                           item.net_amount_cents ?? item.total_amount_cents,
                           item.currency ?? 'BRL'
