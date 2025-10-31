@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { resolveIncomingWebhookEvent } from '@/lib/webhooks/events';
+import { type KiwifyClient } from '@/lib/kiwify/client';
+import { type Webhook } from '@/lib/webhooks';
+import { type WebhookSetting } from '@/lib/webhooks/settings';
 
 test('resolveIncomingWebhookEvent extracts metadata from headers and payload', () => {
   const headers = new Headers({
@@ -63,4 +66,60 @@ test('resolveIncomingWebhookEvent normalizes trigger and occurs_at from payload 
   assert.equal(incoming.webhookToken, 'payload-token');
   assert.equal(new Date(incoming.occurredAt ?? '').getTime(), 1_714_500_000_000);
   assert.deepEqual(incoming.headers, {});
+});
+
+test('resolveWebhookIdFromToken maps tokens returned by the Kiwify API when settings are missing', async () => {
+  const { __testing } = await import('@/lib/webhooks/token-cache');
+
+  __testing.resetTestingState();
+
+  const now = new Date().toISOString();
+  const fakeSettings: WebhookSetting[] = [
+    {
+      webhookId: 'wh-local-1',
+      name: 'Local webhook',
+      url: 'https://example.com/webhooks/local',
+      token: 'tok-local-1',
+      isActive: true,
+      updatedAt: now
+    }
+  ];
+
+  const fakeClient = { token: 't' } as unknown as KiwifyClient;
+  const remoteWebhooks: Webhook[] = [
+    {
+      id: 'wh-remote-1',
+      name: 'Remote webhook',
+      url: 'https://example.com/webhooks/remote',
+      products: null,
+      triggers: [],
+      token: ' tok-remote-1 ',
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: 'wh-remote-2',
+      name: 'Remote duplicate token',
+      url: 'https://example.com/webhooks/remote-duplicate',
+      products: null,
+      triggers: [],
+      token: 'tok-local-1',
+      createdAt: now,
+      updatedAt: now
+    }
+  ];
+
+  __testing.setDependencies({
+    listWebhookSettings: async () => fakeSettings,
+    createKiwifyClient: async () => fakeClient,
+    listWebhooks: async () => remoteWebhooks
+  });
+
+  const remoteTokenWebhookId = await __testing.resolveWebhookIdFromToken('tok-remote-1');
+  assert.equal(remoteTokenWebhookId, 'wh-remote-1');
+
+  const existingTokenWebhookId = await __testing.resolveWebhookIdFromToken('tok-local-1');
+  assert.equal(existingTokenWebhookId, 'wh-local-1');
+
+  __testing.resetTestingState();
 });
