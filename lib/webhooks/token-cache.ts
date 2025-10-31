@@ -82,8 +82,25 @@ async function ensureWebhookTokensCache(): Promise<WebhookTokensCache> {
     } catch (error) {
       console.error('load_remote_webhooks_failed', error);
       if (previousCache) {
+        const mergedTokens = [...tokens];
+        const mergedByToken = new Map(previousCache.byToken);
+
+        for (const token of previousCache.tokens) {
+          const normalized = typeof token === 'string' ? token.trim() : '';
+          if (!normalized || seen.has(normalized)) {
+            continue;
+          }
+          mergedTokens.push(normalized);
+          seen.add(normalized);
+        }
+
+        for (const [token, webhookId] of byToken.entries()) {
+          mergedByToken.set(token, webhookId);
+        }
+
         cachedTokens = {
-          ...previousCache,
+          tokens: mergedTokens,
+          byToken: mergedByToken,
           expiresAt: now + WEBHOOK_TOKENS_CACHE_TTL_MS / 2
         };
         return cachedTokens;

@@ -171,3 +171,68 @@ test('resolveWebhookIdFromToken keeps remote mapping when refreshing cache fails
     __testing.resetTestingState();
   }
 });
+
+test('resolveWebhookIdFromToken merges previous cache with new local settings when remote refresh fails', async () => {
+  const { __testing } = await import('@/lib/webhooks/token-cache');
+
+  __testing.resetTestingState();
+
+  try {
+    let fetchAttempts = 0;
+    let settingsCalls = 0;
+    const now = new Date().toISOString();
+    const remoteWebhooks: Webhook[] = [
+      {
+        id: 'wh-remote',
+        name: 'Remote webhook',
+        url: 'https://example.com/webhooks/remote',
+        products: null,
+        triggers: [],
+        token: 'tok-remote',
+        createdAt: now,
+        updatedAt: now
+      }
+    ];
+
+    const localSettingsAfterFailure: WebhookSetting[] = [
+      {
+        webhookId: 'wh-local-new',
+        name: 'Local webhook after failure',
+        url: 'https://example.com/webhooks/local',
+        token: 'tok-local-new',
+        isActive: true,
+        updatedAt: now
+      }
+    ];
+
+    __testing.setDependencies({
+      listWebhookSettings: async () => {
+        settingsCalls += 1;
+        return settingsCalls === 1 ? [] : localSettingsAfterFailure;
+      },
+      createKiwifyClient: async () => ({ token: 't' } as unknown as KiwifyClient),
+      listWebhooks: async () => {
+        fetchAttempts += 1;
+        if (fetchAttempts === 1) {
+          return remoteWebhooks;
+        }
+        throw new Error('remote fetch failed');
+      }
+    });
+
+    const initialResolution = await __testing.resolveWebhookIdFromToken('tok-remote');
+    assert.equal(initialResolution, 'wh-remote');
+    assert.equal(fetchAttempts, 1);
+    assert.equal(settingsCalls, 1);
+
+    const cache = await __testing.ensureWebhookTokensCache();
+    cache.expiresAt = Date.now() - 1;
+
+    const localResolution = await __testing.resolveWebhookIdFromToken('tok-local-new');
+    assert.equal(localResolution, 'wh-local-new');
+    assert.equal(fetchAttempts, 2);
+    assert.equal(settingsCalls, 2);
+  } finally {
+    __testing.resetTestingState();
+  }
+});
