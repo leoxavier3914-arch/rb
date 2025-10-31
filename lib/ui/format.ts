@@ -35,7 +35,8 @@ export function formatShortDate(input: string | Date): string {
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: 'short',
-    year: 'numeric'
+    year: 'numeric',
+    timeZone: 'America/Sao_Paulo'
   }).format(date);
 }
 
@@ -64,6 +65,7 @@ export function formatDateTime(input: string | Date): string {
     month: 'short',
     year: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo'
   }).format(date);
 }
