@@ -61,7 +61,22 @@ export async function POST(request: Request) {
     }
 
     const name = typeof payload?.name === 'string' ? payload.name.trim() : undefined;
-    const products = typeof payload?.products === 'string' ? payload.products.trim() : undefined;
+
+    let products: string | null | undefined = undefined;
+    if (Object.prototype.hasOwnProperty.call(payload ?? {}, 'products')) {
+      if (payload?.products === null) {
+        products = null;
+      } else if (typeof payload?.products === 'string') {
+        const trimmed = payload.products.trim();
+        products = trimmed.length > 0 ? trimmed : null;
+      } else {
+        return NextResponse.json(
+          { ok: false, error: 'Informe os produtos como uma string válida.' },
+          { status: 400 }
+        );
+      }
+    }
+
     const token = typeof payload?.token === 'string' ? payload.token.trim() : undefined;
 
     const webhook = await createWebhook({ url, triggers, name, products, token });

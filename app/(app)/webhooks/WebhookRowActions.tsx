@@ -12,6 +12,7 @@ import {
   toggleWebhookTrigger,
   type WebhookTrigger
 } from '@/lib/webhooks/triggers';
+import { useProductsOptions } from './useProductsOptions';
 
 type ActionState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -25,7 +26,7 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(webhook.name ?? '');
   const [url, setUrl] = useState(webhook.url);
-  const [products, setProducts] = useState(webhook.products ?? 'all');
+  const [productId, setProductId] = useState<string | null>(() => normalizeProductScope(webhook.products));
   const [triggers, setTriggers] = useState<readonly WebhookTrigger[]>(
     () => normalizeWebhookTriggers(webhook.triggers)
   );
@@ -33,6 +34,13 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
   const [state, setState] = useState<ActionState>('idle');
   const [message, setMessage] = useState('');
   const [active, setActive] = useState(Boolean(isActive));
+  const {
+    products: productOptions,
+    isLoading: isLoadingProducts,
+    isFetching: isFetchingProducts,
+    error: productsError,
+    reload: reloadProducts
+  } = useProductsOptions();
 
   useEffect(() => {
     setActive(Boolean(isActive));
@@ -43,7 +51,7 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
   function resetForm() {
     setName(webhook.name ?? '');
     setUrl(webhook.url);
-    setProducts(webhook.products ?? 'all');
+    setProductId(normalizeProductScope(webhook.products));
     setTriggers(normalizeWebhookTriggers(webhook.triggers));
     setToken(webhook.token ?? '');
     setState('idle');
@@ -74,20 +82,15 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
       setMessage('Atualizando webhook na Kiwify...');
       const normalizedName = name.trim();
       const normalizedToken = token.trim();
+      const normalizedProductId = typeof productId === 'string' ? productId.trim() : '';
+      const productsPayload = normalizedProductId ? normalizedProductId : null;
       const updatePayload: Record<string, unknown> = {
         url: normalizedUrl,
         triggers,
         name: normalizedName.length > 0 ? normalizedName : null,
-        token: normalizedToken.length > 0 ? normalizedToken : null
+        token: normalizedToken.length > 0 ? normalizedToken : null,
+        products: productsPayload
       };
-
-      const normalizedProducts = products.trim();
-      const shouldIncludeProducts =
-        normalizedProducts.length > 0 && normalizedProducts.toLowerCase() !== 'all';
-
-      if (shouldIncludeProducts) {
-        updatePayload.products = normalizedProducts;
-      }
 
       const response = await fetch(`/api/webhooks/${encodeURIComponent(webhook.id)}`, {
         method: 'PATCH',
@@ -306,14 +309,39 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
             <label htmlFor={`webhook-products-${webhook.id}`} className="text-xs font-medium text-slate-700">
               Produtos
             </label>
-            <input
+            <select
               id={`webhook-products-${webhook.id}`}
-              type="text"
-              value={products}
-              onChange={event => setProducts(event.target.value)}
+              value={productId ?? ''}
+              onChange={event => setProductId(event.target.value ? event.target.value : null)}
+              disabled={isFetchingProducts}
               className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-            />
-            <p className="text-[10px] text-slate-500">Deixe <span className="font-mono">all</span> para monitorar todos os produtos.</p>
+            >
+              <option value="">Todos os produtos</option>
+              {productOptions.map(product => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                </option>
+              ))}
+            </select>
+            {isLoadingProducts ? (
+              <p className="text-[10px] text-slate-500">Carregando produtos...</p>
+            ) : null}
+            {productsError ? (
+              <div className="flex flex-wrap items-center gap-2 text-[10px] text-rose-600">
+                <span>{productsError}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-2 py-1 text-[10px]"
+                  onClick={() => reloadProducts()}
+                >
+                  Tentar novamente
+                </Button>
+              </div>
+            ) : (
+              <p className="text-[10px] text-slate-500">Selecione um produto ou mantenha Todos para escopo global.</p>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -397,4 +425,17 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
       ) : null}
     </div>
   );
+}
+
+function normalizeProductScope(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'all') {
+    return null;
+  }
+
+  return trimmed;
 }

@@ -1,11 +1,20 @@
 import { loadEnv } from '@/lib/env';
 import { resolveApiUrl, resolveTokenUrl } from './baseUrl';
 
+interface UnknownRecord {
+  readonly [key: string]: unknown;
+}
+
 export interface KiwifyClient {
   readonly token: string;
   readonly accountId?: string;
   readonly baseUrl?: string;
   request(path: string, init?: RequestInit): Promise<Response>;
+}
+
+export interface KiwifyProduct {
+  readonly id: string;
+  readonly name: string;
 }
 
 export async function createKiwifyClient(): Promise<KiwifyClient> {
@@ -40,6 +49,24 @@ export async function createKiwifyClient(): Promise<KiwifyClient> {
   };
 }
 
+export async function listProducts(client?: KiwifyClient): Promise<readonly KiwifyProduct[]> {
+  const resolvedClient = client ?? (await createKiwifyClient());
+  const response = await resolvedClient.request('/products');
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Falha ao listar produtos na Kiwify: ${response.status} ${body.slice(0, 120)}`);
+  }
+
+  const payload = (await response.json().catch(() => null)) as unknown;
+  const records = extractProductRecords(payload);
+
+  return records
+    .map(parseProduct)
+    .filter((product): product is KiwifyProduct => product !== null)
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
+}
+
 export async function fetchAccessToken(
   clientId: string,
   clientSecret: string,
@@ -70,4 +97,54 @@ export async function fetchAccessToken(
   }
 
   return token;
+}
+
+function extractProductRecords(payload: unknown): UnknownRecord[] {
+  if (Array.isArray(payload)) {
+    return payload.filter(isRecord);
+  }
+
+  if (isRecord(payload)) {
+    if (Array.isArray(payload.data)) {
+      return payload.data.filter(isRecord);
+    }
+    if (Array.isArray(payload.items)) {
+      return payload.items.filter(isRecord);
+    }
+    if (Array.isArray(payload.products)) {
+      return payload.products.filter(isRecord);
+    }
+    if (isRecord(payload.data)) {
+      return [payload.data];
+    }
+    return [payload];
+  }
+
+  return [];
+}
+
+function parseProduct(payload: UnknownRecord): KiwifyProduct | null {
+  const id = toNullableString(payload.id ?? payload.uuid);
+  const name = toNullableString(payload.name ?? payload.title ?? payload.product_name);
+
+  if (!id || !name) {
+    return null;
+  }
+
+  return { id, name };
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function toNullableString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (typeof value === 'number' || typeof value === 'bigint') {
+    return String(value);
+  }
+  return null;
 }

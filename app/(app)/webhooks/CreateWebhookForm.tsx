@@ -10,6 +10,7 @@ import {
   toggleWebhookTrigger,
   type WebhookTrigger
 } from '@/lib/webhooks/triggers';
+import { useProductsOptions } from './useProductsOptions';
 
 type FormState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -17,11 +18,18 @@ export function CreateWebhookForm() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [products, setProducts] = useState('all');
+  const [productId, setProductId] = useState<string | null>(null);
   const [triggers, setTriggers] = useState<readonly WebhookTrigger[]>([]);
   const [token, setToken] = useState('');
   const [state, setState] = useState<FormState>('idle');
   const [message, setMessage] = useState('');
+  const {
+    products: productOptions,
+    isLoading: isLoadingProducts,
+    isFetching: isFetchingProducts,
+    error: productsError,
+    reload: reloadProducts
+  } = useProductsOptions();
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,8 +54,9 @@ export function CreateWebhookForm() {
       setState('loading');
       setMessage('Registrando webhook na Kiwify...');
       const normalizedName = name.trim();
-      const normalizedProducts = products.trim();
       const normalizedToken = token.trim();
+      const normalizedProductId = typeof productId === 'string' ? productId.trim() : '';
+      const productsPayload = normalizedProductId ? normalizedProductId : null;
       const response = await fetch('/api/webhooks', {
         method: 'POST',
         headers: {
@@ -57,7 +66,7 @@ export function CreateWebhookForm() {
           url: normalizedUrl,
           triggers,
           ...(normalizedName ? { name: normalizedName } : {}),
-          ...(normalizedProducts ? { products: normalizedProducts } : {}),
+          products: productsPayload,
           ...(normalizedToken ? { token: normalizedToken } : {})
         })
       });
@@ -74,7 +83,7 @@ export function CreateWebhookForm() {
 
       setName('');
       setUrl('');
-      setProducts('all');
+      setProductId(null);
       setTriggers([]);
       setToken('');
       setState('success');
@@ -158,18 +167,36 @@ export function CreateWebhookForm() {
         <label htmlFor="webhook-products" className="text-sm font-medium text-slate-700">
           Produtos monitorados
         </label>
-        <input
+        <select
           id="webhook-products"
           name="products"
-          type="text"
-          value={products}
-          onChange={event => setProducts(event.target.value)}
-          placeholder="all"
+          value={productId ?? ''}
+          onChange={event => setProductId(event.target.value ? event.target.value : null)}
+          disabled={isFetchingProducts}
           className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-        />
-        <p className="text-xs text-slate-500">
-          Use <span className="font-mono text-[11px]">all</span> para receber eventos de todos os produtos ou informe o ID de um produto específico.
-        </p>
+        >
+          <option value="">Todos os produtos</option>
+          {productOptions.map(product => (
+            <option key={product.id} value={product.id}>
+              {product.name}
+            </option>
+          ))}
+        </select>
+        {isLoadingProducts ? (
+          <p className="text-xs text-slate-500">Carregando produtos...</p>
+        ) : null}
+        {productsError ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-rose-600">
+            <span>{productsError}</span>
+            <Button type="button" variant="ghost" size="sm" className="h-auto px-2 py-1 text-xs" onClick={() => reloadProducts()}>
+              Tentar novamente
+            </Button>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">
+            Selecione um produto específico ou mantenha Todos os produtos para receber eventos de toda a conta.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1">

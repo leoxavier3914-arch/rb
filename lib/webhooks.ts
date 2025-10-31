@@ -68,7 +68,7 @@ export async function createWebhook(input: CreateWebhookInput, client?: KiwifyCl
   }
 
   const name = normalizeOptionalString(input.name);
-  const products = normalizeProducts(input.products) ?? 'all';
+  const products = normalizeProducts(input.products);
   const token = normalizeOptionalString(input.token);
 
   const resolvedClient = await ensureClient(client);
@@ -192,17 +192,8 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
     if (input.products === null) {
       payload.products = null;
     } else if (typeof input.products === 'string') {
-      const trimmed = input.products.trim();
-      if (trimmed.length === 0 || trimmed.toLowerCase() === 'all') {
-        // Do not include products when there is no specific product scope.
-      } else {
-        const products = normalizeProducts(trimmed);
-        if (products) {
-          payload.products = products;
-        } else {
-          throw new Error('Informe um escopo de produtos válido para o webhook.');
-        }
-      }
+      const products = normalizeProducts(input.products);
+      payload.products = products;
     } else {
       throw new Error('Informe um escopo de produtos válido para o webhook.');
     }
@@ -341,6 +332,17 @@ function normalizeId(value: unknown): string | null {
 }
 
 function normalizeProducts(value: unknown): string | null {
-  const products = toNullableString(value);
-  return products ? products : null;
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'all') {
+      return null;
+    }
+    return trimmed;
+  }
+
+  throw new Error('Informe um escopo de produtos válido para o webhook.');
 }
