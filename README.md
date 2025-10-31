@@ -33,6 +33,12 @@ O comando `pnpm lint` executa `next lint` e garante que o projeto siga as conven
 
 O endpoint `POST /api/sales/sync` usa as rotas documentadas em [Auth / OAuth](https://docs.kiwify.com.br/api-reference/auth/oauth) e [Sales / List](https://docs.kiwify.com.br/api-reference/sales/list) para buscar as vendas (intervalo máximo de 90 dias por requisição) e salvá-las na tabela `sales` do Supabase.
 
+### Eventos de webhook
+
+- **Recepção**: a Kiwify deve enviar os webhooks para `POST /api/webhooks/events`.
+- **Persistência**: cada evento válido é normalizado e salvo na tabela `webhook_events` do Supabase (deduplicação pelo `event_id`).
+- **Visualização**: a página `/webhooks` lista os eventos recebidos em tempo real e permite filtrar pelos gatilhos suportados (`compra_aprovada`, `carrinho_abandonado`, etc.).
+
 ### Fluxo de saques (`/financeiro`)
 
 A página Financeiro consome os dados sincronizados para montar a linha do tempo de liberações: exibe o saldo disponível imediato, os saques já programados e os lotes aguardando liberação. As informações são agrupadas por status de saque, facilitando a identificação de valores que podem ser solicitados e daqueles em análise.
