@@ -78,6 +78,9 @@ export function WebhookEventsTable({ events, activeToken, tokenOptions, basePath
                 const productName = formatProductName(event);
                 const productDetails = formatProductDetails(event);
                 const orderStatus = formatOrderStatus(event);
+                const resolvedWebhookId = event.verifiedWebhookId ?? event.webhookId;
+                const signatureStatusLabel = resolveSignatureStatusLabel(event);
+                const signatureStatusClass = resolveSignatureStatusClass(event);
 
                 return (
                   <TableRow key={event.id}>
@@ -116,6 +119,17 @@ export function WebhookEventsTable({ events, activeToken, tokenOptions, basePath
                         <span>Recebido: {formatDateTime(event.receivedAt)}</span>
                         {event.occurredAt ? <span>Evento: {formatDateTime(event.occurredAt)}</span> : null}
                         {event.eventId ? <span>ID: {event.eventId}</span> : null}
+                        {resolvedWebhookId ? (
+                          <span className="text-[11px] text-slate-500">Webhook: {resolvedWebhookId}</span>
+                        ) : null}
+                        {event.webhookToken ? (
+                          <span className="text-[11px] text-slate-500" title={event.webhookToken}>
+                            Token: {summarizeToken(event.webhookToken)}
+                          </span>
+                        ) : null}
+                        {signatureStatusLabel ? (
+                          <span className={`text-[11px] ${signatureStatusClass}`}>{signatureStatusLabel}</span>
+                        ) : null}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -270,6 +284,39 @@ function summarizeEvent(event: WebhookEventRow): string {
   }
 
   return parts.length > 0 ? parts.join(' • ') : '';
+}
+
+function resolveSignatureStatusLabel(event: WebhookEventRow): string | null {
+  if (!event.signature) {
+    return null;
+  }
+  if (event.signatureVerified === true) {
+    return 'Assinatura verificada';
+  }
+  if (event.signatureVerified === false) {
+    return 'Assinatura inválida';
+  }
+  return 'Assinatura não verificada';
+}
+
+function resolveSignatureStatusClass(event: WebhookEventRow): string {
+  if (!event.signature) {
+    return 'text-slate-500';
+  }
+  if (event.signatureVerified === true) {
+    return 'text-emerald-600';
+  }
+  if (event.signatureVerified === false) {
+    return 'text-rose-600';
+  }
+  return 'text-slate-500';
+}
+
+function summarizeToken(token: string): string {
+  if (token.length <= 12) {
+    return token;
+  }
+  return `${token.slice(0, 6)}…${token.slice(-4)}`;
 }
 
 const EVENT_TYPE_LABELS: Record<string, string> = {

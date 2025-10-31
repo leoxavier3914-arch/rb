@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 
 import {
   resolveIncomingWebhookEvent,
-  storeWebhookEvent
+  storeWebhookEvent,
+  verifyIncomingWebhookSignature
 } from '@/lib/webhooks/events';
 
 export const dynamic = 'force-dynamic';
@@ -24,9 +25,38 @@ export async function POST(request: Request) {
     receivedAt
   });
 
+  const verification = await verifyIncomingWebhookSignature({
+    rawBody: body,
+    signature: incoming.signature,
+    signatureAlgorithm: incoming.signatureAlgorithm,
+    webhookToken: incoming.webhookToken,
+    webhookId: incoming.webhookId
+  });
+
   try {
-    const event = await storeWebhookEvent(incoming);
-    return NextResponse.json({ ok: true, event });
+    const eventPayload = await storeWebhookEvent({
+      eventId: incoming.eventId,
+      trigger: incoming.trigger,
+      status: incoming.status,
+      webhookId: incoming.webhookId ?? verification.webhookId,
+      source: incoming.source,
+      webhookToken: incoming.webhookToken ?? verification.token,
+      signature: incoming.signature ?? verification.signature,
+      signatureAlgorithm: verification.algorithm ?? incoming.signatureAlgorithm,
+      signatureVerified: verification.verified,
+      verifiedWebhookId: verification.webhookId ?? incoming.webhookId,
+      headers: incoming.headers,
+      payload: incoming.payload,
+      occurredAt: incoming.occurredAt,
+      receivedAt: incoming.receivedAt
+    });
+
+    return NextResponse.json({
+      ok: true,
+      event: eventPayload,
+      signatureVerified: verification.verified,
+      verifiedWebhookId: verification.webhookId ?? incoming.webhookId
+    });
   } catch (error) {
     console.error('store_webhook_event_failed', error);
     const message =
