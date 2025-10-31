@@ -149,7 +149,7 @@ export default async function ConfigsPage() {
             })}
           </div>
 
-          <p className="text-xs text-slate-400">Última verificação: {new Date(health.timestamp).toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-slate-400">Última verificação: {formatDateTime(health.timestamp)}</p>
         </CardContent>
       </Card>
     </div>
