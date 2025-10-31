@@ -143,6 +143,7 @@ export async function listDailySales(): Promise<DailySalesRow[]> {
 
   type DailySaleSourceRow = {
     readonly created_at: string | null;
+    readonly paid_at: string | null;
     readonly total_amount_cents: number | null;
     readonly net_amount_cents: number | null;
   };
@@ -160,8 +161,9 @@ export async function listDailySales(): Promise<DailySalesRow[]> {
 
     const { data, error } = await client
       .from('sales')
-      .select('created_at,total_amount_cents,net_amount_cents')
+      .select('created_at,paid_at,total_amount_cents,net_amount_cents')
       .eq('status', 'paid')
+      .order('paid_at', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: true, nullsFirst: false })
       .range(from, to)
       .returns<DailySaleSourceRow[]>();
@@ -173,11 +175,16 @@ export async function listDailySales(): Promise<DailySalesRow[]> {
     const rows = data ?? [];
 
     for (const row of rows) {
-      if (typeof row.created_at !== 'string' || row.created_at.length === 0) {
+      const saleTimestamp =
+        typeof row.paid_at === 'string' && row.paid_at.length > 0
+          ? row.paid_at
+          : row.created_at;
+
+      if (typeof saleTimestamp !== 'string' || saleTimestamp.length === 0) {
         continue;
       }
 
-      const saleDate = row.created_at.slice(0, 10);
+      const saleDate = saleTimestamp.slice(0, 10);
       const gross = Number(row.total_amount_cents ?? 0);
       const net = Number(row.net_amount_cents ?? 0);
 
