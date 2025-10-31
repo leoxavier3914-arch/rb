@@ -39,6 +39,20 @@ export function formatShortDate(input: string | Date): string {
   }).format(date);
 }
 
+export function formatShortDateUTC(input: string | Date): string {
+  const date = typeof input === 'string' ? new Date(input) : input;
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).format(date);
+}
+
 export function formatDateTime(input: string | Date): string {
   const date = typeof input === 'string' ? new Date(input) : input;
   if (Number.isNaN(date.getTime())) {

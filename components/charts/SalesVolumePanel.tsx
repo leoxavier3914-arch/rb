@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import SalesVolumeChart, { type SalesVolumePoint } from '@/components/charts/SalesVolumeChart';
 import type { DailySalesRow } from '@/lib/sales';
-import { formatShortDate } from '@/lib/ui/format';
+import { formatShortDateUTC } from '@/lib/ui/format';
 import { CalendarClock, ChevronDown, ShoppingCart, Wallet2 } from 'lucide-react';
 
 export interface RangeSummary {
@@ -202,7 +202,7 @@ export function SalesVolumePanel({ dailySales, currency = 'BRL', onRangeSummaryC
     }
 
     if (selectedRange.type === 'all') {
-      return `Todo o período (desde ${formatShortDate(firstDate)})`;
+      return `Todo o período (desde ${formatShortDateUTC(firstDate)})`;
     }
 
     return selectedRange.description;
@@ -345,7 +345,11 @@ function formatMonthLabel(date: Date): string {
   return `${MONTH_LABELS[date.getUTCMonth()]} ${String(date.getUTCFullYear()).slice(-2)}`;
 }
 
-const dayLabelFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' });
+const dayLabelFormatter = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: 'short',
+  timeZone: 'UTC'
+});
 
 function formatDayLabel(date: Date): string {
   return dayLabelFormatter.format(date);

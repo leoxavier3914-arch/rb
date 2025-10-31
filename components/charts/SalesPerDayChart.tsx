@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { DailySalesRow } from '@/lib/sales';
-import { formatShortDate } from '@/lib/ui/format';
+import { formatShortDateUTC } from '@/lib/ui/format';
 import {
   Bar,
   BarChart,
@@ -39,7 +39,7 @@ export function SalesPerDayChart({ data, currency = DEFAULT_CURRENCY }: SalesPer
     () =>
       data.map(item => ({
         date: item.saleDate,
-        formattedDate: formatShortDate(item.saleDate),
+        formattedDate: formatShortDateUTC(item.saleDate),
         netAmount: Math.max(0, item.netAmountCents) / 100
       })),
     [data]
