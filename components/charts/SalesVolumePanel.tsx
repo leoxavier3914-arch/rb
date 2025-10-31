@@ -68,14 +68,8 @@ export function SalesVolumePanel({ dailySales, currency = 'BRL', onRangeSummaryC
           return null;
         }
 
-        const grossAmountCents = Math.max(
-          0,
-          typeof item.grossAmountCents === 'number' ? item.grossAmountCents : Number(item.grossAmountCents ?? 0)
-        );
-        const netAmountCents = Math.max(
-          0,
-          typeof item.netAmountCents === 'number' ? item.netAmountCents : Number(item.netAmountCents ?? 0)
-        );
+        const grossAmountCents = parseAmountCents(item.grossAmountCents);
+        const netAmountCents = parseAmountCents(item.netAmountCents);
         const totalSales = Math.max(0, typeof item.totalSales === 'number' ? item.totalSales : Number(item.totalSales ?? 0));
 
         return {
@@ -179,7 +173,7 @@ export function SalesVolumePanel({ dailySales, currency = 'BRL', onRangeSummaryC
       netAmountCents += point.netAmountCents;
     }
 
-    const feeAmountCents = Math.max(0, grossAmountCents - netAmountCents);
+    const feeAmountCents = grossAmountCents - netAmountCents;
 
     return { totalSales, grossAmountCents, netAmountCents, feeAmountCents };
   }, [normalizedDaily, rangeBounds]);
@@ -355,6 +349,19 @@ function formatDayLabel(date: Date): string {
   return dayLabelFormatter.format(date);
 }
 
+function parseAmountCents(value: unknown): number {
+  const cents = typeof value === 'number' ? value : Number(value ?? 0);
+  return Number.isFinite(cents) ? cents : 0;
+}
+
+function toCurrencyUnits(value: number | null | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return value / 100;
+}
+
 function buildMonthlyData(
   monthlyTotals: Map<string, { netAmountCents: number; totalSales: number }>,
   startMonth: Date,
@@ -376,7 +383,7 @@ function buildMonthlyData(
     result.push({
       month: key,
       label: formatMonthLabel(current),
-      netAmount: totals ? Math.max(0, totals.netAmountCents) / 100 : 0,
+      netAmount: toCurrencyUnits(totals?.netAmountCents),
       totalSales: totals ? Math.max(0, totals.totalSales) : 0
     });
   }
@@ -410,10 +417,17 @@ function buildDailyData(
     result.push({
       month: isoDate,
       label: formatDayLabel(current),
-      netAmount: totals ? Math.max(0, totals.netAmountCents) / 100 : 0,
+      netAmount: toCurrencyUnits(totals?.netAmountCents),
       totalSales: totals ? Math.max(0, totals.totalSales) : 0
     });
   }
 
   return result;
 }
+
+export const __testables = {
+  parseAmountCents,
+  toCurrencyUnits,
+  buildMonthlyData,
+  buildDailyData
+};
