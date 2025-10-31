@@ -54,6 +54,7 @@ export function WebhookEventsTable({ events, activeToken, tokenOptions, basePath
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-[160px]">Evento</TableHead>
+              <TableHead className="min-w-[180px]">Webhook</TableHead>
               <TableHead className="min-w-[200px]">Identificador</TableHead>
               <TableHead className="min-w-[220px]">Produto</TableHead>
               <TableHead className="min-w-[140px]">Status</TableHead>
@@ -63,7 +64,7 @@ export function WebhookEventsTable({ events, activeToken, tokenOptions, basePath
           <TableBody>
             {items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-slate-500">
+                <TableCell colSpan={6} className="py-6 text-center text-slate-500">
                   {activeToken === 'all'
                     ? 'Nenhum evento registrado até o momento.'
                     : 'Nenhum evento encontrado para o token selecionado.'}
@@ -78,6 +79,8 @@ export function WebhookEventsTable({ events, activeToken, tokenOptions, basePath
                 const productName = formatProductName(event);
                 const productDetails = formatProductDetails(event);
                 const orderStatus = formatOrderStatus(event);
+                const webhookId = event.webhookId;
+                const webhookToken = event.webhookToken;
 
                 return (
                   <TableRow key={event.id}>
@@ -86,6 +89,24 @@ export function WebhookEventsTable({ events, activeToken, tokenOptions, basePath
                         <span className="font-medium text-slate-900">{eventLabel}</span>
                         {eventDetails ? <span className="text-xs text-slate-400">{eventDetails}</span> : null}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {webhookId ? (
+                        <div className="flex flex-col gap-1">
+                          <span className="font-mono text-xs text-slate-700">{webhookId}</span>
+                          {webhookToken ? (
+                            <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                              Token {shortenToken(webhookToken)}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : webhookToken ? (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">Token {shortenToken(webhookToken)}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
@@ -213,6 +234,13 @@ function shortenId(id: string): string {
     return id;
   }
   return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
+function shortenToken(token: string): string {
+  if (token.length <= 12) {
+    return token;
+  }
+  return `${token.slice(0, 6)}…${token.slice(-4)}`;
 }
 
 function summarizeEvent(event: WebhookEventRow): string {
