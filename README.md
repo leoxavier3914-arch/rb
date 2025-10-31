@@ -38,6 +38,36 @@ O endpoint `POST /api/sales/sync` usa as rotas documentadas em [Auth / OAuth](ht
 - **Recepção**: a Kiwify deve enviar os webhooks para `POST /api/webhooks/events`.
 - **Persistência**: cada evento válido é normalizado e salvo na tabela `webhook_events` do Supabase (deduplicação pelo `event_id`).
 - **Visualização**: a página `/webhooks` lista os eventos recebidos em tempo real e permite filtrar pelos gatilhos suportados (`compra_aprovada`, `carrinho_abandonado`, etc.).
+- **Identificação do webhook**: quando o evento não informa o `webhook_id`, o backend tenta descobrir o identificador a partir do token. Para isso, o cache combina os tokens cadastrados em `webhook_settings` com os webhooks retornados pela API da Kiwify. Se a sincronização remota falhar, o cache preserva os dados anteriores e incorpora novos tokens locais para não perder a associação entre token e ID.
+
+Siga o guia oficial de webhooks da Kiwify para configurar os gatilhos, cabeçalhos e exemplos de payloads: [Webhooks Kiwify (pt-br)](https://kiwify.notion.site/Webhooks-pt-br-c77eb84be10c42e6bb97cd391bca9dce).
+
+#### Cadastro de tokens locais
+
+1. Crie ou atualize o webhook no painel da Kiwify e copie o token informado.
+2. Registre a entrada correspondente na tabela `webhook_settings` (via tela de administração ou `PATCH /api/webhooks/[id]/state`) com o `webhook_id`, URL e token atual.
+3. Sempre que o token for rotacionado na Kiwify, atualize o registro local para que a detecção de `webhook_id` continue funcionando e as assinaturas HMAC possam ser validadas.
+
+#### Testes e depuração
+
+- Habilite o modo verbose dos logs para verificar mensagens `load_remote_webhooks_failed` ou `load_known_webhook_tokens_failed` caso a sincronização de tokens não aconteça.
+- Use o endpoint `POST /api/webhooks/events` com um payload de teste da Kiwify para confirmar que o `webhook_id` é preenchido após configurar o token corretamente.
+
+## Migrações do Supabase
+
+As tabelas `sales`, `webhook_events` e `webhook_settings` são criadas pelas migrações em `supabase/migrations`. Para aplicá-las em um projeto local:
+
+```bash
+supabase db reset --db-url "$SUPABASE_DB_URL"
+```
+
+Ou, para aplicar incrementalmente em um banco existente:
+
+```bash
+supabase db push --db-url "$SUPABASE_DB_URL"
+```
+
+> Substitua `SUPABASE_DB_URL` pela string de conexão da instância. Consulte a [documentação do Supabase CLI](https://supabase.com/docs/guides/cli) para outras opções de execução.
 
 ### Fluxo de saques (`/financeiro`)
 
