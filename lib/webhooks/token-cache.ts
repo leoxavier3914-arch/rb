@@ -27,8 +27,9 @@ let cachedTokens: WebhookTokensCache | null = null;
 
 async function ensureWebhookTokensCache(): Promise<WebhookTokensCache> {
   const now = Date.now();
-  if (cachedTokens && cachedTokens.expiresAt > now) {
-    return cachedTokens;
+  const previousCache = cachedTokens;
+  if (previousCache && previousCache.expiresAt > now) {
+    return previousCache;
   }
 
   try {
@@ -80,6 +81,13 @@ async function ensureWebhookTokensCache(): Promise<WebhookTokensCache> {
       }
     } catch (error) {
       console.error('load_remote_webhooks_failed', error);
+      if (previousCache) {
+        cachedTokens = {
+          ...previousCache,
+          expiresAt: now + WEBHOOK_TOKENS_CACHE_TTL_MS / 2
+        };
+        return cachedTokens;
+      }
     }
 
     cachedTokens = {
@@ -91,6 +99,14 @@ async function ensureWebhookTokensCache(): Promise<WebhookTokensCache> {
     return cachedTokens;
   } catch (error) {
     console.error('load_known_webhook_tokens_failed', error);
+    if (previousCache) {
+      cachedTokens = {
+        ...previousCache,
+        expiresAt: now + WEBHOOK_TOKENS_CACHE_TTL_MS / 2
+      };
+      return cachedTokens;
+    }
+
     cachedTokens = {
       tokens: [],
       byToken: new Map(),
