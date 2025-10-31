@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { getServiceClient } from '@/lib/supabase';
-import { listWebhookSettings } from '@/lib/webhooks/settings';
+import { listWebhookSettings, type WebhookSetting } from '@/lib/webhooks/settings';
 import { normalizeWebhookTriggers, type WebhookTrigger } from '@/lib/webhooks/triggers';
 
 type JsonPrimitive = string | number | boolean | null;
@@ -12,13 +12,8 @@ export interface WebhookEventRow {
   readonly eventId: string | null;
   readonly trigger: string | null;
   readonly status: string | null;
-  readonly webhookId: string | null;
   readonly source: string | null;
   readonly webhookToken: string | null;
-  readonly signature: string | null;
-  readonly signatureAlgorithm: string | null;
-  readonly signatureVerified: boolean | null;
-  readonly verifiedWebhookId: string | null;
   readonly headers: Record<string, string>;
   readonly payload: JsonValue;
   readonly occurredAt: string | null;
@@ -44,13 +39,8 @@ export interface StoreWebhookEventInput {
   readonly eventId?: string | null;
   readonly trigger?: string | null;
   readonly status?: string | null;
-  readonly webhookId?: string | null;
   readonly source?: string | null;
   readonly webhookToken?: string | null;
-  readonly signature?: string | null;
-  readonly signatureAlgorithm?: string | null;
-  readonly signatureVerified?: boolean | null;
-  readonly verifiedWebhookId?: string | null;
   readonly headers?: Record<string, string>;
   readonly payload: JsonValue;
   readonly occurredAt?: string | null;
@@ -114,13 +104,8 @@ export async function listWebhookEvents(options: ListWebhookEventsOptions = {}):
         event_id,
         trigger,
         status,
-        webhook_id,
         source,
         webhook_token,
-        signature,
-        signature_algorithm,
-        signature_verified,
-        verified_webhook_id,
         headers,
         payload,
         occurred_at,
@@ -191,13 +176,8 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
         event_id: normalizeString(input.eventId),
         trigger: normalizeString(coerceTrigger(input.trigger)),
         status: normalizeString(input.status),
-        webhook_id: normalizeString(input.webhookId),
         source: normalizeString(input.source),
         webhook_token: normalizeString(input.webhookToken),
-        signature: normalizeString(input.signature),
-        signature_algorithm: normalizeString(input.signatureAlgorithm),
-        signature_verified: normalizeBoolean(input.signatureVerified),
-        verified_webhook_id: normalizeString(input.verifiedWebhookId),
         headers,
         payload,
         occurred_at: occurredAt,
@@ -205,9 +185,7 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
       },
       { onConflict: 'event_id' }
     )
-    .select(
-      'id,event_id,trigger,status,webhook_id,source,webhook_token,signature,signature_algorithm,signature_verified,verified_webhook_id,headers,payload,occurred_at,received_at'
-    )
+    .select('id,event_id,trigger,status,source,webhook_token,headers,payload,occurred_at,received_at')
     .single();
 
   if (error) {
@@ -231,6 +209,7 @@ export async function verifyIncomingWebhookSignature(options: {
   readonly signatureAlgorithm: string | null;
   readonly webhookToken?: string | null;
   readonly webhookId?: string | null;
+  readonly settings?: readonly WebhookSetting[];
 }): Promise<VerifyIncomingWebhookSignatureResult> {
   const signatureValue = normalizeSignatureString(options.signature);
   const algorithm = normalizeSignatureAlgorithm(options.signatureAlgorithm);
@@ -256,8 +235,9 @@ export async function verifyIncomingWebhookSignature(options: {
     };
   }
 
-  const settings = await listWebhookSettings().catch(() => []);
-  const settingsById = new Map(settings.map(setting => [setting.webhookId, setting]));
+  const settings = options.settings ?? (await listWebhookSettings().catch(() => []));
+  const activeSettings = settings.filter(setting => setting.isActive);
+  const settingsById = new Map(activeSettings.map(setting => [setting.webhookId, setting]));
 
   const candidates: { token: string; webhookId: string | null }[] = [];
 
@@ -289,18 +269,18 @@ export async function verifyIncomingWebhookSignature(options: {
   if (options.webhookToken) {
     const normalizedToken = normalizeString(options.webhookToken);
     if (normalizedToken) {
-      const webhookIdFromToken = findWebhookIdByToken(settings, normalizedToken);
+      const webhookIdFromToken = findWebhookIdByToken(activeSettings, normalizedToken);
       addCandidate(normalizedToken, webhookIdFromToken ?? normalizeString(options.webhookId));
     }
   }
 
-  for (const setting of settings) {
+  for (const setting of activeSettings) {
     addCandidate(setting.token, setting.webhookId);
   }
 
   for (const candidate of candidates) {
     if (verifySignatureWithToken(rawBody, signatureValue, algorithm, candidate.token)) {
-      const resolvedWebhookId = candidate.webhookId ?? findWebhookIdByToken(settings, candidate.token);
+      const resolvedWebhookId = candidate.webhookId ?? findWebhookIdByToken(activeSettings, candidate.token);
       return {
         signature: signatureValue,
         algorithm,
@@ -413,13 +393,8 @@ function mapWebhookEventRow(row: Record<string, unknown>): WebhookEventRow {
     eventId: normalizeString(row.event_id) ?? null,
     trigger: normalizeString(row.trigger),
     status: normalizeString(row.status),
-    webhookId: normalizeString(row.webhook_id),
     source: normalizeString(row.source),
     webhookToken: normalizeString(row.webhook_token),
-    signature: normalizeString(row.signature),
-    signatureAlgorithm: normalizeString(row.signature_algorithm),
-    signatureVerified: normalizeBoolean(row.signature_verified),
-    verifiedWebhookId: normalizeString(row.verified_webhook_id),
     headers: sanitizeHeaders(row.headers as Record<string, string> | undefined),
     payload: sanitizeJsonValue(row.payload),
     occurredAt: normalizeDate(row.occurred_at),

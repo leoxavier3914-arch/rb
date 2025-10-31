@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resolveIncomingWebhookEvent } from '@/lib/webhooks/events';
+import { createHmac } from 'node:crypto';
+
+import {
+  resolveIncomingWebhookEvent,
+  verifyIncomingWebhookSignature
+} from '@/lib/webhooks/events';
 
 test('resolveIncomingWebhookEvent extracts metadata from headers and payload', () => {
   const headers = new Headers({
@@ -57,4 +62,54 @@ test('resolveIncomingWebhookEvent normalizes trigger and occurs_at from payload 
   assert.equal(incoming.webhookToken, 'payload-token');
   assert.equal(new Date(incoming.occurredAt ?? '').getTime(), 1_714_500_000_000);
   assert.deepEqual(incoming.headers, {});
+});
+
+test('verifyIncomingWebhookSignature matches known token', async () => {
+  const rawBody = JSON.stringify({ id: 'evt-1', status: 'paid' });
+  const signature = createHmac('sha256', 'secret-123').update(rawBody, 'utf8').digest('hex');
+
+  const result = await verifyIncomingWebhookSignature({
+    rawBody,
+    signature,
+    signatureAlgorithm: 'sha256',
+    settings: [
+      {
+        webhookId: 'wh_123',
+        name: null,
+        url: null,
+        token: 'secret-123',
+        isActive: true,
+        updatedAt: new Date().toISOString()
+      }
+    ]
+  });
+
+  assert.equal(result.verified, true);
+  assert.equal(result.token, 'secret-123');
+  assert.equal(result.webhookId, 'wh_123');
+});
+
+test('verifyIncomingWebhookSignature returns false when no match', async () => {
+  const rawBody = JSON.stringify({ id: 'evt-2', status: 'pending' });
+  const signature = createHmac('sha256', 'secret-123').update(rawBody, 'utf8').digest('hex');
+
+  const result = await verifyIncomingWebhookSignature({
+    rawBody,
+    signature,
+    signatureAlgorithm: 'sha256',
+    settings: [
+      {
+        webhookId: 'wh_999',
+        name: null,
+        url: null,
+        token: 'other-token',
+        isActive: true,
+        updatedAt: new Date().toISOString()
+      }
+    ]
+  });
+
+  assert.equal(result.verified, false);
+  assert.equal(result.token, null);
+  assert.equal(result.webhookId, null);
 });

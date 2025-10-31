@@ -38,13 +38,8 @@ export async function POST(request: Request) {
       eventId: incoming.eventId,
       trigger: incoming.trigger,
       status: incoming.status,
-      webhookId: incoming.webhookId ?? verification.webhookId,
       source: incoming.source,
-      webhookToken: incoming.webhookToken ?? verification.token,
-      signature: incoming.signature ?? verification.signature,
-      signatureAlgorithm: verification.algorithm ?? incoming.signatureAlgorithm,
-      signatureVerified: verification.verified,
-      verifiedWebhookId: verification.webhookId ?? incoming.webhookId,
+      webhookToken: verification.token ?? incoming.webhookToken,
       headers: incoming.headers,
       payload: incoming.payload,
       occurredAt: incoming.occurredAt,
@@ -55,7 +50,8 @@ export async function POST(request: Request) {
       ok: true,
       event: eventPayload,
       signatureVerified: verification.verified,
-      verifiedWebhookId: verification.webhookId ?? incoming.webhookId
+      verifiedWebhookId: verification.webhookId ?? incoming.webhookId,
+      matchedToken: verification.token ?? incoming.webhookToken ?? null
     });
   } catch (error) {
     console.error('store_webhook_event_failed', error);
