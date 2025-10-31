@@ -195,7 +195,15 @@ export function mapSalePayload(payload: UnknownRecord): UpsertSaleInput | null {
     currency: toNullableString(payload.currency ?? payload.currency_code) ?? 'BRL',
     installments: toNullableNumber(payload.installments ?? payload.installments_count),
     created_at: toIso(payload.created_at ?? payload.createdAt ?? payload.inserted_at ?? null),
-    paid_at: toIso(payload.paid_at ?? payload.paidAt ?? payload.approved_at ?? null),
+    paid_at: toIso(
+      payload.paid_at ??
+        payload.paidAt ??
+        payload.approved_at ??
+        payload.approvedAt ??
+        payload.approved_date ??
+        payload.approvedDate ??
+        null
+    ),
     updated_at: toIso(payload.updated_at ?? payload.updatedAt ?? null),
     raw: sanitizeRaw(payload)
   };
