@@ -21,7 +21,7 @@ test('listWebhooks maps webhook payloads returned by the API', async () => {
         id: 'wh-1',
         name: 'Webhook principal',
         url: 'https://example.com/webhooks',
-        products: 'all',
+        products: 'all_products',
         triggers: ['compra_aprovada', 'chargeback'],
         token: 'abc',
         created_at: '2024-06-01T10:00:00Z',
@@ -60,7 +60,7 @@ test('createWebhook normalizes payload before sending to the API', async () => {
         id: 'wh-new',
         name: 'Webhook Principal',
         url: 'https://example.com/webhooks',
-        products: 'all',
+        products: 'all_products',
         triggers: ['compra_aprovada'],
         token: 'secret',
         created_at: '2024-06-01T10:00:00Z',
@@ -89,7 +89,7 @@ test('createWebhook normalizes payload before sending to the API', async () => {
   assert.deepStrictEqual(parsedBody, {
     url: 'https://example.com/webhooks',
     triggers: ['compra_aprovada'],
-    products: 'all',
+    products: 'all_products',
     name: 'Principal',
     token: 'secret'
   });
@@ -152,7 +152,7 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   assert.strictEqual(webhook.token, null);
 });
 
-test('updateWebhook skips products when input is empty or all', async () => {
+test('updateWebhook envia escopo global como "all"', async () => {
   let captured: { path: string; init?: RequestInit } | null = null;
   const client = createMockClient(async (path, init) => {
     captured = { path, init };
@@ -161,7 +161,7 @@ test('updateWebhook skips products when input is empty or all', async () => {
         id: 'wh-2',
         url: 'https://example.com/webhooks',
         name: 'Atualizado',
-        products: 'all',
+        products: 'all_products',
         triggers: ['compra_aprovada']
       }),
       { status: 200 }
@@ -183,7 +183,42 @@ test('updateWebhook skips products when input is empty or all', async () => {
   assert.ok(typeof body === 'string', 'expected request body to be a string');
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
-    name: 'Atualizado'
+    name: 'Atualizado',
+    products: 'all_products'
+  });
+});
+
+test('updateWebhook não envia escopo quando não informado', async () => {
+  let captured: { path: string; init?: RequestInit } | null = null;
+  const client = createMockClient(async (path, init) => {
+    captured = { path, init };
+    return new Response(
+      JSON.stringify({
+        id: 'wh-3',
+        url: 'https://example.com/webhooks',
+        name: 'Sem alterações de produtos',
+        products: 'produto-xyz',
+        triggers: ['compra_aprovada']
+      }),
+      { status: 200 }
+    );
+  });
+
+  await updateWebhook(
+    'wh-3',
+    {
+      name: ' Sem alterações de produtos '
+    },
+    client
+  );
+
+  assert.ok(captured, 'expected the request to be captured');
+  assert.strictEqual(captured?.path, '/webhooks/wh-3');
+  const body = captured?.init?.body;
+  assert.ok(typeof body === 'string', 'expected request body to be a string');
+  const parsedBody = JSON.parse(body!);
+  assert.deepStrictEqual(parsedBody, {
+    name: 'Sem alterações de produtos'
   });
 });
 

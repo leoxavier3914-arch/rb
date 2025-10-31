@@ -62,13 +62,18 @@ export async function POST(request: Request) {
 
     const name = typeof payload?.name === 'string' ? payload.name.trim() : undefined;
 
-    let products: string | null | undefined = undefined;
+    let products: string | undefined = undefined;
     if (Object.prototype.hasOwnProperty.call(payload ?? {}, 'products')) {
       if (payload?.products === null) {
-        products = null;
+        products = 'all';
       } else if (typeof payload?.products === 'string') {
         const trimmed = payload.products.trim();
-        products = trimmed.length > 0 ? trimmed : null;
+        if (trimmed.length === 0) {
+          products = 'all';
+        } else {
+          const normalized = trimmed.toLowerCase();
+          products = normalized === 'all' || normalized === 'all_products' ? 'all' : trimmed;
+        }
       } else {
         return NextResponse.json(
           { ok: false, error: 'Informe os produtos como uma string válida.' },

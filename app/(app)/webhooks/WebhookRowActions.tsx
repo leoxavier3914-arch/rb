@@ -83,13 +83,12 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
       const normalizedName = name.trim();
       const normalizedToken = token.trim();
       const normalizedProductId = typeof productId === 'string' ? productId.trim() : '';
-      const productsPayload = normalizedProductId ? normalizedProductId : null;
       const updatePayload: Record<string, unknown> = {
         url: normalizedUrl,
         triggers,
         name: normalizedName.length > 0 ? normalizedName : null,
         token: normalizedToken.length > 0 ? normalizedToken : null,
-        products: productsPayload
+        products: normalizedProductId.length > 0 ? normalizedProductId : 'all'
       };
 
       const response = await fetch(`/api/webhooks/${encodeURIComponent(webhook.id)}`, {
@@ -433,7 +432,12 @@ function normalizeProductScope(value: string | null | undefined): string | null 
   }
 
   const trimmed = value.trim();
-  if (!trimmed || trimmed.toLowerCase() === 'all') {
+  if (!trimmed) {
+    return null;
+  }
+
+  const lowerCased = trimmed.toLowerCase();
+  if (lowerCased === 'all' || lowerCased === 'all_products') {
     return null;
   }
 
