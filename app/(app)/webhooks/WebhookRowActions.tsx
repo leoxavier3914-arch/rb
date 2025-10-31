@@ -432,7 +432,12 @@ function normalizeProductScope(value: string | null | undefined): string | null 
   }
 
   const trimmed = value.trim();
-  if (!trimmed || trimmed.toLowerCase() === 'all') {
+  if (!trimmed) {
+    return null;
+  }
+
+  const lowerCased = trimmed.toLowerCase();
+  if (lowerCased === 'all' || lowerCased === 'all_products') {
     return null;
   }
 

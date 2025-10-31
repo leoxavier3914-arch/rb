@@ -32,6 +32,9 @@ export interface UpdateWebhookInput {
   readonly token?: string | null;
 }
 
+const GLOBAL_PRODUCTS_SCOPE = 'all';
+const GLOBAL_PRODUCTS_API_VALUE = 'all_products';
+
 async function ensureClient(client?: KiwifyClient): Promise<KiwifyClient> {
   if (client) {
     return client;
@@ -68,8 +71,9 @@ export async function createWebhook(input: CreateWebhookInput, client?: KiwifyCl
   }
 
   const name = normalizeOptionalString(input.name);
-  const products =
-    input.products === undefined ? undefined : normalizeProducts(input.products);
+  const products = mapProductsToApi(
+    input.products === undefined ? undefined : normalizeProducts(input.products)
+  );
   const token = normalizeOptionalString(input.token);
 
   const resolvedClient = await ensureClient(client);
@@ -201,7 +205,7 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
   }
 
   if (input.products !== undefined) {
-    const products = normalizeProducts(input.products);
+    const products = mapProductsToApi(normalizeProducts(input.products));
     payload.products = products;
   }
 
@@ -263,7 +267,7 @@ function parseWebhook(payload: UnknownRecord): Webhook | null {
     id,
     name: toNullableString(payload.name),
     url,
-    products: toNullableString(payload.products),
+    products: parseProductsFromApi(payload.products),
     triggers: extractStringArray(payload.triggers),
     token: toNullableString(payload.token),
     createdAt: toIso(payload.created_at ?? payload.createdAt ?? null),
@@ -339,16 +343,41 @@ function normalizeId(value: unknown): string | null {
 
 function normalizeProducts(value: unknown): string {
   if (value === null) {
-    return 'all';
+    return GLOBAL_PRODUCTS_SCOPE;
   }
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    if (!trimmed || trimmed.toLowerCase() === 'all') {
-      return 'all';
+    if (!trimmed) {
+      return GLOBAL_PRODUCTS_SCOPE;
+    }
+    const lowerCased = trimmed.toLowerCase();
+    if (lowerCased === GLOBAL_PRODUCTS_SCOPE || lowerCased === GLOBAL_PRODUCTS_API_VALUE) {
+      return GLOBAL_PRODUCTS_SCOPE;
     }
     return trimmed;
   }
 
   throw new Error('Informe um escopo de produtos válido para o webhook.');
+}
+
+function mapProductsToApi(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return value === GLOBAL_PRODUCTS_SCOPE ? GLOBAL_PRODUCTS_API_VALUE : value;
+}
+
+function parseProductsFromApi(value: unknown): string | null {
+  const normalized = toNullableString(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const lowerCased = normalized.toLowerCase();
+  if (lowerCased === GLOBAL_PRODUCTS_SCOPE || lowerCased === GLOBAL_PRODUCTS_API_VALUE) {
+    return GLOBAL_PRODUCTS_SCOPE;
+  }
+
+  return normalized;
 }

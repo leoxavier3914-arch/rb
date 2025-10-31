@@ -68,7 +68,12 @@ export async function POST(request: Request) {
         products = 'all';
       } else if (typeof payload?.products === 'string') {
         const trimmed = payload.products.trim();
-        products = trimmed.length > 0 ? (trimmed.toLowerCase() === 'all' ? 'all' : trimmed) : 'all';
+        if (trimmed.length === 0) {
+          products = 'all';
+        } else {
+          const normalized = trimmed.toLowerCase();
+          products = normalized === 'all' || normalized === 'all_products' ? 'all' : trimmed;
+        }
       } else {
         return NextResponse.json(
           { ok: false, error: 'Informe os produtos como uma string válida.' },

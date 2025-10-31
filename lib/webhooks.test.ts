@@ -21,7 +21,7 @@ test('listWebhooks maps webhook payloads returned by the API', async () => {
         id: 'wh-1',
         name: 'Webhook principal',
         url: 'https://example.com/webhooks',
-        products: 'all',
+        products: 'all_products',
         triggers: ['compra_aprovada', 'chargeback'],
         token: 'abc',
         created_at: '2024-06-01T10:00:00Z',
@@ -60,7 +60,7 @@ test('createWebhook normalizes payload before sending to the API', async () => {
         id: 'wh-new',
         name: 'Webhook Principal',
         url: 'https://example.com/webhooks',
-        products: 'all',
+        products: 'all_products',
         triggers: ['compra_aprovada'],
         token: 'secret',
         created_at: '2024-06-01T10:00:00Z',
@@ -89,7 +89,7 @@ test('createWebhook normalizes payload before sending to the API', async () => {
   assert.deepStrictEqual(parsedBody, {
     url: 'https://example.com/webhooks',
     triggers: ['compra_aprovada'],
-    products: 'all',
+    products: 'all_products',
     name: 'Principal',
     token: 'secret'
   });
@@ -161,7 +161,7 @@ test('updateWebhook envia escopo global como "all"', async () => {
         id: 'wh-2',
         url: 'https://example.com/webhooks',
         name: 'Atualizado',
-        products: 'all',
+        products: 'all_products',
         triggers: ['compra_aprovada']
       }),
       { status: 200 }
@@ -184,7 +184,7 @@ test('updateWebhook envia escopo global como "all"', async () => {
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
     name: 'Atualizado',
-    products: 'all'
+    products: 'all_products'
   });
 });
 
