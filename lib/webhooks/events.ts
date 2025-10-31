@@ -10,6 +10,7 @@ export interface WebhookEventRow {
   readonly trigger: string | null;
   readonly status: string | null;
   readonly source: string | null;
+  readonly webhookToken: string | null;
   readonly headers: Record<string, string>;
   readonly payload: JsonValue;
   readonly occurredAt: string | null;
@@ -28,6 +29,7 @@ export interface ListWebhookEventsOptions {
   readonly pageSize?: number;
   readonly trigger?: string | null;
   readonly search?: string | null;
+  readonly webhookToken?: string | null;
 }
 
 export interface StoreWebhookEventInput {
@@ -35,6 +37,7 @@ export interface StoreWebhookEventInput {
   readonly trigger?: string | null;
   readonly status?: string | null;
   readonly source?: string | null;
+  readonly webhookToken?: string | null;
   readonly headers?: Record<string, string>;
   readonly payload: JsonValue;
   readonly occurredAt?: string | null;
@@ -46,6 +49,7 @@ export interface IncomingWebhookEvent {
   readonly trigger: string | null;
   readonly status: string | null;
   readonly source: string | null;
+  readonly webhookToken: string | null;
   readonly headers: Record<string, string>;
   readonly payload: JsonValue;
   readonly occurredAt: string | null;
@@ -53,6 +57,15 @@ export interface IncomingWebhookEvent {
 }
 
 const DEFAULT_PAGE_SIZE = 10;
+
+const WEBHOOK_TOKEN_HEADER_CANDIDATES = [
+  'x-kiwify-webhook-token',
+  'x-kiwify-webhook-secret',
+  'x-kiwify-token',
+  'x-kiwify-secret',
+  'x-webhook-token',
+  'x-webhook-secret'
+] as const;
 
 export async function listWebhookEvents(options: ListWebhookEventsOptions = {}): Promise<WebhookEventsPage> {
   const client = getServiceClient();
@@ -70,6 +83,7 @@ export async function listWebhookEvents(options: ListWebhookEventsOptions = {}):
         trigger,
         status,
         source,
+        webhook_token,
         headers,
         payload,
         occurred_at,
@@ -82,6 +96,19 @@ export async function listWebhookEvents(options: ListWebhookEventsOptions = {}):
   const trigger = normalizeString(options.trigger);
   if (trigger) {
     query = query.eq('trigger', trigger);
+  }
+
+  if (options.webhookToken !== undefined) {
+    if (options.webhookToken === null) {
+      query = query.is('webhook_token', null);
+    } else {
+      const webhookToken = normalizeString(options.webhookToken);
+      if (webhookToken) {
+        query = query.eq('webhook_token', webhookToken);
+      } else {
+        query = query.is('webhook_token', null);
+      }
+    }
   }
 
   const search = normalizeString(options.search);
@@ -128,6 +155,7 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
         trigger: normalizeString(coerceTrigger(input.trigger)),
         status: normalizeString(input.status),
         source: normalizeString(input.source),
+        webhook_token: normalizeString(input.webhookToken),
         headers,
         payload,
         occurred_at: occurredAt,
@@ -135,9 +163,7 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
       },
       { onConflict: 'event_id' }
     )
-    .select(
-      'id,event_id,trigger,status,source,headers,payload,occurred_at,received_at'
-    )
+    .select('id,event_id,trigger,status,source,webhook_token,headers,payload,occurred_at,received_at')
     .single();
 
   if (error) {
@@ -198,6 +224,8 @@ export function resolveIncomingWebhookEvent(options: {
     getNestedString(payload, ['payload', 'account_id'])
   ]);
 
+  const webhookToken = extractWebhookToken(headers, payload);
+
   const occurredAt =
     extractFirstDate([
       getNestedValue(payload, ['occurred_at']),
@@ -219,6 +247,7 @@ export function resolveIncomingWebhookEvent(options: {
     trigger,
     status,
     source,
+    webhookToken,
     headers,
     payload,
     occurredAt,
@@ -233,6 +262,7 @@ function mapWebhookEventRow(row: Record<string, unknown>): WebhookEventRow {
     trigger: normalizeString(row.trigger),
     status: normalizeString(row.status),
     source: normalizeString(row.source),
+    webhookToken: normalizeString(row.webhook_token),
     headers: sanitizeHeaders(row.headers as Record<string, string> | undefined),
     payload: sanitizeJsonValue(row.payload),
     occurredAt: normalizeDate(row.occurred_at),
@@ -299,6 +329,28 @@ function sanitizeHeaders(headers: Record<string, string> | undefined): Record<st
   return normalized;
 }
 
+function extractWebhookToken(headers: Record<string, string>, payload: JsonValue): string | null {
+  const fromHeaders = extractFirstString(
+    WEBHOOK_TOKEN_HEADER_CANDIDATES.map(candidate => headers[candidate])
+  );
+  if (fromHeaders) {
+    return fromHeaders;
+  }
+
+  const payloadToken = extractFirstString([
+    getNestedString(payload, ['webhook', 'token']),
+    getNestedString(payload, ['webhook', 'secret']),
+    getNestedString(payload, ['token']),
+    getNestedString(payload, ['secret']),
+    getNestedString(payload, ['data', 'token']),
+    getNestedString(payload, ['data', 'secret']),
+    getNestedString(payload, ['payload', 'token']),
+    getNestedString(payload, ['payload', 'secret'])
+  ]);
+
+  return payloadToken;
+}
+
 function collectRelevantHeaders(headers?: Headers | Record<string, string>): Record<string, string> {
   if (!headers) {
     return {};
@@ -327,7 +379,9 @@ function collectRelevantHeaders(headers?: Headers | Record<string, string>): Rec
     if (!key) {
       continue;
     }
-    if (!key.startsWith('x-kiwify-') && !allowed.has(key)) {
+    const isKiwifyHeader = key.startsWith('x-kiwify-');
+    const isWebhookHeader = key.startsWith('x-webhook-');
+    if (!isKiwifyHeader && !isWebhookHeader && !allowed.has(key)) {
       continue;
     }
     const value = typeof valueRaw === 'string' ? valueRaw.trim() : '';

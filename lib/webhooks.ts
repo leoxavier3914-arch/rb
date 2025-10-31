@@ -119,7 +119,7 @@ export async function updateWebhook(
 
   const resolvedClient = await ensureClient(client);
   const response = await resolvedClient.request(`/webhooks/${encodeURIComponent(normalizedId)}`, {
-    method: 'PATCH',
+    method: 'PUT',
     headers: {
       'content-type': 'application/json'
     },
