@@ -3,7 +3,6 @@ import { listWebhooks } from '@/lib/webhooks';
 import type { Webhook } from '@/lib/webhooks';
 import { listWebhookEvents } from '@/lib/webhooks/events';
 import { listWebhookSettings, mapWebhookSettingsById, type WebhookSetting } from '@/lib/webhooks/settings';
-import { WEBHOOK_TRIGGER_OPTIONS, type WebhookTrigger } from '@/lib/webhooks/triggers';
 import { formatDateTime } from '@/lib/ui/format';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/ui/classnames';
@@ -19,8 +18,6 @@ interface WebhooksPageProps {
 }
 
 const EVENTS_PAGE_SIZE = 10;
-
-const TRIGGER_SET = new Set(WEBHOOK_TRIGGER_OPTIONS.map(option => option.value));
 
 function formatTriggers(triggers: readonly string[]): string {
   if (!triggers || triggers.length === 0) {
@@ -47,19 +44,6 @@ function parseEventsPage(value: string | string[] | undefined): number {
     }
   }
   return 1;
-}
-
-function parseTrigger(value: string | string[] | undefined): 'all' | WebhookTrigger {
-  if (Array.isArray(value)) {
-    value = value[0];
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim() as WebhookTrigger;
-    if (TRIGGER_SET.has(normalized)) {
-      return normalized;
-    }
-  }
-  return 'all';
 }
 
 type TokenFilterOption = {
@@ -146,7 +130,6 @@ function summarizeToken(token: string): string {
 }
 
 export default async function WebhooksPage({ searchParams }: WebhooksPageProps) {
-  const activeTrigger = parseTrigger(searchParams?.trigger);
   const eventsPageNumber = parseEventsPage(searchParams?.page);
   const activeToken = parseToken(searchParams?.token);
 
@@ -154,7 +137,6 @@ export default async function WebhooksPage({ searchParams }: WebhooksPageProps) 
     listWebhookEvents({
       page: eventsPageNumber,
       pageSize: EVENTS_PAGE_SIZE,
-      trigger: activeTrigger === 'all' ? null : activeTrigger,
       webhookToken: activeToken === 'all' ? undefined : activeToken === 'none' ? null : activeToken
     }),
     (async () => {
@@ -278,14 +260,13 @@ export default async function WebhooksPage({ searchParams }: WebhooksPageProps) 
           <CardHeader>
             <CardTitle className="text-xl">Eventos recebidos</CardTitle>
             <CardDescription>
-              Acompanhe em tempo real os eventos enviados pela Kiwify e filtre pelos gatilhos configurados nos seus
-              webhooks.
+              Acompanhe em tempo real os eventos enviados pela Kiwify com detalhes do cliente, produto e status do
+              pedido.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <WebhookEventsTable
               events={eventsPage}
-              activeTrigger={activeTrigger}
               activeToken={activeToken}
               tokenOptions={tokenOptions}
               basePath="/webhooks"
