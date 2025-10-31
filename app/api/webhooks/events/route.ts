@@ -4,6 +4,8 @@ import {
   resolveIncomingWebhookEvent,
   storeWebhookEvent
 } from '@/lib/webhooks/events';
+import { createKiwifyClient } from '@/lib/kiwify/client';
+import { listWebhooks } from '@/lib/webhooks';
 import { listWebhookSettings } from '@/lib/webhooks/settings';
 import { inferWebhookTokenFromSignature } from '@/lib/webhooks/signature';
 
@@ -86,6 +88,20 @@ interface WebhookTokensCache {
 
 let cachedTokens: WebhookTokensCache | null = null;
 
+type WebhookTokensDependencies = {
+  listWebhookSettings: typeof listWebhookSettings;
+  createKiwifyClient: typeof createKiwifyClient;
+  listWebhooks: typeof listWebhooks;
+};
+
+const defaultDependencies: WebhookTokensDependencies = {
+  listWebhookSettings,
+  createKiwifyClient,
+  listWebhooks
+};
+
+let dependencies: WebhookTokensDependencies = { ...defaultDependencies };
+
 async function ensureWebhookTokensCache(): Promise<WebhookTokensCache> {
   const now = Date.now();
   if (cachedTokens && cachedTokens.expiresAt > now) {
@@ -93,7 +109,13 @@ async function ensureWebhookTokensCache(): Promise<WebhookTokensCache> {
   }
 
   try {
-    const settings = await listWebhookSettings();
+    const {
+      listWebhookSettings: loadSettings,
+      createKiwifyClient: buildClient,
+      listWebhooks: fetchWebhooks
+    } = dependencies;
+
+    const settings = await loadSettings();
     const tokens: string[] = [];
     const byToken = new Map<string, string>();
     const seen = new Set<string>();
@@ -112,6 +134,29 @@ async function ensureWebhookTokensCache(): Promise<WebhookTokensCache> {
       if (webhookId && !byToken.has(token)) {
         byToken.set(token, webhookId);
       }
+    }
+
+    try {
+      const client = await buildClient();
+      const webhooks = await fetchWebhooks(client);
+
+      for (const webhook of webhooks) {
+        const token = typeof webhook.token === 'string' ? webhook.token.trim() : '';
+        if (!token) {
+          continue;
+        }
+        if (!seen.has(token)) {
+          tokens.push(token);
+          seen.add(token);
+        }
+
+        const webhookId = typeof webhook.id === 'string' ? webhook.id.trim() : '';
+        if (webhookId && !byToken.has(token)) {
+          byToken.set(token, webhookId);
+        }
+      }
+    } catch (error) {
+      console.error('load_remote_webhooks_failed', error);
     }
 
     cachedTokens = {
@@ -163,3 +208,17 @@ function parseBody(body: string | null): unknown {
     return { raw: trimmed };
   }
 }
+
+export const __testing = {
+  ensureWebhookTokensCache,
+  resolveWebhookIdFromToken,
+  loadKnownWebhookTokens,
+  resetTestingState() {
+    cachedTokens = null;
+    dependencies = { ...defaultDependencies };
+  },
+  setDependencies(overrides: Partial<WebhookTokensDependencies>) {
+    dependencies = { ...dependencies, ...overrides };
+    cachedTokens = null;
+  }
+};
