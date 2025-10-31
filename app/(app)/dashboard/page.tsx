@@ -1,4 +1,5 @@
-import { listSales, getSalesSummary } from '@/lib/sales';
+import SalesVolumeChart, { type SalesVolumePoint } from '@/components/charts/SalesVolumeChart';
+import { listSales, getSalesSummary, listDailySales, type DailySalesRow } from '@/lib/sales';
 import { getBalance } from '@/lib/finance';
 import { formatDateTime, formatMoneyFromCents, formatMoneyFromCentsWithCurrency, formatShortDate } from '@/lib/ui/format';
 import { CreatePayoutForm } from '@/app/(app)/financeiro/CreatePayoutForm';
@@ -24,11 +25,14 @@ import {
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const [summary, recent, balance] = await Promise.all([
+  const [summary, recent, balance, dailySales] = await Promise.all([
     getSalesSummary(),
     listSales(1, 5, undefined, undefined),
-    getBalance()
+    getBalance(),
+    listDailySales()
   ]);
+
+  const salesVolumeData = buildMonthlyVolumeData(dailySales);
 
   const averageNetCents = summary.totalSales > 0 ? Math.round(summary.netAmountCents / summary.totalSales) : 0;
   const goalAmountCents = 10_000_00;
@@ -112,32 +116,10 @@ export default async function DashboardPage() {
               <div className="rounded-3xl border border-slate-100 bg-gradient-to-b from-[#0f5ef7]/10 via-white to-white p-6">
                 <div className="flex items-center justify-between text-sm text-slate-500">
                   <span>Volume de vendas</span>
-                  <span>{new Date().getFullYear()}</span>
+                  <span>Últimos 12 meses</span>
                 </div>
-                <svg viewBox="0 0 400 200" className="mt-4 h-56 w-full" role="img" aria-label="Evolução mensal das vendas">
-                  <defs>
-                    <linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="#0231b1" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#0231b1" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M0 160 C35 120 70 130 100 90 C140 30 170 110 210 60 C250 10 290 150 330 90 C360 50 390 120 400 140 L400 200 L0 200 Z"
-                    fill="url(#chartFill)"
-                  />
-                  <path
-                    d="M0 160 C35 120 70 130 100 90 C140 30 170 110 210 60 C250 10 290 150 330 90 C360 50 390 120 400 140"
-                    fill="none"
-                    stroke="#0231b1"
-                    strokeWidth="6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <div className="mt-2 grid grid-cols-6 text-center text-xs font-semibold text-slate-400 sm:grid-cols-12">
-                  {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map(month => (
-                    <span key={month}>{month}</span>
-                  ))}
+                <div className="mt-4 h-56 w-full">
+                  <SalesVolumeChart data={salesVolumeData} currency="BRL" />
                 </div>
               </div>
 
@@ -323,4 +305,62 @@ export default async function DashboardPage() {
       </section>
     </div>
   );
+}
+
+const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'] as const;
+
+function buildMonthlyVolumeData(dailySales: readonly DailySalesRow[]): SalesVolumePoint[] {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+  const endExclusive = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
+  const totals = new Map<
+    string,
+    {
+      netAmountCents: number;
+      totalSales: number;
+    }
+  >();
+
+  for (const item of dailySales) {
+    const saleDate = new Date(`${item.saleDate}T00:00:00Z`);
+    if (Number.isNaN(saleDate.getTime()) || saleDate < start || saleDate >= endExclusive) {
+      continue;
+    }
+
+    const monthKey = formatMonthKey(saleDate);
+    const current =
+      totals.get(monthKey) ?? {
+        netAmountCents: 0,
+        totalSales: 0
+      };
+
+    current.netAmountCents += Math.max(0, item.netAmountCents);
+    current.totalSales += Math.max(0, item.totalSales);
+
+    totals.set(monthKey, current);
+  }
+
+  const result: SalesVolumePoint[] = [];
+
+  for (let index = 11; index >= 0; index -= 1) {
+    const monthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index, 1));
+    const key = formatMonthKey(monthDate);
+    const monthTotals = totals.get(key);
+
+    result.push({
+      month: key,
+      label: `${MONTH_LABELS[monthDate.getUTCMonth()]} ${String(monthDate.getUTCFullYear()).slice(-2)}`,
+      netAmount: monthTotals ? Math.max(0, monthTotals.netAmountCents) / 100 : 0,
+      totalSales: monthTotals ? Math.max(0, monthTotals.totalSales) : 0
+    });
+  }
+
+  return result;
+}
+
+function formatMonthKey(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
 }
