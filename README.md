@@ -35,15 +35,6 @@ O endpoint `POST /api/sales/sync` usa as rotas documentadas em [Auth / OAuth](ht
 
 ### Fluxo de saques (`/financeiro`)
 
-A página Financeiro consulta diretamente a API oficial da Kiwify em tempo real — não utiliza os registros armazenados no Supabase — para exibir o saldo disponível, as solicitações de saque existentes e os valores ainda pendentes de liberação. As informações espelham o que a Kiwify retorna na API e refletem imediatamente novas solicitações feitas pelo formulário.
-
-### POST `/api/finance/payouts`
-
-- **Autenticação**: usa as credenciais OAuth configuradas em `KIWIFY_CLIENT_ID`/`KIWIFY_CLIENT_SECRET`.
-- **Entrada** (`application/json`): `{ "amount": <número_em_centavos> }`.
-- **Resposta 200**: `{ "ok": true, "payout": { "id": "..." } }` quando o saque foi aceito pela Kiwify.
-- **Erro 400**: retornado quando `amount` está ausente ou é inválido.
-- **Erro 500**: retornado quando a Kiwify rejeita a solicitação ou ocorre falha de rede (campo `error` inclui a mensagem retornada).
-- **Observações**: os valores submetidos passam por validação no formulário para não exceder o saldo disponível informado pela Kiwify.
+A página Financeiro consome os dados sincronizados para montar a linha do tempo de liberações: exibe o saldo disponível imediato, os saques já programados e os lotes aguardando liberação. As informações são agrupadas por status de saque, facilitando a identificação de valores que podem ser solicitados e daqueles em análise.
 
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/leoxavier3914-arch/rb?utm_source=oss&utm_medium=github&utm_campaign=leoxavier3914-arch%2Frb&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)

@@ -20,7 +20,6 @@ export function CreatePayoutForm({ availableCents }: CreatePayoutFormProps) {
   const [message, setMessage] = useState('');
 
   const formattedAvailable = formatMoneyFromCents(availableCents);
-  const hasAvailableBalance = availableCents > 0;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -36,14 +35,8 @@ export function CreatePayoutForm({ availableCents }: CreatePayoutFormProps) {
       return;
     }
 
-    if (!hasAvailableBalance) {
-      setState('error');
-      setMessage('Não há saldo disponível para solicitar saque no momento.');
-      return;
-    }
-
     const amountCents = Math.round(amountNumber * 100);
-    if (amountCents > availableCents) {
+    if (availableCents > 0 && amountCents > availableCents) {
       setState('error');
       setMessage('O valor solicitado excede o saldo disponível.');
       return;
@@ -98,13 +91,10 @@ export function CreatePayoutForm({ availableCents }: CreatePayoutFormProps) {
           placeholder="Ex: 150,00"
           className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
         />
-        <p className={cn('text-xs', hasAvailableBalance ? 'text-slate-500' : 'text-amber-600')}>
-          Saldo disponível: {formattedAvailable}
-          {!hasAvailableBalance ? ' (nenhum saque pode ser solicitado agora)' : ''}
-        </p>
+        <p className="text-xs text-slate-500">Saldo disponível: {formattedAvailable}</p>
       </div>
 
-      <Button type="submit" className="gap-2" disabled={state === 'loading' || !hasAvailableBalance}>
+      <Button type="submit" className="gap-2" disabled={state === 'loading'}>
         {state === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
         Solicitar saque
       </Button>
