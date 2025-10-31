@@ -68,22 +68,34 @@ export async function createWebhook(input: CreateWebhookInput, client?: KiwifyCl
   }
 
   const name = normalizeOptionalString(input.name);
-  const products = normalizeProducts(input.products);
+  const products =
+    input.products === undefined ? undefined : normalizeProducts(input.products);
   const token = normalizeOptionalString(input.token);
 
   const resolvedClient = await ensureClient(client);
+  const requestBody: Record<string, unknown> = {
+    url,
+    triggers
+  };
+
+  if (products !== undefined) {
+    requestBody.products = products;
+  }
+
+  if (name) {
+    requestBody.name = name;
+  }
+
+  if (token) {
+    requestBody.token = token;
+  }
+
   const response = await resolvedClient.request('/webhooks', {
     method: 'POST',
     headers: {
       'content-type': 'application/json'
     },
-    body: JSON.stringify({
-      url,
-      triggers,
-      products,
-      ...(name ? { name } : {}),
-      ...(token ? { token } : {})
-    })
+    body: JSON.stringify(requestBody)
   });
 
   if (!response.ok) {
@@ -189,14 +201,8 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
   }
 
   if (input.products !== undefined) {
-    if (input.products === null) {
-      payload.products = null;
-    } else if (typeof input.products === 'string') {
-      const products = normalizeProducts(input.products);
-      payload.products = products;
-    } else {
-      throw new Error('Informe um escopo de produtos válido para o webhook.');
-    }
+    const products = normalizeProducts(input.products);
+    payload.products = products;
   }
 
   if (input.token !== undefined) {
@@ -331,15 +337,15 @@ function normalizeId(value: unknown): string | null {
   return id ?? null;
 }
 
-function normalizeProducts(value: unknown): string | null {
-  if (value === undefined || value === null) {
-    return null;
+function normalizeProducts(value: unknown): string {
+  if (value === null) {
+    return 'all';
   }
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (!trimmed || trimmed.toLowerCase() === 'all') {
-      return null;
+      return 'all';
     }
     return trimmed;
   }
