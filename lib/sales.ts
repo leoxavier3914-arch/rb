@@ -147,43 +147,59 @@ export async function listDailySales(): Promise<DailySalesRow[]> {
     readonly net_amount_cents: number | null;
   };
 
-  const { data, error } = await client
-    .from('sales')
-    .select('created_at,total_amount_cents,net_amount_cents')
-    .eq('status', 'paid')
-    .order('created_at', { ascending: true, nullsFirst: false })
-    .returns<DailySaleSourceRow[]>();
-
-  if (error) {
-    throw error;
-  }
-
   const aggregate = new Map<
     string,
     { totalSales: number; grossAmountCents: number; netAmountCents: number }
   >();
 
-  for (const row of data ?? []) {
-    if (typeof row.created_at !== 'string' || row.created_at.length === 0) {
-      continue;
+  const pageSize = 1000;
+  let from = 0;
+
+  while (true) {
+    const to = from + pageSize - 1;
+
+    const { data, error } = await client
+      .from('sales')
+      .select('created_at,total_amount_cents,net_amount_cents')
+      .eq('status', 'paid')
+      .order('created_at', { ascending: true, nullsFirst: false })
+      .range(from, to)
+      .returns<DailySaleSourceRow[]>();
+
+    if (error) {
+      throw error;
     }
 
-    const saleDate = row.created_at.slice(0, 10);
-    const gross = Number(row.total_amount_cents ?? 0);
-    const net = Number(row.net_amount_cents ?? 0);
+    const rows = data ?? [];
 
-    const current =
-      aggregate.get(saleDate) ?? {
-        totalSales: 0,
-        grossAmountCents: 0,
-        netAmountCents: 0
-      };
+    for (const row of rows) {
+      if (typeof row.created_at !== 'string' || row.created_at.length === 0) {
+        continue;
+      }
 
-    current.totalSales += 1;
-    current.grossAmountCents += Number.isFinite(gross) ? gross : 0;
-    current.netAmountCents += Number.isFinite(net) ? net : 0;
+      const saleDate = row.created_at.slice(0, 10);
+      const gross = Number(row.total_amount_cents ?? 0);
+      const net = Number(row.net_amount_cents ?? 0);
 
-    aggregate.set(saleDate, current);
+      const current =
+        aggregate.get(saleDate) ?? {
+          totalSales: 0,
+          grossAmountCents: 0,
+          netAmountCents: 0
+        };
+
+      current.totalSales += 1;
+      current.grossAmountCents += Number.isFinite(gross) ? gross : 0;
+      current.netAmountCents += Number.isFinite(net) ? net : 0;
+
+      aggregate.set(saleDate, current);
+    }
+
+    if (rows.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
   }
 
   return Array.from(aggregate.entries())
