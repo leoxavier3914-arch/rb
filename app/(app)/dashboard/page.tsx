@@ -196,21 +196,38 @@ export default async function DashboardPage() {
             <p className="mt-3 text-xs text-slate-500">Próxima premiação: placa exclusiva Kiwify Gold.</p>
           </Card>
 
-          <Card className="rounded-3xl border-none bg-white p-6 shadow-[0_20px_40px_rgba(15,23,42,0.1)]">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-500">Financeiro</p>
-                <p className="mt-2 text-3xl font-bold text-slate-900">
-                  {formatMoneyFromCents(balance.availableCents)}
-                </p>
-                <p className="text-xs text-slate-400">Saldo disponível para saque imediato.</p>
-              </div>
-              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0231b1]/10 text-[#0231b1]">
-                <Wallet2 className="h-7 w-7" />
-              </span>
+          <Card className="relative overflow-hidden rounded-3xl border-none bg-gradient-to-br from-[#0b2ad8] via-[#0f5ef7] to-[#3abff8] p-0 text-white shadow-[0_26px_60px_rgba(2,49,177,0.25)]">
+            <div className="absolute inset-0">
+              <div className="absolute -top-20 left-1/2 h-56 w-56 -translate-x-1/2 rounded-full bg-white/20 blur-3xl" />
+              <div className="absolute -bottom-12 right-0 h-48 w-48 rounded-full bg-[#3abff8]/30 blur-3xl" />
             </div>
-            <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
-              <CreatePayoutForm availableCents={balance.availableCents} />
+            <div className="relative z-10 space-y-6 p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <p className="text-xs uppercase tracking-[0.22em] text-white/70">Financeiro</p>
+                  <div className="space-y-1">
+                    <p className="text-sm text-white/80">Saldo disponível para saque</p>
+                    <p className="text-3xl font-semibold text-white">
+                      {formatMoneyFromCents(balance.availableCents)}
+                    </p>
+                  </div>
+                </div>
+                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 text-white">
+                  <Wallet2 className="h-7 w-7" />
+                </span>
+              </div>
+              <div className="space-y-4 rounded-2xl border border-white/20 bg-white/10 p-5 backdrop-blur-sm">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-white">Solicitar novo saque</p>
+                  <p className="text-xs text-white/70">
+                    Informe o valor desejado e envie a solicitação diretamente para a Kiwify.
+                  </p>
+                </div>
+                <CreatePayoutForm availableCents={balance.availableCents} variant="dashboard" />
+                <p className="text-xs text-white/70">
+                  Processaremos o pedido imediatamente de acordo com as regras vigentes da plataforma.
+                </p>
+              </div>
             </div>
           </Card>
 
