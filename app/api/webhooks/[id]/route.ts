@@ -109,7 +109,11 @@ export async function PATCH(
         products = null;
       } else if (typeof payload?.products === 'string') {
         const trimmed = payload.products.trim();
-        products = trimmed.length > 0 ? trimmed : 'all';
+        if (trimmed.length === 0 || trimmed.toLowerCase() === 'all') {
+          products = undefined;
+        } else {
+          products = trimmed;
+        }
       } else {
         return NextResponse.json(
           { ok: false, error: 'Informe os produtos como uma string válida.' },

@@ -152,3 +152,38 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   assert.strictEqual(webhook.token, null);
 });
 
+test('updateWebhook skips products when input is empty or all', async () => {
+  let captured: { path: string; init?: RequestInit } | null = null;
+  const client = createMockClient(async (path, init) => {
+    captured = { path, init };
+    return new Response(
+      JSON.stringify({
+        id: 'wh-2',
+        url: 'https://example.com/webhooks',
+        name: 'Atualizado',
+        products: 'all',
+        triggers: ['compra_aprovada']
+      }),
+      { status: 200 }
+    );
+  });
+
+  await updateWebhook(
+    'wh-2',
+    {
+      name: ' Atualizado ',
+      products: ' ALL '
+    },
+    client
+  );
+
+  assert.ok(captured, 'expected the request to be captured');
+  assert.strictEqual(captured?.path, '/webhooks/wh-2');
+  const body = captured?.init?.body;
+  assert.ok(typeof body === 'string', 'expected request body to be a string');
+  const parsedBody = JSON.parse(body!);
+  assert.deepStrictEqual(parsedBody, {
+    name: 'Atualizado'
+  });
+});
+
