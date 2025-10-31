@@ -123,17 +123,14 @@ export function SalesVolumePanel({ dailySales, currency = 'BRL', onRangeSummaryC
     if (selectedRange.type === 'months') {
       const endMonth = startOfUTCMonth(lastDate);
       const startCandidate = addMonths(endMonth, -(selectedRange.months - 1));
-      const firstMonth = startOfUTCMonth(firstDate);
-      const startMonth = startCandidate.getTime() < firstMonth.getTime() ? firstMonth : startCandidate;
-      const start = startOfUTCMonth(startMonth);
+      const start = startOfUTCMonth(startCandidate);
       const end = endOfUTCMonth(endMonth);
       return { start, end };
     }
 
     const endDate = startOfUTCDay(lastDate);
     const startCandidate = addDays(endDate, -(selectedRange.days - 1));
-    const firstDay = startOfUTCDay(firstDate);
-    const startDate = startCandidate.getTime() < firstDay.getTime() ? firstDay : startCandidate;
+    const startDate = startOfUTCDay(startCandidate);
     return { start: startDate, end: endDate };
   }, [firstDate, lastDate, selectedRange]);
 
@@ -146,16 +143,14 @@ export function SalesVolumePanel({ dailySales, currency = 'BRL', onRangeSummaryC
       return buildMonthlyData(monthlyTotals, firstDate, lastDate);
     }
 
-    if (selectedRange.type === 'months') {
-      const endMonth = startOfUTCMonth(lastDate);
-      const startCandidate = addMonths(endMonth, -(selectedRange.months - 1));
-      const firstMonth = startOfUTCMonth(firstDate);
-      const startMonth = startCandidate.getTime() < firstMonth.getTime() ? firstMonth : startCandidate;
-      return buildMonthlyData(monthlyTotals, startMonth, endMonth);
-    }
-
     if (!rangeBounds) {
       return [];
+    }
+
+    if (selectedRange.type === 'months') {
+      const startMonth = startOfUTCMonth(rangeBounds.start);
+      const endMonth = startOfUTCMonth(rangeBounds.end);
+      return buildMonthlyData(monthlyTotals, startMonth, endMonth);
     }
 
     return buildDailyData(normalizedDaily, rangeBounds.start, rangeBounds.end);
