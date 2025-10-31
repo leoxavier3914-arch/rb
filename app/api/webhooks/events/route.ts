@@ -40,9 +40,15 @@ export async function POST(request: Request) {
     }
   }
 
+  let webhookId = incoming.webhookId;
+  if (!webhookId && webhookToken) {
+    webhookId = await resolveWebhookIdFromToken(webhookToken);
+  }
+
   try {
     const event = await storeWebhookEvent({
       ...incoming,
+      webhookId,
       webhookToken
     });
     return NextResponse.json({ ok: true, event });
@@ -72,39 +78,73 @@ async function resolveTokenFromSignature(
 
 const WEBHOOK_TOKENS_CACHE_TTL_MS = 60_000;
 
-let cachedTokens:
-  | {
-      readonly tokens: string[];
-      readonly expiresAt: number;
-    }
-  | null = null;
+interface WebhookTokensCache {
+  tokens: string[];
+  byToken: Map<string, string>;
+  expiresAt: number;
+}
 
-async function loadKnownWebhookTokens(): Promise<string[]> {
+let cachedTokens: WebhookTokensCache | null = null;
+
+async function ensureWebhookTokensCache(): Promise<WebhookTokensCache> {
   const now = Date.now();
   if (cachedTokens && cachedTokens.expiresAt > now) {
-    return cachedTokens.tokens;
+    return cachedTokens;
   }
 
   try {
     const settings = await listWebhookSettings();
-    const tokens = settings
-      .map(setting => (typeof setting.token === 'string' ? setting.token.trim() : ''))
-      .filter((token): token is string => token.length > 0);
+    const tokens: string[] = [];
+    const byToken = new Map<string, string>();
+    const seen = new Set<string>();
+
+    for (const setting of settings) {
+      const token = typeof setting.token === 'string' ? setting.token.trim() : '';
+      if (!token) {
+        continue;
+      }
+      if (!seen.has(token)) {
+        tokens.push(token);
+        seen.add(token);
+      }
+
+      const webhookId = typeof setting.webhookId === 'string' ? setting.webhookId.trim() : '';
+      if (webhookId && !byToken.has(token)) {
+        byToken.set(token, webhookId);
+      }
+    }
 
     cachedTokens = {
       tokens,
+      byToken,
       expiresAt: now + WEBHOOK_TOKENS_CACHE_TTL_MS
     };
 
-    return tokens;
+    return cachedTokens;
   } catch (error) {
     console.error('load_known_webhook_tokens_failed', error);
     cachedTokens = {
       tokens: [],
+      byToken: new Map(),
       expiresAt: now + WEBHOOK_TOKENS_CACHE_TTL_MS / 2
     };
-    return [];
+    return cachedTokens;
   }
+}
+
+async function loadKnownWebhookTokens(): Promise<string[]> {
+  const cache = await ensureWebhookTokensCache();
+  return cache.tokens;
+}
+
+async function resolveWebhookIdFromToken(token: string | null): Promise<string | null> {
+  const normalized = typeof token === 'string' ? token.trim() : '';
+  if (!normalized) {
+    return null;
+  }
+
+  const cache = await ensureWebhookTokensCache();
+  return cache.byToken.get(normalized) ?? null;
 }
 
 function parseBody(body: string | null): unknown {
