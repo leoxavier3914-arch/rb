@@ -82,7 +82,7 @@ export function CreatePayoutForm({ availableCents, variant = 'default' }: Create
       <div className="space-y-1">
         <label
           htmlFor="amount"
-          className={cn('text-sm font-medium text-slate-700', isDashboardVariant && 'sr-only')}
+          className={cn('text-sm font-medium text-slate-700', isDashboardVariant && 'font-semibold text-slate-600')}
         >
           Valor do saque (em R$)
         </label>
@@ -96,16 +96,10 @@ export function CreatePayoutForm({ availableCents, variant = 'default' }: Create
           placeholder="Ex: 150,00"
           className={cn(
             'w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200',
-            isDashboardVariant &&
-              'border-white/30 bg-white/10 text-white placeholder:text-white/60 focus:border-white/50 focus:ring-2 focus:ring-white/40 focus:ring-offset-0'
+            isDashboardVariant && 'border-slate-200 focus:border-slate-400 focus:ring-slate-200'
           )}
         />
-        <p
-          className={cn(
-            'text-xs text-slate-500',
-            isDashboardVariant && 'sr-only'
-          )}
-        >
+        <p className="text-xs text-slate-500">
           Saldo disponível: {formattedAvailable}
         </p>
       </div>
@@ -115,10 +109,10 @@ export function CreatePayoutForm({ availableCents, variant = 'default' }: Create
         className={cn(
           'gap-2',
           isDashboardVariant &&
-            'w-full rounded-lg bg-white text-[#0231b1] hover:bg-white/90 focus-visible:ring-white/50 focus-visible:ring-offset-0'
+            'w-full rounded-lg bg-[#0231b1] text-white hover:bg-[#0231b1]/90 focus-visible:ring-[#0231b1]/50'
         )}
         size={isDashboardVariant ? 'lg' : 'default'}
-        variant={isDashboardVariant ? 'secondary' : 'default'}
+        variant="default"
         disabled={state === 'loading'}
       >
         {state === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
@@ -130,15 +124,9 @@ export function CreatePayoutForm({ availableCents, variant = 'default' }: Create
           className={cn(
             'flex items-center gap-2 text-sm',
             state === 'error'
-              ? isDashboardVariant
-                ? 'text-rose-100'
-                : 'text-rose-600'
+              ? 'text-rose-600'
               : state === 'success'
-              ? isDashboardVariant
-                ? 'text-emerald-100'
-                : 'text-emerald-600'
-              : isDashboardVariant
-              ? 'text-white/80'
+              ? 'text-emerald-600'
               : 'text-slate-600'
           )}
         >
