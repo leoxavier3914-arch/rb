@@ -1,5 +1,7 @@
 import { createKiwifyClient } from '@/lib/kiwify/client';
 import { listWebhooks } from '@/lib/webhooks';
+import { listWebhookEvents } from '@/lib/webhooks/events';
+import { WEBHOOK_TRIGGER_OPTIONS, type WebhookTrigger } from '@/lib/webhooks/triggers';
 import { formatDateTime } from '@/lib/ui/format';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -8,6 +10,14 @@ import { WebhookRowActions } from './WebhookRowActions';
 import { WebhookEventsTable } from './WebhookEventsTable';
 
 export const dynamic = 'force-dynamic';
+
+interface WebhooksPageProps {
+  readonly searchParams?: Record<string, string | string[] | undefined>;
+}
+
+const EVENTS_PAGE_SIZE = 10;
+
+const TRIGGER_SET = new Set(WEBHOOK_TRIGGER_OPTIONS.map(option => option.value));
 
 function formatTriggers(triggers: readonly string[]): string {
   if (!triggers || triggers.length === 0) {
@@ -23,9 +33,47 @@ function formatProducts(products: string | null): string {
   return products === 'all' ? 'Todos' : products;
 }
 
-export default async function WebhooksPage() {
-  const client = await createKiwifyClient();
-  const webhooks = await listWebhooks(client);
+function parseEventsPage(value: string | string[] | undefined): number {
+  if (Array.isArray(value)) {
+    value = value[0];
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 1;
+}
+
+function parseTrigger(value: string | string[] | undefined): 'all' | WebhookTrigger {
+  if (Array.isArray(value)) {
+    value = value[0];
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim() as WebhookTrigger;
+    if (TRIGGER_SET.has(normalized)) {
+      return normalized;
+    }
+  }
+  return 'all';
+}
+
+export default async function WebhooksPage({ searchParams }: WebhooksPageProps) {
+  const activeTrigger = parseTrigger(searchParams?.trigger);
+  const eventsPageNumber = parseEventsPage(searchParams?.page);
+
+  const [eventsPage, webhooks] = await Promise.all([
+    listWebhookEvents({
+      page: eventsPageNumber,
+      pageSize: EVENTS_PAGE_SIZE,
+      trigger: activeTrigger === 'all' ? null : activeTrigger
+    }),
+    (async () => {
+      const client = await createKiwifyClient();
+      return listWebhooks(client);
+    })()
+  ]);
 
   return (
     <div className="space-y-6">
@@ -110,14 +158,14 @@ export default async function WebhooksPage() {
       <section>
         <Card>
           <CardHeader>
-            <CardTitle className="text-xl">Eventos disponíveis</CardTitle>
+            <CardTitle className="text-xl">Eventos recebidos</CardTitle>
             <CardDescription>
-              Consulte os eventos suportados pela API oficial da Kiwify e navegue entre eles para entender quando cada
-              webhook é disparado.
+              Acompanhe em tempo real os eventos enviados pela Kiwify e filtre pelos gatilhos configurados nos seus
+              webhooks.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <WebhookEventsTable />
+            <WebhookEventsTable events={eventsPage} activeTrigger={activeTrigger} basePath="/webhooks" />
           </CardContent>
         </Card>
       </section>
