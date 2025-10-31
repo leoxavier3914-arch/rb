@@ -1,5 +1,7 @@
 import { listSales, getSalesSummary } from '@/lib/sales';
-import { formatDateTime, formatMoneyFromCentsWithCurrency, formatShortDate } from '@/lib/ui/format';
+import { getBalance } from '@/lib/finance';
+import { formatDateTime, formatMoneyFromCents, formatMoneyFromCentsWithCurrency, formatShortDate } from '@/lib/ui/format';
+import { CreatePayoutForm } from '@/app/(app)/financeiro/CreatePayoutForm';
 import {
   Card,
   CardContent,
@@ -22,7 +24,11 @@ import {
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const [summary, recent] = await Promise.all([getSalesSummary(), listSales(1, 5, undefined, undefined)]);
+  const [summary, recent, balance] = await Promise.all([
+    getSalesSummary(),
+    listSales(1, 5, undefined, undefined),
+    getBalance()
+  ]);
 
   const averageNetCents = summary.totalSales > 0 ? Math.round(summary.netAmountCents / summary.totalSales) : 0;
   const goalAmountCents = 100_000_00;
@@ -79,7 +85,7 @@ export default async function DashboardPage() {
         <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
         <p className="max-w-2xl text-sm text-slate-500">
           Visão geral das vendas sincronizadas com a API oficial da Kiwify e armazenadas no Supabase, com um layout
-          inspirado no painel Frutify.
+          inspirado no painel Kiwify.
         </p>
       </header>
 
@@ -187,7 +193,7 @@ export default async function DashboardPage() {
                 style={{ width: `${goalProgress}%` }}
               />
             </div>
-            <p className="mt-3 text-xs text-slate-500">Próxima premiação: placa exclusiva Frutify Gold.</p>
+            <p className="mt-3 text-xs text-slate-500">Próxima premiação: placa exclusiva Kiwify Gold.</p>
           </Card>
 
           <Card className="rounded-3xl border-none bg-white p-6 shadow-[0_20px_40px_rgba(15,23,42,0.1)]">
@@ -195,7 +201,7 @@ export default async function DashboardPage() {
               <div>
                 <p className="text-sm font-semibold text-slate-500">Financeiro</p>
                 <p className="mt-2 text-3xl font-bold text-slate-900">
-                  {formatMoneyFromCentsWithCurrency(summary.netAmountCents, 'BRL')}
+                  {formatMoneyFromCents(balance.availableCents)}
                 </p>
                 <p className="text-xs text-slate-400">Saldo disponível para saque imediato.</p>
               </div>
@@ -203,13 +209,8 @@ export default async function DashboardPage() {
                 <Wallet2 className="h-7 w-7" />
               </span>
             </div>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <button className="flex-1 rounded-full bg-[#0231b1] py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#0231b1]/30 transition hover:bg-[#052170]">
-                Sacar agora
-              </button>
-              <button className="flex-1 rounded-full border border-slate-200 py-2.5 text-sm font-semibold text-[#0231b1] transition hover:border-[#0231b1]">
-                Ver extrato
-              </button>
+            <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+              <CreatePayoutForm availableCents={balance.availableCents} />
             </div>
           </Card>
 
