@@ -170,13 +170,12 @@ function buildFilterHref({
 }: {
   basePath: string;
   trigger: 'all' | WebhookTrigger;
-}): string {
-  const params = new URLSearchParams();
+}): { pathname: string; query?: Record<string, string> } {
+  const query: Record<string, string> = {};
   if (trigger !== 'all') {
-    params.set('trigger', trigger);
+    query.trigger = trigger;
   }
-  const query = params.toString();
-  return `${basePath}${query ? `?${query}` : ''}`;
+  return Object.keys(query).length > 0 ? { pathname: basePath, query } : { pathname: basePath };
 }
 
 function buildPageHref({
@@ -187,16 +186,15 @@ function buildPageHref({
   basePath: string;
   page: number;
   activeTrigger: 'all' | WebhookTrigger;
-}): string {
-  const params = new URLSearchParams();
+}): { pathname: string; query?: Record<string, string> } {
+  const query: Record<string, string> = {};
   if (page > 1) {
-    params.set('page', String(page));
+    query.page = String(page);
   }
   if (activeTrigger !== 'all') {
-    params.set('trigger', activeTrigger);
+    query.trigger = activeTrigger;
   }
-  const query = params.toString();
-  return `${basePath}${query ? `?${query}` : ''}`;
+  return Object.keys(query).length > 0 ? { pathname: basePath, query } : { pathname: basePath };
 }
 
 function formatRangeStart(page: WebhookEventsPage): string {
