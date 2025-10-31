@@ -9,17 +9,19 @@ import { cn } from '@/lib/ui/classnames';
 
 interface CreatePayoutFormProps {
   readonly availableCents: number;
+  readonly variant?: 'default' | 'dashboard';
 }
 
 type FormState = 'idle' | 'loading' | 'success' | 'error';
 
-export function CreatePayoutForm({ availableCents }: CreatePayoutFormProps) {
+export function CreatePayoutForm({ availableCents, variant = 'default' }: CreatePayoutFormProps) {
   const router = useRouter();
   const [value, setValue] = useState('');
   const [state, setState] = useState<FormState>('idle');
   const [message, setMessage] = useState('');
 
   const formattedAvailable = formatMoneyFromCents(availableCents);
+  const isDashboardVariant = variant === 'dashboard';
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -76,9 +78,12 @@ export function CreatePayoutForm({ availableCents }: CreatePayoutFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className={cn('space-y-4', isDashboardVariant && 'space-y-5')}>
       <div className="space-y-1">
-        <label htmlFor="amount" className="text-sm font-medium text-slate-700">
+        <label
+          htmlFor="amount"
+          className={cn('text-sm font-medium text-slate-700', isDashboardVariant && 'sr-only')}
+        >
           Valor do saque (em R$)
         </label>
         <input
@@ -89,12 +94,33 @@ export function CreatePayoutForm({ availableCents }: CreatePayoutFormProps) {
           value={value}
           onChange={event => setValue(event.target.value)}
           placeholder="Ex: 150,00"
-          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          className={cn(
+            'w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200',
+            isDashboardVariant &&
+              'border-white/30 bg-white/10 text-white placeholder:text-white/60 focus:border-white/50 focus:ring-2 focus:ring-white/40 focus:ring-offset-0'
+          )}
         />
-        <p className="text-xs text-slate-500">Saldo disponível: {formattedAvailable}</p>
+        <p
+          className={cn(
+            'text-xs text-slate-500',
+            isDashboardVariant && 'sr-only'
+          )}
+        >
+          Saldo disponível: {formattedAvailable}
+        </p>
       </div>
 
-      <Button type="submit" className="gap-2" disabled={state === 'loading'}>
+      <Button
+        type="submit"
+        className={cn(
+          'gap-2',
+          isDashboardVariant &&
+            'w-full rounded-lg bg-white text-[#0231b1] hover:bg-white/90 focus-visible:ring-white/50 focus-visible:ring-offset-0'
+        )}
+        size={isDashboardVariant ? 'lg' : 'default'}
+        variant={isDashboardVariant ? 'secondary' : 'default'}
+        disabled={state === 'loading'}
+      >
         {state === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
         Solicitar saque
       </Button>
@@ -103,7 +129,17 @@ export function CreatePayoutForm({ availableCents }: CreatePayoutFormProps) {
         <p
           className={cn(
             'flex items-center gap-2 text-sm',
-            state === 'error' ? 'text-rose-600' : state === 'success' ? 'text-emerald-600' : 'text-slate-600'
+            state === 'error'
+              ? isDashboardVariant
+                ? 'text-rose-100'
+                : 'text-rose-600'
+              : state === 'success'
+              ? isDashboardVariant
+                ? 'text-emerald-100'
+                : 'text-emerald-600'
+              : isDashboardVariant
+              ? 'text-white/80'
+              : 'text-slate-600'
           )}
         >
           {state === 'loading' ? (
