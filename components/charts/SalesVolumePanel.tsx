@@ -336,7 +336,7 @@ function formatMonthKey(date: Date): string {
 }
 
 function formatMonthLabel(date: Date): string {
-  return `${MONTH_LABELS[date.getUTCMonth()]} ${String(date.getUTCFullYear()).slice(-2)}`;
+  return `${MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
 
 const dayLabelFormatter = new Intl.DateTimeFormat('pt-BR', {
