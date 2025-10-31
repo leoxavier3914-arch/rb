@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { Bell, ChevronDown, Grid3x3, HelpCircle, Search, UserCircle2 } from 'lucide-react';
+import { Bell, HelpCircle, Search } from 'lucide-react';
 import { MainNav } from '@/components/navigation/MainNav';
 
 export default function AppLayout({ children }: { readonly children: ReactNode }) {
@@ -12,30 +12,23 @@ export default function AppLayout({ children }: { readonly children: ReactNode }
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-4 px-4 py-6 sm:px-6">
           <Link href="/dashboard" className="flex items-center gap-3 text-white">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-xl font-semibold uppercase tracking-tight">
-              f
+              k
             </div>
             <div className="flex flex-col leading-tight">
-              <span className="text-lg font-semibold tracking-tight">frutify</span>
+              <span className="text-lg font-semibold tracking-tight">Kiwify</span>
               <span className="text-xs text-white/70">Painel RB Hub</span>
             </div>
           </Link>
 
-          <div className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-sm font-medium text-white/90 shadow-inner">
-            <Grid3x3 className="h-4 w-4" />
-            <span>Team RB LTDA</span>
-            <ChevronDown className="h-4 w-4" />
-          </div>
-
-          <div className="relative flex-1 min-w-[220px] sm:min-w-[260px]">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-            <input
-              type="search"
-              placeholder="Busque na plataforma"
-              className="h-12 w-full rounded-full border border-white/20 bg-white/15 pl-12 pr-4 text-sm font-medium text-white placeholder:text-white/50 focus:border-white focus:outline-none"
-            />
-          </div>
-
           <div className="ml-auto flex items-center gap-3 text-white">
+            <div className="relative min-w-[220px] sm:min-w-[240px]">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+              <input
+                type="search"
+                placeholder="Busque na plataforma"
+                className="h-12 w-full rounded-full border border-white/20 bg-white/15 pl-12 pr-4 text-sm font-medium text-white placeholder:text-white/50 focus:border-white focus:outline-none"
+              />
+            </div>
             <button
               type="button"
               className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white transition hover:bg-white/20"
@@ -48,16 +41,6 @@ export default function AppLayout({ children }: { readonly children: ReactNode }
             >
               <Bell className="h-5 w-5" />
             </button>
-            <div className="flex items-center gap-3 rounded-2xl bg-white/10 px-3 py-2 text-left shadow-inner">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20">
-                <UserCircle2 className="h-6 w-6" />
-              </div>
-              <div className="hidden leading-tight sm:block">
-                <p className="text-sm font-semibold">Eduardo</p>
-                <p className="text-xs text-white/70">eduardo@rbhub.com</p>
-              </div>
-              <ChevronDown className="hidden h-4 w-4 sm:block" />
-            </div>
           </div>
         </div>
       </header>
