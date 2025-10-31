@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2, AlertCircle, Pencil, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,9 +17,10 @@ type ActionState = 'idle' | 'loading' | 'success' | 'error';
 
 type Props = {
   readonly webhook: Webhook;
+  readonly isActive?: boolean;
 };
 
-export function WebhookRowActions({ webhook }: Props) {
+export function WebhookRowActions({ webhook, isActive = false }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(webhook.name ?? '');
@@ -31,6 +32,13 @@ export function WebhookRowActions({ webhook }: Props) {
   const [token, setToken] = useState(webhook.token ?? '');
   const [state, setState] = useState<ActionState>('idle');
   const [message, setMessage] = useState('');
+  const [active, setActive] = useState(Boolean(isActive));
+
+  useEffect(() => {
+    setActive(Boolean(isActive));
+  }, [isActive]);
+
+  const isBusy = state === 'loading';
 
   function resetForm() {
     setName(webhook.name ?? '');
@@ -44,7 +52,7 @@ export function WebhookRowActions({ webhook }: Props) {
 
   async function handleUpdate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (state === 'loading') {
+    if (isBusy) {
       return;
     }
 
@@ -94,6 +102,11 @@ export function WebhookRowActions({ webhook }: Props) {
       setState('success');
       setMessage('Webhook atualizado com sucesso.');
       setEditing(false);
+
+      if (active) {
+        await persistWebhookState(true, { silent: true });
+      }
+
       router.refresh();
     } catch (error) {
       console.error('update_webhook_ui_error', error);
@@ -103,7 +116,7 @@ export function WebhookRowActions({ webhook }: Props) {
   }
 
   async function handleDelete() {
-    if (state === 'loading') {
+    if (isBusy) {
       return;
     }
 
@@ -137,8 +150,88 @@ export function WebhookRowActions({ webhook }: Props) {
     }
   }
 
+  async function persistWebhookState(
+    nextValue: boolean,
+    { silent = false }: { silent?: boolean } = {}
+  ): Promise<boolean> {
+    const normalizedName = name.trim();
+    const normalizedToken = token.trim();
+    const normalizedUrl = url.trim() || webhook.url;
+
+    try {
+      const response = await fetch(`/api/webhooks/${encodeURIComponent(webhook.id)}/state`, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          active: nextValue,
+          token: normalizedToken.length > 0 ? normalizedToken : null,
+          name: normalizedName.length > 0 ? normalizedName : null,
+          url: normalizedUrl
+        })
+      });
+
+      const payload = (await response.json().catch(() => null)) as { ok: boolean; error?: string } | null;
+
+      if (!response.ok || !payload || payload.ok !== true) {
+        const errorMessage = payload?.error ?? 'Não foi possível atualizar o status do webhook.';
+        if (!silent) {
+          setState('error');
+          setMessage(errorMessage);
+        } else {
+          console.error('persist_webhook_state_failed', errorMessage);
+        }
+        return false;
+      }
+
+      setActive(nextValue);
+
+      if (!silent) {
+        setState('success');
+        setMessage(nextValue ? 'Webhook ativado.' : 'Webhook desativado.');
+      }
+
+      return true;
+    } catch (error) {
+      if (!silent) {
+        console.error('persist_webhook_state_failed', error);
+        setState('error');
+        setMessage('Falha inesperada ao atualizar o status do webhook.');
+      } else {
+        console.error('persist_webhook_state_failed', error);
+      }
+      return false;
+    }
+  }
+
+  async function handleToggleActive(nextValue: boolean) {
+    if (isBusy) {
+      return;
+    }
+
+    setState('loading');
+    setMessage(nextValue ? 'Ativando webhook...' : 'Desativando webhook...');
+
+    const success = await persistWebhookState(nextValue);
+    if (success) {
+      router.refresh();
+    }
+  }
+
   return (
     <div className="flex flex-col items-end gap-2">
+      <label className="flex items-center gap-2 text-xs text-slate-600">
+        <input
+          type="checkbox"
+          checked={active}
+          disabled={isBusy}
+          onChange={event => handleToggleActive(event.target.checked)}
+          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-1 focus:ring-slate-200"
+        />
+        <span>{active ? 'Webhook ativo' : 'Webhook inativo'}</span>
+      </label>
+
       {editing ? (
         <form onSubmit={handleUpdate} className="w-full max-w-xs space-y-3 text-left">
           <div className="space-y-1">
@@ -242,8 +335,8 @@ export function WebhookRowActions({ webhook }: Props) {
               <X className="h-4 w-4" aria-hidden />
               Cancelar
             </Button>
-            <Button type="submit" size="sm" className="gap-2" disabled={state === 'loading'}>
-              {state === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            <Button type="submit" size="sm" className="gap-2" disabled={isBusy}>
+              {isBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
               Salvar
             </Button>
           </div>
@@ -269,7 +362,7 @@ export function WebhookRowActions({ webhook }: Props) {
             size="sm"
             className="gap-1 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
             onClick={handleDelete}
-            disabled={state === 'loading'}
+            disabled={isBusy}
           >
             <Trash2 className="h-4 w-4" aria-hidden />
             Remover
@@ -284,7 +377,7 @@ export function WebhookRowActions({ webhook }: Props) {
             state === 'error' ? 'text-rose-600' : state === 'success' ? 'text-emerald-600' : 'text-slate-600'
           )}
         >
-          {state === 'loading' ? (
+          {isBusy ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           ) : state === 'success' ? (
             <CheckCircle2 className="h-4 w-4" aria-hidden />

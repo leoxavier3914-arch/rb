@@ -15,9 +15,17 @@ interface FilterOption {
   readonly label: string;
 }
 
+interface TokenFilterOption {
+  readonly value: 'all' | 'none' | string;
+  readonly label: string;
+  readonly title?: string;
+}
+
 interface WebhookEventsTableProps {
   readonly events: WebhookEventsPage;
   readonly activeTrigger: 'all' | WebhookTrigger;
+  readonly activeToken: 'all' | 'none' | string;
+  readonly tokenOptions: readonly TokenFilterOption[];
   readonly basePath?: string;
 }
 
@@ -25,7 +33,7 @@ const FILTER_OPTIONS: readonly FilterOption[] = [{ value: 'all', label: 'Todos' 
 
 const TRIGGER_LABELS = new Map(WEBHOOK_TRIGGER_OPTIONS.map(option => [option.value, option.label] as const));
 
-export function WebhookEventsTable({ events, activeTrigger, basePath = '/webhooks' }: WebhookEventsTableProps) {
+export function WebhookEventsTable({ events, activeTrigger, activeToken, tokenOptions, basePath = '/webhooks' }: WebhookEventsTableProps) {
   const { items, total, page, pageSize } = events;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const prevPage = page > 1 ? page - 1 : null;
@@ -33,10 +41,11 @@ export function WebhookEventsTable({ events, activeTrigger, basePath = '/webhook
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Gatilhos</span>
         {FILTER_OPTIONS.map(option => {
           const isActive = option.value === activeTrigger;
-          const href = buildFilterHref({ basePath, trigger: option.value });
+          const href = buildFilterHref({ basePath, trigger: option.value, activeToken });
 
           return (
             <Button
@@ -52,6 +61,29 @@ export function WebhookEventsTable({ events, activeTrigger, basePath = '/webhook
                 {option.value !== 'all' ? (
                   <span className="text-xs font-normal text-slate-400">{option.value}</span>
                 ) : null}
+              </Link>
+            </Button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tokens</span>
+        {tokenOptions.map(option => {
+          const isActive = option.value === activeToken;
+          const href = buildTokenHref({ basePath, token: option.value, activeTrigger });
+
+          return (
+            <Button
+              key={option.value}
+              size="sm"
+              variant={isActive ? 'default' : 'outline'}
+              aria-pressed={isActive}
+              className="gap-2"
+              asChild
+            >
+              <Link href={href} prefetch={false} title={option.title ?? option.label}>
+                {option.label}
               </Link>
             </Button>
           );
@@ -104,6 +136,11 @@ export function WebhookEventsTable({ events, activeTrigger, basePath = '/webhook
                         {extraSource ? (
                           <span className="text-xs text-slate-500">{extraSource}</span>
                         ) : null}
+                        {event.webhookToken ? (
+                          <span className="text-xs text-slate-500" title={event.webhookToken}>
+                            Token: {summarizeTokenValue(event.webhookToken)}
+                          </span>
+                        ) : null}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -137,7 +174,10 @@ export function WebhookEventsTable({ events, activeTrigger, basePath = '/webhook
           <div className="flex items-center gap-2">
             {prevPage ? (
               <Button variant="outline" size="sm" asChild>
-                <Link href={buildPageHref({ basePath, page: prevPage, activeTrigger })} prefetch={false}>
+                <Link
+                  href={buildPageHref({ basePath, page: prevPage, activeTrigger, activeToken })}
+                  prefetch={false}
+                >
                   Página anterior
                 </Link>
               </Button>
@@ -148,7 +188,10 @@ export function WebhookEventsTable({ events, activeTrigger, basePath = '/webhook
             )}
             {nextPage ? (
               <Button variant="outline" size="sm" asChild>
-                <Link href={buildPageHref({ basePath, page: nextPage, activeTrigger })} prefetch={false}>
+                <Link
+                  href={buildPageHref({ basePath, page: nextPage, activeTrigger, activeToken })}
+                  prefetch={false}
+                >
                   Próxima página
                 </Link>
               </Button>
@@ -166,14 +209,38 @@ export function WebhookEventsTable({ events, activeTrigger, basePath = '/webhook
 
 function buildFilterHref({
   basePath,
-  trigger
+  trigger,
+  activeToken
 }: {
   basePath: string;
   trigger: 'all' | WebhookTrigger;
+  activeToken: 'all' | 'none' | string;
 }): { pathname: string; query?: Record<string, string> } {
   const query: Record<string, string> = {};
   if (trigger !== 'all') {
     query.trigger = trigger;
+  }
+  if (activeToken !== 'all') {
+    query.token = activeToken;
+  }
+  return Object.keys(query).length > 0 ? { pathname: basePath, query } : { pathname: basePath };
+}
+
+function buildTokenHref({
+  basePath,
+  token,
+  activeTrigger
+}: {
+  basePath: string;
+  token: 'all' | 'none' | string;
+  activeTrigger: 'all' | WebhookTrigger;
+}): { pathname: string; query?: Record<string, string> } {
+  const query: Record<string, string> = {};
+  if (token !== 'all') {
+    query.token = token;
+  }
+  if (activeTrigger !== 'all') {
+    query.trigger = activeTrigger;
   }
   return Object.keys(query).length > 0 ? { pathname: basePath, query } : { pathname: basePath };
 }
@@ -181,11 +248,13 @@ function buildFilterHref({
 function buildPageHref({
   basePath,
   page,
-  activeTrigger
+  activeTrigger,
+  activeToken
 }: {
   basePath: string;
   page: number;
   activeTrigger: 'all' | WebhookTrigger;
+  activeToken: 'all' | 'none' | string;
 }): { pathname: string; query?: Record<string, string> } {
   const query: Record<string, string> = {};
   if (page > 1) {
@@ -193,6 +262,9 @@ function buildPageHref({
   }
   if (activeTrigger !== 'all') {
     query.trigger = activeTrigger;
+  }
+  if (activeToken !== 'all') {
+    query.token = activeToken;
   }
   return Object.keys(query).length > 0 ? { pathname: basePath, query } : { pathname: basePath };
 }
@@ -303,6 +375,13 @@ function formatExtraSource(event: WebhookEventRow): string {
     return `IP ${ip}`;
   }
   return '';
+}
+
+function summarizeTokenValue(token: string): string {
+  if (token.length <= 12) {
+    return token;
+  }
+  return `${token.slice(0, 6)}…${token.slice(-4)}`;
 }
 
 function findFirstString(payload: JsonValue, paths: readonly (readonly string[])[]): string | null {

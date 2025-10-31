@@ -8,6 +8,7 @@ test('resolveIncomingWebhookEvent extracts metadata from headers and payload', (
     'x-kiwify-event': 'compra_aprovada',
     'x-kiwify-event-id': 'evt-123',
     'x-kiwify-account-id': 'acc-1',
+    'x-kiwify-webhook-token': 'tok-123',
     'user-agent': 'kiwify-webhook'
   });
 
@@ -27,6 +28,7 @@ test('resolveIncomingWebhookEvent extracts metadata from headers and payload', (
   assert.equal(incoming.trigger, 'compra_aprovada');
   assert.equal(incoming.status, 'paid');
   assert.equal(incoming.source, 'acc-1');
+  assert.equal(incoming.webhookToken, 'tok-123');
   assert.equal(incoming.occurredAt, '2024-10-01T12:00:00.000Z');
   assert.equal(incoming.receivedAt, '2024-10-01T12:01:00.000Z');
   assert.equal(incoming.headers['x-kiwify-event'], 'compra_aprovada');
@@ -41,7 +43,8 @@ test('resolveIncomingWebhookEvent normalizes trigger and occurs_at from payload 
       created_at: 1_714_500_000
     },
     payload: {
-      account_id: 'acc-2'
+      account_id: 'acc-2',
+      token: 'payload-token'
     }
   };
 
@@ -51,6 +54,7 @@ test('resolveIncomingWebhookEvent normalizes trigger and occurs_at from payload 
   assert.equal(incoming.eventId, 'evt-777');
   assert.equal(incoming.status, 'refused');
   assert.equal(incoming.source, 'acc-2');
+  assert.equal(incoming.webhookToken, 'payload-token');
   assert.equal(new Date(incoming.occurredAt ?? '').getTime(), 1_714_500_000_000);
   assert.deepEqual(incoming.headers, {});
 });
