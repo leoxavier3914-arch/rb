@@ -133,7 +133,7 @@ test('updateWebhook accepts partial updates and trims values', async () => {
 
   assert.ok(captured, 'expected the request to be captured');
   assert.strictEqual(captured?.path, '/webhooks/wh-1');
-  assert.strictEqual(captured?.init?.method, 'PATCH');
+  assert.strictEqual(captured?.init?.method, 'PUT');
   const body = captured?.init?.body;
   assert.ok(typeof body === 'string', 'expected request body to be a string');
   const parsedBody = JSON.parse(body!);
