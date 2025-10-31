@@ -42,6 +42,31 @@ export interface DailySalesRow {
   readonly netAmountCents: number;
 }
 
+export function toIsoTimestamp(value: string | Date | null): string | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  return null;
+}
+
+export function pickSaleTimestamp(
+  paidAt: string | Date | null,
+  createdAt: string | Date | null
+): string | null {
+  return toIsoTimestamp(paidAt) ?? toIsoTimestamp(createdAt);
+}
+
 export interface UpsertSaleInput {
   readonly id: string;
   readonly status: string | null;
@@ -142,8 +167,8 @@ export async function listDailySales(): Promise<DailySalesRow[]> {
   const client = getServiceClient();
 
   type DailySaleSourceRow = {
-    readonly created_at: string | null;
-    readonly paid_at: string | null;
+    readonly created_at: string | Date | null;
+    readonly paid_at: string | Date | null;
     readonly total_amount_cents: number | null;
     readonly net_amount_cents: number | null;
   };
@@ -175,10 +200,7 @@ export async function listDailySales(): Promise<DailySalesRow[]> {
     const rows = data ?? [];
 
     for (const row of rows) {
-      const saleTimestamp =
-        typeof row.paid_at === 'string' && row.paid_at.length > 0
-          ? row.paid_at
-          : row.created_at;
+      const saleTimestamp = pickSaleTimestamp(row.paid_at, row.created_at);
 
       if (typeof saleTimestamp !== 'string' || saleTimestamp.length === 0) {
         continue;
