@@ -73,20 +73,28 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
       setState('loading');
       setMessage('Atualizando webhook na Kiwify...');
       const normalizedName = name.trim();
-      const normalizedProducts = products.trim();
       const normalizedToken = token.trim();
+      const updatePayload: Record<string, unknown> = {
+        url: normalizedUrl,
+        triggers,
+        name: normalizedName.length > 0 ? normalizedName : null,
+        token: normalizedToken.length > 0 ? normalizedToken : null
+      };
+
+      const normalizedProducts = products.trim();
+      const shouldIncludeProducts =
+        normalizedProducts.length > 0 && normalizedProducts.toLowerCase() !== 'all';
+
+      if (shouldIncludeProducts) {
+        updatePayload.products = normalizedProducts;
+      }
+
       const response = await fetch(`/api/webhooks/${encodeURIComponent(webhook.id)}`, {
         method: 'PATCH',
         headers: {
           'content-type': 'application/json'
         },
-        body: JSON.stringify({
-          url: normalizedUrl,
-          triggers,
-          name: normalizedName.length > 0 ? normalizedName : null,
-          products: normalizedProducts.length > 0 ? normalizedProducts : 'all',
-          token: normalizedToken.length > 0 ? normalizedToken : null
-        })
+        body: JSON.stringify(updatePayload)
       });
       const payload = (await response.json().catch(() => null)) as
         | { ok: boolean; error?: string; webhook?: { id: string } }
