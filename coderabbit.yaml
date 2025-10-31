@@ -1,0 +1,6 @@
+reviews:
+  auto_review: true       # ativa revisão automática em todos PRs
+  skip_drafts: false      # garante que drafts também sejam revisados
+  review_status: true     # mantém o aviso de status ativo (opcional)
+  comment_mode: inline    # faz os comentários aparecerem no código
+  review_level: deep      # revisão mais detalhada (padrão: normal)
