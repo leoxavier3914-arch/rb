@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { CreateWebhookForm } from './CreateWebhookForm';
 import { WebhookRowActions } from './WebhookRowActions';
+import { WebhookEventsTable } from './WebhookEventsTable';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ export default async function WebhooksPage() {
   const webhooks = await listWebhooks(client);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Webhooks</h1>
         <p className="text-sm text-slate-500">
@@ -35,8 +36,8 @@ export default async function WebhooksPage() {
         </p>
       </header>
 
-      <section className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-        <Card className="order-2 lg:order-1">
+      <section className="grid gap-6 xl:grid-cols-3">
+        <Card className="order-2 xl:order-1 xl:col-span-2">
           <CardHeader>
             <CardTitle className="text-xl">Webhooks configurados</CardTitle>
             <CardDescription>Consulta em tempo real diretamente da Kiwify.</CardDescription>
@@ -49,8 +50,8 @@ export default async function WebhooksPage() {
                   <TableHead>Nome</TableHead>
                   <TableHead>URL</TableHead>
                   <TableHead>Gatilhos</TableHead>
-                  <TableHead>Produtos</TableHead>
-                  <TableHead>Token</TableHead>
+                  <TableHead className="hidden lg:table-cell">Produtos</TableHead>
+                  <TableHead className="hidden xl:table-cell">Token</TableHead>
                   <TableHead>Atualização</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -58,7 +59,7 @@ export default async function WebhooksPage() {
               <TableBody>
                 {webhooks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-6 text-center text-slate-500">
+                    <TableCell colSpan={8} className="py-6 text-center text-slate-500">
                       Nenhum webhook cadastrado até o momento.
                     </TableCell>
                   </TableRow>
@@ -67,14 +68,18 @@ export default async function WebhooksPage() {
                     <TableRow key={webhook.id}>
                       <TableCell className="font-mono text-xs text-slate-500">{webhook.id}</TableCell>
                       <TableCell className="text-xs text-slate-700">{webhook.name ?? '—'}</TableCell>
-                      <TableCell className="max-w-xs truncate text-sm text-slate-900" title={webhook.url}>
+                      <TableCell className="max-w-[220px] truncate text-sm text-slate-900" title={webhook.url}>
                         {webhook.url}
                       </TableCell>
                       <TableCell className="text-xs text-slate-600" title={formatTriggers(webhook.triggers)}>
                         {formatTriggers(webhook.triggers)}
                       </TableCell>
-                      <TableCell className="text-xs text-slate-600">{formatProducts(webhook.products)}</TableCell>
-                      <TableCell className="text-xs text-slate-500">{webhook.token ?? '—'}</TableCell>
+                      <TableCell className="hidden text-xs text-slate-600 lg:table-cell">
+                        {formatProducts(webhook.products)}
+                      </TableCell>
+                      <TableCell className="hidden text-xs text-slate-500 xl:table-cell">
+                        {webhook.token ?? '—'}
+                      </TableCell>
                       <TableCell className="text-xs text-slate-500">
                         {webhook.updatedAt ? formatDateTime(webhook.updatedAt) : '—'}
                       </TableCell>
@@ -89,7 +94,7 @@ export default async function WebhooksPage() {
           </CardContent>
         </Card>
 
-        <Card className="order-1 lg:order-2">
+        <Card className="order-1 xl:order-2">
           <CardHeader>
             <CardTitle className="text-xl">Criar webhook</CardTitle>
             <CardDescription>
@@ -98,6 +103,21 @@ export default async function WebhooksPage() {
           </CardHeader>
           <CardContent>
             <CreateWebhookForm />
+          </CardContent>
+        </Card>
+      </section>
+
+      <section>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">Eventos disponíveis</CardTitle>
+            <CardDescription>
+              Consulte os eventos suportados pela API oficial da Kiwify e navegue entre eles para entender quando cada
+              webhook é disparado.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <WebhookEventsTable />
           </CardContent>
         </Card>
       </section>
