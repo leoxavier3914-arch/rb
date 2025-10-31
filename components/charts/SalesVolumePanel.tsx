@@ -7,9 +7,23 @@ import type { DailySalesRow } from '@/lib/sales';
 import { formatShortDate } from '@/lib/ui/format';
 import { CalendarClock, ChevronDown, ShoppingCart, Wallet2 } from 'lucide-react';
 
+export interface RangeSummary {
+  readonly totalSales: number;
+  readonly grossAmountCents: number;
+  readonly netAmountCents: number;
+  readonly feeAmountCents: number;
+}
+
+export interface RangeSummaryChangeEvent {
+  readonly range: RangeOption;
+  readonly totals: RangeSummary;
+  readonly hasActiveFilter: boolean;
+}
+
 interface SalesVolumePanelProps {
   readonly dailySales: readonly DailySalesRow[];
   readonly currency?: string;
+  readonly onRangeSummaryChange?: (event: RangeSummaryChangeEvent) => void;
 }
 
 type RangeOption =
@@ -20,6 +34,7 @@ type RangeOption =
 interface NormalizedDailyPoint {
   readonly date: Date;
   readonly isoDate: string;
+  readonly grossAmountCents: number;
   readonly netAmountCents: number;
   readonly totalSales: number;
 }
@@ -36,7 +51,7 @@ const RANGE_OPTIONS = [
   { id: '7d', label: '7 dias', description: 'Últimos 7 dias', type: 'days', days: 7 }
 ] as const satisfies readonly RangeOption[];
 
-export function SalesVolumePanel({ dailySales, currency = 'BRL' }: SalesVolumePanelProps) {
+export function SalesVolumePanel({ dailySales, currency = 'BRL', onRangeSummaryChange }: SalesVolumePanelProps) {
   const [selectedRange, setSelectedRange] = useState<RangeOption>(RANGE_OPTIONS[0]);
   const [isMenuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -53,12 +68,20 @@ export function SalesVolumePanel({ dailySales, currency = 'BRL' }: SalesVolumePa
           return null;
         }
 
-        const netAmountCents = Math.max(0, typeof item.netAmountCents === 'number' ? item.netAmountCents : Number(item.netAmountCents ?? 0));
+        const grossAmountCents = Math.max(
+          0,
+          typeof item.grossAmountCents === 'number' ? item.grossAmountCents : Number(item.grossAmountCents ?? 0)
+        );
+        const netAmountCents = Math.max(
+          0,
+          typeof item.netAmountCents === 'number' ? item.netAmountCents : Number(item.netAmountCents ?? 0)
+        );
         const totalSales = Math.max(0, typeof item.totalSales === 'number' ? item.totalSales : Number(item.totalSales ?? 0));
 
         return {
           date,
           isoDate: formatISODate(date),
+          grossAmountCents,
           netAmountCents,
           totalSales
         };
@@ -86,6 +109,34 @@ export function SalesVolumePanel({ dailySales, currency = 'BRL' }: SalesVolumePa
   const firstDate = normalizedDaily.length > 0 ? normalizedDaily[0].date : null;
   const lastDate = normalizedDaily.length > 0 ? normalizedDaily[normalizedDaily.length - 1].date : null;
 
+  const rangeBounds = useMemo(() => {
+    if (!firstDate || !lastDate) {
+      return null;
+    }
+
+    if (selectedRange.type === 'all') {
+      const start = startOfUTCDay(firstDate);
+      const end = startOfUTCDay(lastDate);
+      return { start, end };
+    }
+
+    if (selectedRange.type === 'months') {
+      const endMonth = startOfUTCMonth(lastDate);
+      const startCandidate = addMonths(endMonth, -(selectedRange.months - 1));
+      const firstMonth = startOfUTCMonth(firstDate);
+      const startMonth = startCandidate.getTime() < firstMonth.getTime() ? firstMonth : startCandidate;
+      const start = startOfUTCMonth(startMonth);
+      const end = endOfUTCMonth(endMonth);
+      return { start, end };
+    }
+
+    const endDate = startOfUTCDay(lastDate);
+    const startCandidate = addDays(endDate, -(selectedRange.days - 1));
+    const firstDay = startOfUTCDay(firstDate);
+    const startDate = startCandidate.getTime() < firstDay.getTime() ? firstDay : startCandidate;
+    return { start: startDate, end: endDate };
+  }, [firstDate, lastDate, selectedRange]);
+
   const chartData = useMemo<SalesVolumePoint[]>(() => {
     if (!firstDate || !lastDate) {
       return [];
@@ -103,12 +154,52 @@ export function SalesVolumePanel({ dailySales, currency = 'BRL' }: SalesVolumePa
       return buildMonthlyData(monthlyTotals, startMonth, endMonth);
     }
 
-    const endDate = startOfUTCDay(lastDate);
-    const startCandidate = addDays(endDate, -(selectedRange.days - 1));
-    const firstDay = startOfUTCDay(firstDate);
-    const startDate = startCandidate.getTime() < firstDay.getTime() ? firstDay : startCandidate;
-    return buildDailyData(normalizedDaily, startDate, endDate);
-  }, [firstDate, lastDate, monthlyTotals, normalizedDaily, selectedRange]);
+    if (!rangeBounds) {
+      return [];
+    }
+
+    return buildDailyData(normalizedDaily, rangeBounds.start, rangeBounds.end);
+  }, [firstDate, lastDate, monthlyTotals, normalizedDaily, rangeBounds, selectedRange]);
+
+  const rangeSummary = useMemo<RangeSummary>(() => {
+    if (!rangeBounds) {
+      return { totalSales: 0, grossAmountCents: 0, netAmountCents: 0, feeAmountCents: 0 };
+    }
+
+    const startTime = rangeBounds.start.getTime();
+    const endTime = rangeBounds.end.getTime();
+
+    let totalSales = 0;
+    let grossAmountCents = 0;
+    let netAmountCents = 0;
+
+    for (const point of normalizedDaily) {
+      const time = point.date.getTime();
+      if (time < startTime || time > endTime) {
+        continue;
+      }
+
+      totalSales += point.totalSales;
+      grossAmountCents += point.grossAmountCents;
+      netAmountCents += point.netAmountCents;
+    }
+
+    const feeAmountCents = Math.max(0, grossAmountCents - netAmountCents);
+
+    return { totalSales, grossAmountCents, netAmountCents, feeAmountCents };
+  }, [normalizedDaily, rangeBounds]);
+
+  useEffect(() => {
+    if (!onRangeSummaryChange) {
+      return;
+    }
+
+    onRangeSummaryChange({
+      range: selectedRange,
+      totals: rangeSummary,
+      hasActiveFilter: selectedRange.id !== 'all'
+    });
+  }, [onRangeSummaryChange, rangeSummary, selectedRange]);
 
   const periodDescription = useMemo(() => {
     if (!firstDate || !lastDate) {
@@ -226,10 +317,21 @@ function startOfUTCMonth(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
 }
 
+function endOfUTCMonth(date: Date): Date {
+  const start = startOfUTCMonth(date);
+  const result = addMonths(start, 1);
+  result.setUTCDate(result.getUTCDate() - 1);
+  return endOfUTCDay(result);
+}
+
 function addDays(date: Date, amount: number): Date {
   const result = new Date(date);
   result.setUTCDate(result.getUTCDate() + amount);
   return result;
+}
+
+function endOfUTCDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
 }
 
 function addMonths(date: Date, amount: number): Date {
