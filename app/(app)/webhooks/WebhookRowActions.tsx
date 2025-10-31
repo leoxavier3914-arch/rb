@@ -75,18 +75,29 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
       const normalizedName = name.trim();
       const normalizedProducts = products.trim();
       const normalizedToken = token.trim();
+      const productsValue =
+        normalizedProducts.length > 0 && normalizedProducts.toLowerCase() !== 'all'
+          ? normalizedProducts
+          : null;
+      const payload = {
+        url: normalizedUrl,
+        triggers,
+        name: normalizedName.length > 0 ? normalizedName : null,
+        products: productsValue,
+        token: normalizedToken.length > 0 ? normalizedToken : null
+      } satisfies {
+        url: string;
+        triggers: readonly WebhookTrigger[];
+        name: string | null;
+        products: string | null;
+        token: string | null;
+      };
       const response = await fetch(`/api/webhooks/${encodeURIComponent(webhook.id)}`, {
         method: 'PATCH',
         headers: {
           'content-type': 'application/json'
         },
-        body: JSON.stringify({
-          url: normalizedUrl,
-          triggers,
-          name: normalizedName.length > 0 ? normalizedName : null,
-          products: normalizedProducts.length > 0 ? normalizedProducts : 'all',
-          token: normalizedToken.length > 0 ? normalizedToken : null
-        })
+        body: JSON.stringify(payload)
       });
       const payload = (await response.json().catch(() => null)) as
         | { ok: boolean; error?: string; webhook?: { id: string } }

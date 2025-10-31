@@ -152,3 +152,39 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   assert.strictEqual(webhook.token, null);
 });
 
+test("updateWebhook treats 'all' products scope as null", async () => {
+  let captured: { path: string; init?: RequestInit } | null = null;
+  const client = createMockClient(async (path, init) => {
+    captured = { path, init };
+    return new Response(
+      JSON.stringify({
+        id: 'wh-1',
+        url: 'https://example.com/new-webhook',
+        products: null,
+        triggers: ['compra_aprovada'],
+        token: null,
+        updated_at: '2024-06-05T08:00:00Z'
+      }),
+      { status: 200 }
+    );
+  });
+
+  const webhook = await updateWebhook(
+    'wh-1',
+    {
+      products: ' all '
+    },
+    client
+  );
+
+  assert.ok(captured, 'expected the request to be captured');
+  assert.strictEqual(captured?.path, '/webhooks/wh-1');
+  assert.strictEqual(captured?.init?.method, 'PUT');
+  const body = captured?.init?.body;
+  assert.ok(typeof body === 'string', 'expected request body to be a string');
+  const parsedBody = JSON.parse(body!);
+  assert.deepStrictEqual(parsedBody, { products: null });
+
+  assert.strictEqual(webhook.products, null);
+});
+

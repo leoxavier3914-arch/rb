@@ -189,13 +189,22 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
   }
 
   if (input.products !== undefined) {
-    const products = normalizeProducts(input.products);
-    if (products) {
-      payload.products = products;
-    } else if (input.products) {
-      throw new Error('Informe um escopo de produtos válido para o webhook.');
+    if (input.products === null) {
+      payload.products = null;
+    } else if (typeof input.products === 'string') {
+      const trimmed = input.products.trim();
+      if (!trimmed || trimmed.toLowerCase() === 'all') {
+        payload.products = null;
+      } else {
+        const products = normalizeProducts(trimmed);
+        if (products) {
+          payload.products = products;
+        } else {
+          throw new Error('Informe um escopo de produtos válido para o webhook.');
+        }
+      }
     } else {
-      payload.products = 'all';
+      throw new Error('Informe um escopo de produtos válido para o webhook.');
     }
   }
 
