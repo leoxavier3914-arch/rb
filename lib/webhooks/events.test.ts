@@ -123,3 +123,51 @@ test('resolveWebhookIdFromToken maps tokens returned by the Kiwify API when sett
 
   __testing.resetTestingState();
 });
+
+test('resolveWebhookIdFromToken keeps remote mapping when refreshing cache fails', async () => {
+  const { __testing } = await import('@/lib/webhooks/token-cache');
+
+  __testing.resetTestingState();
+
+  try {
+    let fetchAttempts = 0;
+    const now = new Date().toISOString();
+    const remoteWebhooks: Webhook[] = [
+      {
+        id: 'wh-keep-remote',
+        name: 'Remote webhook to keep',
+        url: 'https://example.com/webhooks/keep',
+        products: null,
+        triggers: [],
+        token: 'tok-keep-remote',
+        createdAt: now,
+        updatedAt: now
+      }
+    ];
+
+    __testing.setDependencies({
+      listWebhookSettings: async () => [],
+      createKiwifyClient: async () => ({ token: 't' } as unknown as KiwifyClient),
+      listWebhooks: async () => {
+        fetchAttempts += 1;
+        if (fetchAttempts === 1) {
+          return remoteWebhooks;
+        }
+        throw new Error('remote fetch failed');
+      }
+    });
+
+    const firstResolution = await __testing.resolveWebhookIdFromToken('tok-keep-remote');
+    assert.equal(firstResolution, 'wh-keep-remote');
+    assert.equal(fetchAttempts, 1);
+
+    const cache = await __testing.ensureWebhookTokensCache();
+    cache.expiresAt = Date.now() - 1;
+
+    const resolutionAfterFailure = await __testing.resolveWebhookIdFromToken('tok-keep-remote');
+    assert.equal(resolutionAfterFailure, 'wh-keep-remote');
+    assert.equal(fetchAttempts, 2);
+  } finally {
+    __testing.resetTestingState();
+  }
+});
