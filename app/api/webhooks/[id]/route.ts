@@ -110,7 +110,7 @@ export async function PATCH(
       } else if (typeof payload?.products === 'string') {
         const trimmed = payload.products.trim();
         if (trimmed.length === 0 || trimmed.toLowerCase() === 'all') {
-          products = undefined;
+          products = null;
         } else {
           products = trimmed;
         }
