@@ -46,98 +46,13 @@ function parseEventsPage(value: string | string[] | undefined): number {
   return 1;
 }
 
-type TokenFilterOption = {
-  readonly value: 'all' | 'none' | string;
-  readonly label: string;
-  readonly title?: string;
-};
-
-function parseToken(value: string | string[] | undefined): 'all' | 'none' | string {
-  if (Array.isArray(value)) {
-    value = value[0];
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim();
-    if (normalized.length === 0) {
-      return 'all';
-    }
-    if (normalized === 'all' || normalized === 'none') {
-      return normalized;
-    }
-    return normalized;
-  }
-  return 'all';
-}
-
-function buildTokenOptions({
-  webhooks,
-  settings,
-  events,
-  activeToken
-}: {
-  readonly webhooks: readonly Webhook[];
-  readonly settings: readonly WebhookSetting[];
-  readonly events: { readonly items: readonly { readonly webhookToken: string | null }[] };
-  readonly activeToken: 'all' | 'none' | string;
-}): TokenFilterOption[] {
-  const tokens = new Set<string>();
-
-  for (const webhook of webhooks) {
-    if (webhook.token) {
-      tokens.add(webhook.token);
-    }
-  }
-
-  for (const setting of settings) {
-    if (setting.token) {
-      tokens.add(setting.token);
-    }
-  }
-
-  for (const event of events.items) {
-    if (event.webhookToken) {
-      tokens.add(event.webhookToken);
-    }
-  }
-
-  const sortedTokens = Array.from(tokens).sort((a, b) => a.localeCompare(b));
-  const hasNullSources =
-    events.items.some(event => !event.webhookToken) ||
-    settings.some(setting => !setting.token) ||
-    webhooks.some(webhook => !webhook.token) ||
-    activeToken === 'none';
-
-  const options: TokenFilterOption[] = [
-    { value: 'all', label: 'Todos', title: 'Todos os webhooks' }
-  ];
-
-  if (hasNullSources) {
-    options.push({ value: 'none', label: 'Sem token', title: 'Eventos sem token registrado' });
-  }
-
-  for (const token of sortedTokens) {
-    options.push({ value: token, label: summarizeToken(token), title: token });
-  }
-
-  return options;
-}
-
-function summarizeToken(token: string): string {
-  if (token.length <= 12) {
-    return token;
-  }
-  return `${token.slice(0, 6)}…${token.slice(-4)}`;
-}
-
 export default async function WebhooksPage({ searchParams }: WebhooksPageProps) {
   const eventsPageNumber = parseEventsPage(searchParams?.page);
-  const activeToken = parseToken(searchParams?.token);
 
   const [eventsPage, webhooks, webhookSettings] = await Promise.all([
     listWebhookEvents({
       page: eventsPageNumber,
-      pageSize: EVENTS_PAGE_SIZE,
-      webhookToken: activeToken === 'all' ? undefined : activeToken === 'none' ? null : activeToken
+      pageSize: EVENTS_PAGE_SIZE
     }),
     (async () => {
       const client = await createKiwifyClient();
@@ -150,12 +65,6 @@ export default async function WebhooksPage({ searchParams }: WebhooksPageProps) 
   ]);
 
   const settingsMap = mapWebhookSettingsById(webhookSettings);
-  const tokenOptions = buildTokenOptions({
-    webhooks,
-    settings: webhookSettings,
-    events: eventsPage,
-    activeToken
-  });
 
   return (
     <div className="space-y-6">
@@ -265,12 +174,7 @@ export default async function WebhooksPage({ searchParams }: WebhooksPageProps) 
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <WebhookEventsTable
-              events={eventsPage}
-              activeToken={activeToken}
-              tokenOptions={tokenOptions}
-              basePath="/webhooks"
-            />
+          <WebhookEventsTable events={eventsPage} basePath="/webhooks" />
           </CardContent>
         </Card>
       </section>

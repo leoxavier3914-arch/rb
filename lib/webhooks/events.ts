@@ -10,8 +10,6 @@ export interface WebhookEventRow {
   readonly trigger: string | null;
   readonly status: string | null;
   readonly source: string | null;
-  readonly webhookId: string | null;
-  readonly webhookToken: string | null;
   readonly headers: Record<string, string>;
   readonly payload: JsonValue;
   readonly occurredAt: string | null;
@@ -30,7 +28,6 @@ export interface ListWebhookEventsOptions {
   readonly pageSize?: number;
   readonly trigger?: string | null;
   readonly search?: string | null;
-  readonly webhookToken?: string | null;
 }
 
 export interface StoreWebhookEventInput {
@@ -38,8 +35,6 @@ export interface StoreWebhookEventInput {
   readonly trigger?: string | null;
   readonly status?: string | null;
   readonly source?: string | null;
-  readonly webhookId?: string | null;
-  readonly webhookToken?: string | null;
   readonly headers?: Record<string, string>;
   readonly payload: JsonValue;
   readonly occurredAt?: string | null;
@@ -51,8 +46,6 @@ export interface IncomingWebhookEvent {
   readonly trigger: string | null;
   readonly status: string | null;
   readonly source: string | null;
-  readonly webhookId: string | null;
-  readonly webhookToken: string | null;
   readonly headers: Record<string, string>;
   readonly payload: JsonValue;
   readonly occurredAt: string | null;
@@ -60,21 +53,6 @@ export interface IncomingWebhookEvent {
 }
 
 const DEFAULT_PAGE_SIZE = 10;
-
-const WEBHOOK_TOKEN_HEADER_CANDIDATES = [
-  'x-kiwify-webhook-token',
-  'x-kiwify-webhook-secret',
-  'x-kiwify-token',
-  'x-kiwify-secret',
-  'x-webhook-token',
-  'x-webhook-secret'
-] as const;
-
-const WEBHOOK_ID_HEADER_CANDIDATES = [
-  'x-kiwify-webhook-id',
-  'x-kiwify-webhook',
-  'x-webhook-id'
-] as const;
 
 export async function listWebhookEvents(options: ListWebhookEventsOptions = {}): Promise<WebhookEventsPage> {
   const client = getServiceClient();
@@ -92,8 +70,6 @@ export async function listWebhookEvents(options: ListWebhookEventsOptions = {}):
         trigger,
         status,
         source,
-        webhook_id,
-        webhook_token,
         headers,
         payload,
         occurred_at,
@@ -106,19 +82,6 @@ export async function listWebhookEvents(options: ListWebhookEventsOptions = {}):
   const trigger = normalizeString(options.trigger);
   if (trigger) {
     query = query.eq('trigger', trigger);
-  }
-
-  if (options.webhookToken !== undefined) {
-    if (options.webhookToken === null) {
-      query = query.is('webhook_token', null);
-    } else {
-      const webhookToken = normalizeString(options.webhookToken);
-      if (webhookToken) {
-        query = query.eq('webhook_token', webhookToken);
-      } else {
-        query = query.is('webhook_token', null);
-      }
-    }
   }
 
   const search = normalizeString(options.search);
@@ -165,8 +128,6 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
         trigger: normalizeString(coerceTrigger(input.trigger)),
         status: normalizeString(input.status),
         source: normalizeString(input.source),
-        webhook_id: normalizeString(input.webhookId),
-        webhook_token: normalizeString(input.webhookToken),
         headers,
         payload,
         occurred_at: occurredAt,
@@ -174,7 +135,7 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
       },
       { onConflict: 'event_id' }
     )
-    .select('id,event_id,trigger,status,source,webhook_id,webhook_token,headers,payload,occurred_at,received_at')
+    .select('id,event_id,trigger,status,source,headers,payload,occurred_at,received_at')
     .single();
 
   if (error) {
@@ -235,9 +196,6 @@ export function resolveIncomingWebhookEvent(options: {
     getNestedString(payload, ['payload', 'account_id'])
   ]);
 
-  const webhookId = extractWebhookId(headers, payload);
-  const webhookToken = extractWebhookToken(headers, payload);
-
   const occurredAt =
     extractFirstDate([
       getNestedValue(payload, ['occurred_at']),
@@ -259,8 +217,6 @@ export function resolveIncomingWebhookEvent(options: {
     trigger,
     status,
     source,
-    webhookId,
-    webhookToken,
     headers,
     payload,
     occurredAt,
@@ -275,34 +231,11 @@ function mapWebhookEventRow(row: Record<string, unknown>): WebhookEventRow {
     trigger: normalizeString(row.trigger),
     status: normalizeString(row.status),
     source: normalizeString(row.source),
-    webhookId: normalizeString(row.webhook_id),
-    webhookToken: normalizeString(row.webhook_token),
     headers: sanitizeHeaders(row.headers as Record<string, string> | undefined),
     payload: sanitizeJsonValue(row.payload),
     occurredAt: normalizeDate(row.occurred_at),
     receivedAt: normalizeDate(row.received_at) ?? new Date().toISOString()
   };
-}
-
-function extractWebhookId(headers: Record<string, string>, payload: JsonValue): string | null {
-  const fromHeaders = extractFirstString(WEBHOOK_ID_HEADER_CANDIDATES.map(candidate => headers[candidate]));
-  if (fromHeaders) {
-    return fromHeaders;
-  }
-
-  const fromPayload = extractFirstString([
-    getNestedString(payload, ['webhook', 'id']),
-    getNestedString(payload, ['webhook', 'webhook_id']),
-    getNestedString(payload, ['webhook', 'webhookId']),
-    getNestedString(payload, ['webhook_id']),
-    getNestedString(payload, ['webhookId']),
-    getNestedString(payload, ['data', 'webhook_id']),
-    getNestedString(payload, ['data', 'webhookId']),
-    getNestedString(payload, ['payload', 'webhook_id']),
-    getNestedString(payload, ['payload', 'webhookId'])
-  ]);
-
-  return fromPayload;
 }
 
 function sanitizeJsonValue(value: unknown): JsonValue {
@@ -364,27 +297,6 @@ function sanitizeHeaders(headers: Record<string, string> | undefined): Record<st
   return normalized;
 }
 
-function extractWebhookToken(headers: Record<string, string>, payload: JsonValue): string | null {
-  const fromHeaders = extractFirstString(
-    WEBHOOK_TOKEN_HEADER_CANDIDATES.map(candidate => headers[candidate])
-  );
-  if (fromHeaders) {
-    return fromHeaders;
-  }
-
-  const payloadToken = extractFirstString([
-    getNestedString(payload, ['webhook', 'token']),
-    getNestedString(payload, ['webhook', 'secret']),
-    getNestedString(payload, ['token']),
-    getNestedString(payload, ['secret']),
-    getNestedString(payload, ['data', 'token']),
-    getNestedString(payload, ['data', 'secret']),
-    getNestedString(payload, ['payload', 'token']),
-    getNestedString(payload, ['payload', 'secret'])
-  ]);
-
-  return payloadToken;
-}
 
 function collectRelevantHeaders(headers?: Headers | Record<string, string>): Record<string, string> {
   if (!headers) {

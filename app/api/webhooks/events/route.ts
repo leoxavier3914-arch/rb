@@ -1,14 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import {
-  resolveIncomingWebhookEvent,
-  storeWebhookEvent
-} from '@/lib/webhooks/events';
-import { inferWebhookTokenFromSignature } from '@/lib/webhooks/signature';
-import {
-  loadKnownWebhookTokens,
-  resolveWebhookIdFromToken
-} from '@/lib/webhooks/token-cache';
+import { resolveIncomingWebhookEvent, storeWebhookEvent } from '@/lib/webhooks/events';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,37 +14,15 @@ export async function POST(request: Request) {
   }
 
   const parsed = parseBody(body);
-  const rawBody = typeof body === 'string' ? body : '';
-
   const incoming = resolveIncomingWebhookEvent({
     payload: parsed,
     headers: request.headers,
     receivedAt
   });
 
-  let webhookToken = incoming.webhookToken;
-
-  if (!webhookToken) {
-    try {
-      const inferredToken = await resolveTokenFromSignature(incoming.headers, rawBody);
-      if (inferredToken) {
-        webhookToken = inferredToken;
-      }
-    } catch (error) {
-      console.error('infer_webhook_token_from_signature_failed', error);
-    }
-  }
-
-  let webhookId = incoming.webhookId;
-  if (!webhookId && webhookToken) {
-    webhookId = await resolveWebhookIdFromToken(webhookToken);
-  }
-
   try {
     const event = await storeWebhookEvent({
-      ...incoming,
-      webhookId,
-      webhookToken
+      ...incoming
     });
     return NextResponse.json({ ok: true, event });
   } catch (error) {
@@ -61,22 +31,6 @@ export async function POST(request: Request) {
       error instanceof Error ? error.message : 'Não foi possível registrar o evento do webhook agora.';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
-}
-
-async function resolveTokenFromSignature(
-  headers: Record<string, string>,
-  rawBody: string
-): Promise<string | null> {
-  const knownTokens = await loadKnownWebhookTokens();
-  if (knownTokens.length === 0) {
-    return null;
-  }
-
-  return inferWebhookTokenFromSignature({
-    headers,
-    rawBody,
-    knownTokens
-  });
 }
 
 function parseBody(body: string | null): unknown {

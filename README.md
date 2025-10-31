@@ -39,6 +39,24 @@ O endpoint `POST /api/sales/sync` usa as rotas documentadas em [Auth / OAuth](ht
 - **Persistência**: cada evento válido é normalizado e salvo na tabela `webhook_events` do Supabase (deduplicação pelo `event_id`).
 - **Visualização**: a página `/webhooks` lista os eventos recebidos em tempo real e permite filtrar pelos gatilhos suportados (`compra_aprovada`, `carrinho_abandonado`, etc.).
 
+Siga o guia oficial de webhooks da Kiwify para configurar os gatilhos, cabeçalhos e exemplos de payloads: [Webhooks Kiwify (pt-br)](https://kiwify.notion.site/Webhooks-pt-br-c77eb84be10c42e6bb97cd391bca9dce).
+
+## Migrações do Supabase
+
+As tabelas `sales`, `webhook_events` e `webhook_settings` são criadas pelas migrações em `supabase/migrations`. Para aplicá-las em um projeto local:
+
+```bash
+supabase db reset --db-url "$SUPABASE_DB_URL"
+```
+
+Ou, para aplicar incrementalmente em um banco existente:
+
+```bash
+supabase db push --db-url "$SUPABASE_DB_URL"
+```
+
+> Substitua `SUPABASE_DB_URL` pela string de conexão da instância. Consulte a [documentação do Supabase CLI](https://supabase.com/docs/guides/cli) para outras opções de execução.
+
 ### Fluxo de saques (`/financeiro`)
 
 A página Financeiro consome os dados sincronizados para montar a linha do tempo de liberações: exibe o saldo disponível imediato, os saques já programados e os lotes aguardando liberação. As informações são agrupadas por status de saque, facilitando a identificação de valores que podem ser solicitados e daqueles em análise.
