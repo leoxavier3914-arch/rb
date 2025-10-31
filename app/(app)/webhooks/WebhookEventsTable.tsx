@@ -3,17 +3,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/ui/format';
-import {
-  type JsonValue,
-  type WebhookEventRow,
-  type WebhookEventsPage
-} from '@/lib/webhooks/events';
-import { WEBHOOK_TRIGGER_OPTIONS, type WebhookTrigger } from '@/lib/webhooks/triggers';
-
-interface FilterOption {
-  readonly value: 'all' | WebhookTrigger;
-  readonly label: string;
-}
+import { type JsonValue, type WebhookEventRow, type WebhookEventsPage } from '@/lib/webhooks/events';
 
 interface TokenFilterOption {
   readonly value: 'all' | 'none' | string;
@@ -23,17 +13,12 @@ interface TokenFilterOption {
 
 interface WebhookEventsTableProps {
   readonly events: WebhookEventsPage;
-  readonly activeTrigger: 'all' | WebhookTrigger;
   readonly activeToken: 'all' | 'none' | string;
   readonly tokenOptions: readonly TokenFilterOption[];
   readonly basePath?: string;
 }
 
-const FILTER_OPTIONS: readonly FilterOption[] = [{ value: 'all', label: 'Todos' }, ...WEBHOOK_TRIGGER_OPTIONS];
-
-const TRIGGER_LABELS = new Map(WEBHOOK_TRIGGER_OPTIONS.map(option => [option.value, option.label] as const));
-
-export function WebhookEventsTable({ events, activeTrigger, activeToken, tokenOptions, basePath = '/webhooks' }: WebhookEventsTableProps) {
+export function WebhookEventsTable({ events, activeToken, tokenOptions, basePath = '/webhooks' }: WebhookEventsTableProps) {
   const { items, total, page, pageSize } = events;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const prevPage = page > 1 ? page - 1 : null;
@@ -42,36 +27,10 @@ export function WebhookEventsTable({ events, activeTrigger, activeToken, tokenOp
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Gatilhos</span>
-        {FILTER_OPTIONS.map(option => {
-          const isActive = option.value === activeTrigger;
-          const href = buildFilterHref({ basePath, trigger: option.value, activeToken });
-
-          return (
-            <Button
-              key={option.value}
-              size="sm"
-              variant={isActive ? 'default' : 'outline'}
-              aria-pressed={isActive}
-              className="gap-2"
-              asChild
-            >
-              <Link href={href} prefetch={false}>
-                {option.label}
-                {option.value !== 'all' ? (
-                  <span className="text-xs font-normal text-slate-400">{option.value}</span>
-                ) : null}
-              </Link>
-            </Button>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tokens</span>
         {tokenOptions.map(option => {
           const isActive = option.value === activeToken;
-          const href = buildTokenHref({ basePath, token: option.value, activeTrigger });
+          const href = buildTokenHref({ basePath, token: option.value });
 
           return (
             <Button
@@ -96,7 +55,7 @@ export function WebhookEventsTable({ events, activeTrigger, activeToken, tokenOp
             <TableRow>
               <TableHead className="min-w-[160px]">Evento</TableHead>
               <TableHead className="min-w-[200px]">Identificador</TableHead>
-              <TableHead className="min-w-[220px]">Origem</TableHead>
+              <TableHead className="min-w-[220px]">Produto</TableHead>
               <TableHead className="min-w-[140px]">Status</TableHead>
               <TableHead className="min-w-[200px]">Recebido</TableHead>
             </TableRow>
@@ -105,48 +64,48 @@ export function WebhookEventsTable({ events, activeTrigger, activeToken, tokenOp
             {items.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-6 text-center text-slate-500">
-                  {activeTrigger === 'all'
+                  {activeToken === 'all'
                     ? 'Nenhum evento registrado até o momento.'
-                    : 'Nenhum evento encontrado para o filtro selecionado.'}
+                    : 'Nenhum evento encontrado para o token selecionado.'}
                 </TableCell>
               </TableRow>
             ) : (
               items.map(event => {
-                const extraSource = formatExtraSource(event);
+                const eventLabel = formatEventType(event);
+                const eventDetails = summarizeEvent(event);
+                const customerName = formatCustomerName(event);
+                const customerContact = formatCustomerContact(event);
+                const productName = formatProductName(event);
+                const productDetails = formatProductDetails(event);
+                const orderStatus = formatOrderStatus(event);
+
                 return (
                   <TableRow key={event.id}>
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <span className="font-medium text-slate-900">{getTriggerLabel(event)}</span>
-                        <span className="text-xs text-slate-500">{event.trigger ?? '—'}</span>
-                        <span className="text-xs text-slate-400">{summarizeEvent(event)}</span>
+                        <span className="font-medium text-slate-900">{eventLabel}</span>
+                        {eventDetails ? <span className="text-xs text-slate-400">{eventDetails}</span> : null}
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <span className="font-mono text-xs text-slate-700">
-                          {event.eventId ?? '—'}
+                        <span className="text-sm text-slate-900">{customerName ?? '—'}</span>
+                        {customerContact ? <span className="text-xs text-slate-500">{customerContact}</span> : null}
+                        <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Registro {shortenId(event.id)}
                         </span>
-                        <span className="text-xs text-slate-400">Registro interno {shortenId(event.id)}</span>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <span className="text-sm text-slate-600">{formatSource(event)}</span>
-                        {extraSource ? (
-                          <span className="text-xs text-slate-500">{extraSource}</span>
-                        ) : null}
-                        {event.webhookToken ? (
-                          <span className="text-xs text-slate-500" title={event.webhookToken}>
-                            Token: {summarizeTokenValue(event.webhookToken)}
-                          </span>
-                        ) : null}
+                        <span className="text-sm text-slate-900">{productName ?? '—'}</span>
+                        {productDetails ? <span className="text-xs text-slate-500">{productDetails}</span> : null}
                       </div>
                     </TableCell>
                     <TableCell>
-                      {event.status ? (
+                      {orderStatus ? (
                         <span className="inline-flex min-w-[88px] justify-center rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          {event.status}
+                          {orderStatus}
                         </span>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
@@ -155,9 +114,8 @@ export function WebhookEventsTable({ events, activeTrigger, activeToken, tokenOp
                     <TableCell>
                       <div className="flex flex-col gap-1 text-xs text-slate-500">
                         <span>Recebido: {formatDateTime(event.receivedAt)}</span>
-                        {event.occurredAt ? (
-                          <span>Evento: {formatDateTime(event.occurredAt)}</span>
-                        ) : null}
+                        {event.occurredAt ? <span>Evento: {formatDateTime(event.occurredAt)}</span> : null}
+                        {event.eventId ? <span>ID: {event.eventId}</span> : null}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -174,10 +132,7 @@ export function WebhookEventsTable({ events, activeTrigger, activeToken, tokenOp
           <div className="flex items-center gap-2">
             {prevPage ? (
               <Button variant="outline" size="sm" asChild>
-                <Link
-                  href={buildPageHref({ basePath, page: prevPage, activeTrigger, activeToken })}
-                  prefetch={false}
-                >
+                <Link href={buildPageHref({ basePath, page: prevPage, activeToken })} prefetch={false}>
                   Página anterior
                 </Link>
               </Button>
@@ -188,10 +143,7 @@ export function WebhookEventsTable({ events, activeTrigger, activeToken, tokenOp
             )}
             {nextPage ? (
               <Button variant="outline" size="sm" asChild>
-                <Link
-                  href={buildPageHref({ basePath, page: nextPage, activeTrigger, activeToken })}
-                  prefetch={false}
-                >
+                <Link href={buildPageHref({ basePath, page: nextPage, activeToken })} prefetch={false}>
                   Próxima página
                 </Link>
               </Button>
@@ -207,40 +159,16 @@ export function WebhookEventsTable({ events, activeTrigger, activeToken, tokenOp
   );
 }
 
-function buildFilterHref({
-  basePath,
-  trigger,
-  activeToken
-}: {
-  basePath: string;
-  trigger: 'all' | WebhookTrigger;
-  activeToken: 'all' | 'none' | string;
-}): { pathname: string; query?: Record<string, string> } {
-  const query: Record<string, string> = {};
-  if (trigger !== 'all') {
-    query.trigger = trigger;
-  }
-  if (activeToken !== 'all') {
-    query.token = activeToken;
-  }
-  return Object.keys(query).length > 0 ? { pathname: basePath, query } : { pathname: basePath };
-}
-
 function buildTokenHref({
   basePath,
-  token,
-  activeTrigger
+  token
 }: {
   basePath: string;
   token: 'all' | 'none' | string;
-  activeTrigger: 'all' | WebhookTrigger;
 }): { pathname: string; query?: Record<string, string> } {
   const query: Record<string, string> = {};
   if (token !== 'all') {
     query.token = token;
-  }
-  if (activeTrigger !== 'all') {
-    query.trigger = activeTrigger;
   }
   return Object.keys(query).length > 0 ? { pathname: basePath, query } : { pathname: basePath };
 }
@@ -248,20 +176,15 @@ function buildTokenHref({
 function buildPageHref({
   basePath,
   page,
-  activeTrigger,
   activeToken
 }: {
   basePath: string;
   page: number;
-  activeTrigger: 'all' | WebhookTrigger;
   activeToken: 'all' | 'none' | string;
 }): { pathname: string; query?: Record<string, string> } {
   const query: Record<string, string> = {};
   if (page > 1) {
     query.page = String(page);
-  }
-  if (activeTrigger !== 'all') {
-    query.trigger = activeTrigger;
   }
   if (activeToken !== 'all') {
     query.token = activeToken;
@@ -283,13 +206,6 @@ function formatRangeEnd(page: WebhookEventsPage): string {
   }
   const end = Math.min(page.page * page.pageSize, page.total);
   return end.toLocaleString('pt-BR');
-}
-
-function getTriggerLabel(event: WebhookEventRow): string {
-  if (event.trigger && TRIGGER_LABELS.has(event.trigger as WebhookTrigger)) {
-    return TRIGGER_LABELS.get(event.trigger as WebhookTrigger)!;
-  }
-  return event.trigger ?? 'Evento registrado';
 }
 
 function shortenId(id: string): string {
@@ -319,7 +235,9 @@ function summarizeEvent(event: WebhookEventRow): string {
     ['order', 'product_title'],
     ['order', 'product', 'title'],
     ['data', 'product_title'],
-    ['payload', 'product_title']
+    ['payload', 'product_title'],
+    ['Product', 'product_name'],
+    ['product', 'name']
   ]);
 
   if (productTitle) {
@@ -331,7 +249,9 @@ function summarizeEvent(event: WebhookEventRow): string {
     ['order', 'customer', 'name'],
     ['data', 'customer_name'],
     ['payload', 'customer_name'],
-    ['payload', 'customer', 'name']
+    ['payload', 'customer', 'name'],
+    ['Customer', 'full_name'],
+    ['customer', 'full_name']
   ]);
 
   const customerEmail = findFirstString(payload, [
@@ -339,7 +259,9 @@ function summarizeEvent(event: WebhookEventRow): string {
     ['order', 'customer', 'email'],
     ['data', 'customer_email'],
     ['payload', 'customer_email'],
-    ['payload', 'customer', 'email']
+    ['payload', 'customer', 'email'],
+    ['Customer', 'email'],
+    ['customer', 'email']
   ]);
 
   if (customerName || customerEmail) {
@@ -347,41 +269,215 @@ function summarizeEvent(event: WebhookEventRow): string {
     parts.push(`Cliente ${label}`);
   }
 
-  return parts.length > 0 ? parts.join(' • ') : '—';
+  return parts.length > 0 ? parts.join(' • ') : '';
 }
 
-function formatSource(event: WebhookEventRow): string {
-  if (event.source) {
-    return event.source;
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  order_approved: 'Aprovado',
+  order_pending: 'Pendente',
+  order_abandoned: 'Abandonado',
+  order_refunded: 'Reembolsado',
+  order_chargeback: 'Chargeback',
+  order_cancelled: 'Cancelado',
+  order_completed: 'Concluído',
+  order_expired: 'Expirado',
+  order_processing: 'Processando',
+  order_created: 'Criado',
+  order_paid: 'Pago',
+  order_pix_pending: 'Pix pendente',
+  order_pix_paid: 'Pix pago',
+  order_waiting_payment: 'Aguardando pagamento',
+  subscription_created: 'Assinatura criada',
+  subscription_canceled: 'Assinatura cancelada',
+  subscription_cancelled: 'Assinatura cancelada',
+  subscription_expired: 'Assinatura expirada',
+  subscription_payment_pending: 'Pagamento pendente',
+  subscription_payment_failed: 'Pagamento falhou'
+};
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  paid: 'Pago',
+  pending: 'Pendente',
+  waiting_payment: 'Aguardando pagamento',
+  refunded: 'Reembolsado',
+  chargeback: 'Chargeback',
+  abandoned: 'Abandonado',
+  cancelled: 'Cancelado',
+  canceled: 'Cancelado',
+  completed: 'Concluído',
+  approved: 'Aprovado',
+  processing: 'Processando',
+  failed: 'Falhou'
+};
+
+function formatEventType(event: WebhookEventRow): string {
+  const payload = event.payload;
+  const rawType =
+    findFirstString(payload, [
+      ['webhook_event_type'],
+      ['event_type'],
+      ['event'],
+      ['type'],
+      ['data', 'webhook_event_type'],
+      ['data', 'event_type'],
+      ['data', 'event'],
+      ['payload', 'webhook_event_type'],
+      ['payload', 'event_type'],
+      ['payload', 'event'],
+      ['webhook', 'event']
+    ]) ?? event.trigger;
+
+  if (!rawType) {
+    return 'Evento registrado';
   }
-  const deliveryId = event.headers['x-kiwify-delivery-id'];
-  if (deliveryId) {
-    return `Entrega ${deliveryId}`;
+
+  const normalized = rawType.trim().toLowerCase();
+
+  if (EVENT_TYPE_LABELS[normalized]) {
+    return EVENT_TYPE_LABELS[normalized]!;
   }
-  const requestId = event.headers['x-request-id'];
-  if (requestId) {
-    return `Request ${shortenId(requestId)}`;
+
+  if (normalized.startsWith('order_')) {
+    return humanize(normalized.replace(/^order_/, ''));
   }
-  return '—';
+
+  if (normalized.startsWith('subscription_')) {
+    return `Assinatura ${humanize(normalized.replace(/^subscription_/, ''))}`;
+  }
+
+  return humanize(rawType);
 }
 
-function formatExtraSource(event: WebhookEventRow): string {
-  const accountId = event.headers['x-kiwify-account-id'];
-  if (accountId) {
-    return `Conta ${accountId}`;
-  }
-  const ip = event.headers['x-forwarded-for'] ?? event.headers['x-real-ip'] ?? event.headers['x-vercel-ip'];
-  if (ip) {
-    return `IP ${ip}`;
-  }
-  return '';
+function formatCustomerName(event: WebhookEventRow): string | null {
+  const payload = event.payload;
+  return (
+    findFirstString(payload, [
+      ['Customer', 'full_name'],
+      ['Customer', 'name'],
+      ['customer', 'full_name'],
+      ['customer', 'name'],
+      ['order', 'customer_name'],
+      ['order', 'customer', 'name'],
+      ['data', 'customer_name'],
+      ['payload', 'customer_name'],
+      ['payload', 'customer', 'name']
+    ]) ?? null
+  );
 }
 
-function summarizeTokenValue(token: string): string {
-  if (token.length <= 12) {
-    return token;
+function formatCustomerContact(event: WebhookEventRow): string | null {
+  const payload = event.payload;
+  const email =
+    findFirstString(payload, [
+      ['Customer', 'email'],
+      ['customer', 'email'],
+      ['order', 'customer_email'],
+      ['order', 'customer', 'email'],
+      ['data', 'customer_email'],
+      ['payload', 'customer_email'],
+      ['payload', 'customer', 'email']
+    ]) ?? null;
+
+  const phone =
+    findFirstString(payload, [
+      ['Customer', 'mobile'],
+      ['customer', 'mobile'],
+      ['customer', 'phone'],
+      ['payload', 'customer', 'mobile'],
+      ['payload', 'customer', 'phone']
+    ]) ?? null;
+
+  if (email && phone) {
+    return `${email} • ${phone}`;
   }
-  return `${token.slice(0, 6)}…${token.slice(-4)}`;
+
+  return email ?? phone;
+}
+
+function formatProductName(event: WebhookEventRow): string | null {
+  const payload = event.payload;
+  return (
+    findFirstString(payload, [
+      ['Product', 'product_name'],
+      ['Product', 'name'],
+      ['product', 'product_name'],
+      ['product', 'name'],
+      ['order', 'product_title'],
+      ['order', 'product', 'title'],
+      ['data', 'product_title'],
+      ['payload', 'product_title'],
+      ['payload', 'product', 'title']
+    ]) ?? null
+  );
+}
+
+function formatProductDetails(event: WebhookEventRow): string | null {
+  const payload = event.payload;
+  const offer =
+    findFirstString(payload, [
+      ['Product', 'product_offer_name'],
+      ['product', 'offer_name'],
+      ['product', 'product_offer_name'],
+      ['payload', 'product_offer_name'],
+      ['payload', 'product', 'offer_name']
+    ]) ?? null;
+
+  const offerId =
+    findFirstString(payload, [
+      ['Product', 'product_offer_id'],
+      ['product', 'offer_id'],
+      ['payload', 'product_offer_id']
+    ]) ?? null;
+
+  if (offer && offerId) {
+    return `${offer} • ${offerId}`;
+  }
+
+  return offer ?? offerId;
+}
+
+function formatOrderStatus(event: WebhookEventRow): string | null {
+  const payload = event.payload;
+  const rawStatus =
+    findFirstString(payload, [
+      ['order_status'],
+      ['order', 'status'],
+      ['Order', 'status'],
+      ['data', 'order_status'],
+      ['payload', 'order_status'],
+      ['payload', 'order', 'status'],
+      ['status']
+    ]) ?? event.status;
+
+  if (!rawStatus) {
+    return null;
+  }
+
+  const normalized = rawStatus.trim().toLowerCase().replace(/\s+/g, '_');
+
+  if (ORDER_STATUS_LABELS[normalized]) {
+    return ORDER_STATUS_LABELS[normalized]!;
+  }
+
+  return humanize(rawStatus);
+}
+
+function humanize(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map(capitalize)
+    .join(' ');
+}
+
+function capitalize(value: string): string {
+  if (!value) {
+    return value;
+  }
+  const lower = value.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
 function findFirstString(payload: JsonValue, paths: readonly (readonly string[])[]): string | null {
