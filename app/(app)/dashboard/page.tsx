@@ -1,5 +1,5 @@
-import SalesVolumeChart, { type SalesVolumePoint } from '@/components/charts/SalesVolumeChart';
-import { listSales, getSalesSummary, listDailySales, type DailySalesRow } from '@/lib/sales';
+import SalesVolumePanel from '@/components/charts/SalesVolumePanel';
+import { listSales, getSalesSummary, listDailySales } from '@/lib/sales';
 import { getBalance } from '@/lib/finance';
 import { formatDateTime, formatMoneyFromCents, formatMoneyFromCentsWithCurrency, formatShortDate } from '@/lib/ui/format';
 import { CreatePayoutForm } from '@/app/(app)/financeiro/CreatePayoutForm';
@@ -11,16 +11,7 @@ import {
   CardTitle
 } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import {
-  CalendarClock,
-  CreditCard,
-  PiggyBank,
-  RefreshCcw,
-  ShoppingCart,
-  Ticket,
-  Trophy,
-  Wallet2
-} from 'lucide-react';
+import { CreditCard, PiggyBank, RefreshCcw, ShoppingCart, Ticket, Trophy, Wallet2 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,8 +22,6 @@ export default async function DashboardPage() {
     getBalance(),
     listDailySales()
   ]);
-
-  const salesVolumeData = buildMonthlyVolumeData(dailySales);
 
   const averageNetCents = summary.totalSales > 0 ? Math.round(summary.netAmountCents / summary.totalSales) : 0;
   const goalAmountCents = 10_000_00;
@@ -77,11 +66,6 @@ export default async function DashboardPage() {
     }
   ];
 
-  const filters = [
-    { label: 'Todo o período', icon: CalendarClock },
-    { label: 'Todas as moedas', icon: Wallet2 },
-    { label: 'Todos os produtos', icon: ShoppingCart }
-  ];
 
   return (
     <div className="space-y-8">
@@ -96,59 +80,33 @@ export default async function DashboardPage() {
       <div className="grid gap-6 xl:grid-cols-[2fr,1fr]">
         <section className="space-y-6">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_20px_45px_rgba(15,23,42,0.08)]">
-            <div className="flex flex-wrap gap-3">
-              {filters.map(filter => {
-                const Icon = filter.icon;
+            <SalesVolumePanel dailySales={dailySales} currency="BRL" />
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {insightCards.map(card => {
+                const Icon = card.icon;
                 return (
-                  <button
-                    key={filter.label}
-                    type="button"
-                    className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-[#0231b1] hover:text-[#0231b1]"
+                  <Card
+                    key={card.label}
+                    className="rounded-3xl border-none bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5"
                   >
-                    <Icon className="h-4 w-4" />
-                    {filter.label}
-                  </button>
+                    <CardHeader className="border-b-0 p-0">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardDescription className="text-xs uppercase tracking-wide text-slate-400">
+                            {card.label}
+                          </CardDescription>
+                          <CardTitle className="mt-2 text-2xl text-slate-900">{card.value}</CardTitle>
+                        </div>
+                        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                          <Icon className="h-6 w-6" />
+                        </span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="px-0 pt-4 text-xs text-slate-500">{card.helper}</CardContent>
+                  </Card>
                 );
               })}
-            </div>
-
-            <div className="mt-6 space-y-6">
-              <div className="rounded-3xl border border-slate-100 bg-gradient-to-b from-[#0f5ef7]/10 via-white to-white p-6">
-                <div className="flex items-center justify-between text-sm text-slate-500">
-                  <span>Volume de vendas</span>
-                  <span>Últimos 12 meses</span>
-                </div>
-                <div className="mt-4 h-56 w-full">
-                  <SalesVolumeChart data={salesVolumeData} currency="BRL" />
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {insightCards.map(card => {
-                  const Icon = card.icon;
-                  return (
-                    <Card
-                      key={card.label}
-                      className="rounded-3xl border-none bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5"
-                    >
-                      <CardHeader className="border-b-0 p-0">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <CardDescription className="text-xs uppercase tracking-wide text-slate-400">
-                              {card.label}
-                            </CardDescription>
-                            <CardTitle className="mt-2 text-2xl text-slate-900">{card.value}</CardTitle>
-                          </div>
-                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-                            <Icon className="h-6 w-6" />
-                          </span>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="px-0 pt-4 text-xs text-slate-500">{card.helper}</CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
             </div>
           </div>
         </section>
@@ -307,60 +265,3 @@ export default async function DashboardPage() {
   );
 }
 
-const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'] as const;
-
-function buildMonthlyVolumeData(dailySales: readonly DailySalesRow[]): SalesVolumePoint[] {
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
-  const endExclusive = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-
-  const totals = new Map<
-    string,
-    {
-      netAmountCents: number;
-      totalSales: number;
-    }
-  >();
-
-  for (const item of dailySales) {
-    const saleDate = new Date(`${item.saleDate}T00:00:00Z`);
-    if (Number.isNaN(saleDate.getTime()) || saleDate < start || saleDate >= endExclusive) {
-      continue;
-    }
-
-    const monthKey = formatMonthKey(saleDate);
-    const current =
-      totals.get(monthKey) ?? {
-        netAmountCents: 0,
-        totalSales: 0
-      };
-
-    current.netAmountCents += Math.max(0, item.netAmountCents);
-    current.totalSales += Math.max(0, item.totalSales);
-
-    totals.set(monthKey, current);
-  }
-
-  const result: SalesVolumePoint[] = [];
-
-  for (let index = 11; index >= 0; index -= 1) {
-    const monthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index, 1));
-    const key = formatMonthKey(monthDate);
-    const monthTotals = totals.get(key);
-
-    result.push({
-      month: key,
-      label: `${MONTH_LABELS[monthDate.getUTCMonth()]} ${String(monthDate.getUTCFullYear()).slice(-2)}`,
-      netAmount: monthTotals ? Math.max(0, monthTotals.netAmountCents) / 100 : 0,
-      totalSales: monthTotals ? Math.max(0, monthTotals.totalSales) : 0
-    });
-  }
-
-  return result;
-}
-
-function formatMonthKey(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
-}
