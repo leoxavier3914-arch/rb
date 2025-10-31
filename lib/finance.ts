@@ -48,8 +48,8 @@ export async function getBalance(client?: KiwifyClient): Promise<BalanceInfo> {
 
   const payload = (await response.json().catch(() => ({}))) as UnknownRecord;
   return {
-    availableCents: toPositiveNumber(payload.available) ?? 0,
-    pendingCents: toPositiveNumber(payload.pending) ?? 0,
+    availableCents: toAmountInCents(payload.available ?? payload.available_cents) ?? 0,
+    pendingCents: toAmountInCents(payload.pending ?? payload.pending_cents) ?? 0,
     legalEntityId: toNullableString(payload.legal_entity_id)
   };
 }
@@ -69,9 +69,9 @@ export async function listPayouts(client?: KiwifyClient): Promise<PayoutList> {
   }
 
   const pagination = isRecord(payload.pagination) ? payload.pagination : null;
-  const pageNumber = toPositiveNumber(pagination?.page_number) ?? 1;
-  const pageSize = toPositiveNumber(pagination?.page_size) ?? 0;
-  const count = toPositiveNumber(pagination?.count ?? payload.count) ?? 0;
+  const pageNumber = toPositiveInteger(pagination?.page_number) ?? 1;
+  const pageSize = toPositiveInteger(pagination?.page_size) ?? 0;
+  const count = toPositiveInteger(pagination?.count ?? payload.count) ?? 0;
 
   const items = extractArray(payload.data).map(parsePayout).filter((item): item is PayoutItem => item !== null);
 
@@ -113,7 +113,7 @@ export async function createPayout(amountCents: number, client?: KiwifyClient): 
 
 function parsePayout(payload: UnknownRecord): PayoutItem | null {
   const id = toNullableString(payload.id);
-  const amountCents = toPositiveNumber(payload.amount);
+  const amountCents = toAmountInCents(payload.amount_cents ?? payload.amount ?? payload.value);
   if (!id || amountCents === null) {
     return null;
   }
@@ -150,14 +150,94 @@ function toNullableString(value: unknown): string | null {
   return null;
 }
 
-function toPositiveNumber(value: unknown): number | null {
+export function toAmountInCents(value: unknown): number | null {
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? Math.round(value) : null;
+    if (!Number.isFinite(value) || value < 0) {
+      return null;
+    }
+    const scaled = Number.isInteger(value) ? value : value * 100;
+    return Math.round(scaled);
   }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? Math.round(parsed) : null;
+
+  if (typeof value === 'bigint') {
+    return value >= 0 ? Number(value) : null;
   }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    let cleaned = trimmed.replace(/\s+/g, '');
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastDot = cleaned.lastIndexOf('.');
+    const hasComma = lastComma !== -1;
+    const hasDot = lastDot !== -1;
+    const decimalSeparator =
+      hasComma || hasDot
+        ? lastComma > lastDot
+          ? ','
+          : hasDot
+          ? '.'
+          : ','
+        : null;
+
+    if (decimalSeparator === ',') {
+      cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+    } else if (decimalSeparator === '.') {
+      cleaned = cleaned.replace(/,/g, '');
+    } else {
+      cleaned = cleaned.replace(/[.,]/g, '');
+    }
+
+    if (!/^[+-]?\d+(?:\.\d+)?$/.test(cleaned)) {
+      return null;
+    }
+
+    const parsed = Number.parseFloat(cleaned);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return null;
+    }
+
+    const decimalDigits = (() => {
+      const dotIndex = cleaned.indexOf('.');
+      return dotIndex === -1 ? 0 : cleaned.length - dotIndex - 1;
+    })();
+
+    const cents = decimalDigits > 0 ? parsed * 100 : parsed;
+    return Math.round(cents);
+  }
+
+  return null;
+}
+
+function toPositiveInteger(value: unknown): number | null {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+    const rounded = Math.round(value);
+    return rounded >= 0 ? rounded : null;
+  }
+
+  if (typeof value === 'bigint') {
+    return value >= 0 ? Number(value) : null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number.parseFloat(trimmed);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    const rounded = Math.round(parsed);
+    return rounded >= 0 ? rounded : null;
+  }
+
   return null;
 }
 
