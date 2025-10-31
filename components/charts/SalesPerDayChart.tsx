@@ -34,14 +34,23 @@ interface ChartDatum {
 
 const DEFAULT_CURRENCY = 'BRL';
 
+export function mapSalesPerDayData(data: readonly DailySalesRow[]): ChartDatum[] {
+  return data.map(item => {
+    const netAmountCandidate =
+      typeof item.netAmountCents === 'number' ? item.netAmountCents : Number(item.netAmountCents ?? 0);
+    const netAmountCents = Number.isFinite(netAmountCandidate) ? netAmountCandidate : 0;
+
+    return {
+      date: item.saleDate,
+      formattedDate: formatShortDateUTC(item.saleDate),
+      netAmount: netAmountCents / 100
+    };
+  });
+}
+
 export function SalesPerDayChart({ data, currency = DEFAULT_CURRENCY }: SalesPerDayChartProps) {
   const chartData = useMemo<ChartDatum[]>(
-    () =>
-      data.map(item => ({
-        date: item.saleDate,
-        formattedDate: formatShortDateUTC(item.saleDate),
-        netAmount: Math.max(0, item.netAmountCents) / 100
-      })),
+    () => mapSalesPerDayData(data),
     [data]
   );
 
