@@ -116,6 +116,11 @@ export function WebhookEventsTable({ events, activeToken, tokenOptions, basePath
                         <span>Recebido: {formatDateTime(event.receivedAt)}</span>
                         {event.occurredAt ? <span>Evento: {formatDateTime(event.occurredAt)}</span> : null}
                         {event.eventId ? <span>ID: {event.eventId}</span> : null}
+                        {event.webhookToken ? (
+                          <span className="text-[11px] text-slate-500" title={event.webhookToken}>
+                            Token: {summarizeToken(event.webhookToken)}
+                          </span>
+                        ) : null}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -270,6 +275,13 @@ function summarizeEvent(event: WebhookEventRow): string {
   }
 
   return parts.length > 0 ? parts.join(' • ') : '';
+}
+
+function summarizeToken(token: string): string {
+  if (token.length <= 12) {
+    return token;
+  }
+  return `${token.slice(0, 6)}…${token.slice(-4)}`;
 }
 
 const EVENT_TYPE_LABELS: Record<string, string> = {

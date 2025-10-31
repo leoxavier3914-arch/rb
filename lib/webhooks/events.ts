@@ -1,4 +1,7 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 import { getServiceClient } from '@/lib/supabase';
+import { listWebhookSettings, type WebhookSetting } from '@/lib/webhooks/settings';
 import { normalizeWebhookTriggers, type WebhookTrigger } from '@/lib/webhooks/triggers';
 
 type JsonPrimitive = string | number | boolean | null;
@@ -48,8 +51,11 @@ export interface IncomingWebhookEvent {
   readonly eventId: string | null;
   readonly trigger: string | null;
   readonly status: string | null;
+  readonly webhookId: string | null;
   readonly source: string | null;
   readonly webhookToken: string | null;
+  readonly signature: string | null;
+  readonly signatureAlgorithm: string | null;
   readonly headers: Record<string, string>;
   readonly payload: JsonValue;
   readonly occurredAt: string | null;
@@ -66,6 +72,22 @@ const WEBHOOK_TOKEN_HEADER_CANDIDATES = [
   'x-webhook-token',
   'x-webhook-secret'
 ] as const;
+
+const WEBHOOK_SIGNATURE_HEADER_CANDIDATES = [
+  'x-kiwify-signature',
+  'x-kiwify-webhook-signature',
+  'x-kiwify-signature-sha256',
+  'x-webhook-signature',
+  'x-webhook-signature-sha256',
+  'signature'
+] as const;
+
+const WEBHOOK_ID_HEADER_CANDIDATES = [
+  'x-kiwify-webhook-id',
+  'x-webhook-id'
+] as const;
+
+type SupportedSignatureAlgorithm = 'sha256' | 'sha1' | 'sha512';
 
 export async function listWebhookEvents(options: ListWebhookEventsOptions = {}): Promise<WebhookEventsPage> {
   const client = getServiceClient();
@@ -173,6 +195,111 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
   return mapWebhookEventRow(data!);
 }
 
+export interface VerifyIncomingWebhookSignatureResult {
+  readonly signature: string | null;
+  readonly algorithm: string | null;
+  readonly token: string | null;
+  readonly webhookId: string | null;
+  readonly verified: boolean;
+}
+
+export async function verifyIncomingWebhookSignature(options: {
+  readonly rawBody: string | null;
+  readonly signature: string | null;
+  readonly signatureAlgorithm: string | null;
+  readonly webhookToken?: string | null;
+  readonly webhookId?: string | null;
+  readonly settings?: readonly WebhookSetting[];
+}): Promise<VerifyIncomingWebhookSignatureResult> {
+  const signatureValue = normalizeSignatureString(options.signature);
+  const algorithm = normalizeSignatureAlgorithm(options.signatureAlgorithm);
+  const rawBody = typeof options.rawBody === 'string' ? options.rawBody : '';
+
+  if (!signatureValue || !rawBody) {
+    return {
+      signature: signatureValue,
+      algorithm,
+      token: null,
+      webhookId: null,
+      verified: false
+    };
+  }
+
+  if (!algorithm) {
+    return {
+      signature: signatureValue,
+      algorithm: null,
+      token: null,
+      webhookId: null,
+      verified: false
+    };
+  }
+
+  const settings = options.settings ?? (await listWebhookSettings().catch(() => []));
+  const activeSettings = settings.filter(setting => setting.isActive);
+  const settingsById = new Map(activeSettings.map(setting => [setting.webhookId, setting]));
+
+  const candidates: { token: string; webhookId: string | null }[] = [];
+
+  function addCandidate(token: string | null, webhookId: string | null) {
+    const normalizedToken = normalizeString(token);
+    if (!normalizedToken) {
+      return;
+    }
+    const existingIndex = candidates.findIndex(candidate => candidate.token === normalizedToken);
+    if (existingIndex >= 0) {
+      if (!candidates[existingIndex]!.webhookId && webhookId) {
+        candidates[existingIndex] = { token: normalizedToken, webhookId };
+      }
+      return;
+    }
+    candidates.push({ token: normalizedToken, webhookId });
+  }
+
+  if (options.webhookId) {
+    const normalizedWebhookId = normalizeString(options.webhookId);
+    if (normalizedWebhookId) {
+      const setting = settingsById.get(normalizedWebhookId);
+      if (setting?.token) {
+        addCandidate(setting.token, setting.webhookId);
+      }
+    }
+  }
+
+  if (options.webhookToken) {
+    const normalizedToken = normalizeString(options.webhookToken);
+    if (normalizedToken) {
+      const webhookIdFromToken = findWebhookIdByToken(activeSettings, normalizedToken);
+      addCandidate(normalizedToken, webhookIdFromToken ?? normalizeString(options.webhookId));
+    }
+  }
+
+  for (const setting of activeSettings) {
+    addCandidate(setting.token, setting.webhookId);
+  }
+
+  for (const candidate of candidates) {
+    if (verifySignatureWithToken(rawBody, signatureValue, algorithm, candidate.token)) {
+      const resolvedWebhookId = candidate.webhookId ?? findWebhookIdByToken(activeSettings, candidate.token);
+      return {
+        signature: signatureValue,
+        algorithm,
+        token: candidate.token,
+        webhookId: resolvedWebhookId ?? null,
+        verified: true
+      };
+    }
+  }
+
+  return {
+    signature: signatureValue,
+    algorithm,
+    token: null,
+    webhookId: null,
+    verified: false
+  };
+}
+
 export function resolveIncomingWebhookEvent(options: {
   readonly payload: unknown;
   readonly headers?: Headers | Record<string, string>;
@@ -181,6 +308,7 @@ export function resolveIncomingWebhookEvent(options: {
   const receivedAt = normalizeDate(options.receivedAt) ?? new Date().toISOString();
   const payload = sanitizeJsonValue(options.payload ?? {});
   const headers = collectRelevantHeaders(options.headers);
+  const signatureInfo = extractWebhookSignature(headers);
 
   const rawTrigger = extractFirstString([
     headers['x-kiwify-event'],
@@ -224,6 +352,7 @@ export function resolveIncomingWebhookEvent(options: {
     getNestedString(payload, ['payload', 'account_id'])
   ]);
 
+  const webhookId = extractWebhookId(headers, payload);
   const webhookToken = extractWebhookToken(headers, payload);
 
   const occurredAt =
@@ -246,8 +375,11 @@ export function resolveIncomingWebhookEvent(options: {
     eventId,
     trigger,
     status,
+    webhookId,
     source,
     webhookToken,
+    signature: signatureInfo.signature,
+    signatureAlgorithm: signatureInfo.algorithm,
     headers,
     payload,
     occurredAt,
@@ -351,6 +483,54 @@ function extractWebhookToken(headers: Record<string, string>, payload: JsonValue
   return payloadToken;
 }
 
+function extractWebhookId(headers: Record<string, string>, payload: JsonValue): string | null {
+  const fromHeaders = extractFirstString(
+    WEBHOOK_ID_HEADER_CANDIDATES.map(candidate => headers[candidate])
+  );
+  if (fromHeaders) {
+    return fromHeaders;
+  }
+
+  const fromPayload = extractFirstString([
+    getNestedString(payload, ['webhook', 'id']),
+    getNestedString(payload, ['webhook_id']),
+    getNestedString(payload, ['webhook', 'webhook_id']),
+    getNestedString(payload, ['data', 'webhook_id']),
+    getNestedString(payload, ['payload', 'webhook_id'])
+  ]);
+
+  return fromPayload;
+}
+
+interface WebhookSignatureMetadata {
+  readonly raw: string | null;
+  readonly signature: string | null;
+  readonly algorithm: string | null;
+}
+
+function extractWebhookSignature(headers: Record<string, string>): WebhookSignatureMetadata {
+  for (const candidate of WEBHOOK_SIGNATURE_HEADER_CANDIDATES) {
+    const raw = headers[candidate];
+    if (!raw) {
+      continue;
+    }
+    const parsed = parseSignatureHeader(raw);
+    if (parsed) {
+      return {
+        raw,
+        signature: parsed.signature,
+        algorithm: parsed.algorithm
+      };
+    }
+    const normalized = normalizeSignatureString(raw);
+    if (normalized) {
+      return { raw, signature: normalized, algorithm: null };
+    }
+  }
+
+  return { raw: null, signature: null, algorithm: null };
+}
+
 function collectRelevantHeaders(headers?: Headers | Record<string, string>): Record<string, string> {
   if (!headers) {
     return {};
@@ -414,6 +594,33 @@ function normalizeString(value: unknown): string | null {
   if (typeof value === 'string') {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+}
+
+function normalizeBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    if (['true', 't', '1', 'yes'].includes(normalized)) {
+      return true;
+    }
+    if (['false', 'f', '0', 'no'].includes(normalized)) {
+      return false;
+    }
+  }
+  if (typeof value === 'number') {
+    if (value === 1) {
+      return true;
+    }
+    if (value === 0) {
+      return false;
+    }
   }
   return null;
 }
@@ -484,6 +691,197 @@ function extractFirstDate(candidates: Iterable<unknown>): string | null {
     }
   }
   return null;
+}
+
+function findWebhookIdByToken(
+  settings: readonly { webhookId: string; token: string | null }[],
+  token: string
+): string | null {
+  for (const setting of settings) {
+    if (setting.token && setting.token === token) {
+      return setting.webhookId;
+    }
+  }
+  return null;
+}
+
+function verifySignatureWithToken(
+  rawBody: string,
+  signature: string,
+  algorithm: SupportedSignatureAlgorithm,
+  token: string
+): boolean {
+  try {
+    const hmac = createHmac(algorithm, token);
+    hmac.update(rawBody, 'utf8');
+    const digestBuffer = hmac.digest();
+    const signatureFormat = detectSignatureFormat(signature);
+
+    const digestHex = digestBuffer.toString('hex');
+    const digestBase64 = digestBuffer.toString('base64');
+
+    if (signatureFormat === 'hex') {
+      return timingSafeCompare(digestHex, signature.toLowerCase());
+    }
+
+    if (signatureFormat === 'base64') {
+      return timingSafeCompare(digestBase64, signature);
+    }
+
+    return (
+      timingSafeCompare(digestHex, signature.toLowerCase()) ||
+      timingSafeCompare(digestBase64, signature)
+    );
+  } catch (error) {
+    console.error('verify_webhook_signature_failed', error);
+    return false;
+  }
+}
+
+function detectSignatureFormat(signature: string): 'hex' | 'base64' | null {
+  const trimmed = signature.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+    return 'hex';
+  }
+
+  if (/^[A-Za-z0-9+/=]+$/.test(trimmed)) {
+    return 'base64';
+  }
+
+  return null;
+}
+
+function normalizeSignatureString(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeSignatureAlgorithm(value: string | null | undefined): SupportedSignatureAlgorithm | null {
+  if (typeof value !== 'string') {
+    return 'sha256';
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return 'sha256';
+  }
+
+  if (normalized === 'sha256' || normalized === 'hmac-sha256') {
+    return 'sha256';
+  }
+  if (normalized === 'sha1' || normalized === 'hmac-sha1') {
+    return 'sha1';
+  }
+  if (normalized === 'sha512' || normalized === 'hmac-sha512') {
+    return 'sha512';
+  }
+
+  return null;
+}
+
+function timingSafeCompare(expected: string, provided: string): boolean {
+  if (typeof expected !== 'string' || typeof provided !== 'string') {
+    return false;
+  }
+
+  const normalizedExpected = expected;
+  const normalizedProvided = provided;
+
+  if (normalizedExpected.length !== normalizedProvided.length) {
+    return false;
+  }
+
+  return timingSafeEqual(Buffer.from(normalizedExpected, 'utf8'), Buffer.from(normalizedProvided, 'utf8'));
+}
+
+interface ParsedSignatureHeader {
+  readonly signature: string;
+  readonly algorithm: string | null;
+}
+
+function parseSignatureHeader(raw: string): ParsedSignatureHeader | null {
+  const normalizedRaw = normalizeSignatureString(raw);
+  if (!normalizedRaw) {
+    return null;
+  }
+
+  const segments = normalizedRaw
+    .split(',')
+    .map(segment => segment.trim())
+    .filter(Boolean);
+
+  let signature: string | null = null;
+  let algorithm: string | null = null;
+
+  for (const segment of segments) {
+    const equalsIndex = segment.indexOf('=');
+    if (equalsIndex === -1) {
+      if (!signature) {
+        signature = segment;
+      }
+      continue;
+    }
+
+    const key = segment.slice(0, equalsIndex).trim().toLowerCase();
+    const value = segment.slice(equalsIndex + 1).trim();
+    if (!value) {
+      continue;
+    }
+
+    if (key === 't' || key === 'timestamp') {
+      continue;
+    }
+
+    if (key === 'signature' || key === 'v1') {
+      signature = value;
+      if (!algorithm) {
+        algorithm = 'sha256';
+      }
+      continue;
+    }
+
+    if (key.startsWith('sha') || key.startsWith('hmac-sha')) {
+      const normalizedKey = key.startsWith('hmac-') ? key.slice(5) : key;
+      algorithm = normalizedKey;
+      signature = value;
+      continue;
+    }
+
+    if (!signature) {
+      signature = value;
+    }
+  }
+
+  if (!signature && segments.length === 1) {
+    const segment = segments[0]!;
+    const equalsIndex = segment.indexOf('=');
+    if (equalsIndex > 0) {
+      const key = segment.slice(0, equalsIndex).trim().toLowerCase();
+      const value = segment.slice(equalsIndex + 1).trim();
+      if (value) {
+        signature = value;
+        algorithm = key.startsWith('hmac-') ? key.slice(5) : key;
+      }
+    } else {
+      signature = segment;
+    }
+  }
+
+  if (!signature) {
+    return null;
+  }
+
+  return {
+    signature,
+    algorithm
+  };
 }
 
 function coerceTrigger(value: unknown): string | null {
