@@ -152,7 +152,7 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   assert.strictEqual(webhook.token, null);
 });
 
-test('updateWebhook envia escopo global como null', async () => {
+test('updateWebhook envia escopo global como all', async () => {
   let captured: { path: string; init?: RequestInit } | null = null;
   const client = createMockClient(async (path, init) => {
     captured = { path, init };
@@ -161,14 +161,14 @@ test('updateWebhook envia escopo global como null', async () => {
         id: 'wh-2',
         url: 'https://example.com/webhooks',
         name: 'Atualizado',
-        products: 'all_products',
+        products: 'all',
         triggers: ['compra_aprovada']
       }),
       { status: 200 }
     );
   });
 
-  await updateWebhook(
+  const webhook = await updateWebhook(
     'wh-2',
     {
       name: ' Atualizado ',
@@ -184,8 +184,10 @@ test('updateWebhook envia escopo global como null', async () => {
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
     name: 'Atualizado',
-    products: null
+    products: 'all'
   });
+
+  assert.strictEqual(webhook.products, 'all');
 });
 
 test('updateWebhook alterna entre produto específico e escopo global', async () => {

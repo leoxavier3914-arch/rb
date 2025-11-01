@@ -113,7 +113,7 @@ export async function PATCH(
           products = null;
         } else {
           const normalized = trimmed.toLowerCase();
-          products = normalized === 'all' || normalized === 'all_products' ? null : trimmed;
+          products = normalized === 'all' || normalized === 'all_products' ? 'all' : trimmed;
         }
       } else {
         return NextResponse.json(

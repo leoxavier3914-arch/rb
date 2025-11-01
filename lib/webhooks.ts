@@ -210,7 +210,10 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
       payload.products = null;
     } else {
       const products = normalizeProducts(input.products);
-      payload.products = products === GLOBAL_PRODUCTS_SCOPE ? null : products;
+      const mappedProducts = mapProductsToApi(products);
+      if (mappedProducts !== undefined) {
+        payload.products = mappedProducts;
+      }
     }
   }
 
