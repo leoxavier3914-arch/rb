@@ -152,7 +152,7 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   assert.strictEqual(webhook.token, null);
 });
 
-test('updateWebhook omite escopo global ao atualizar', async () => {
+test('updateWebhook envia escopo global como all', async () => {
   let captured: { path: string; init?: RequestInit } | null = null;
   const client = createMockClient(async (path, init) => {
     captured = { path, init };
@@ -172,7 +172,7 @@ test('updateWebhook omite escopo global ao atualizar', async () => {
     'wh-2',
     {
       name: ' Atualizado ',
-      products: ' Todos '
+      products: ' ALL '
     },
     client
   );
@@ -183,44 +183,11 @@ test('updateWebhook omite escopo global ao atualizar', async () => {
   assert.ok(typeof body === 'string', 'expected request body to be a string');
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
-    name: 'Atualizado'
+    name: 'Atualizado',
+    products: 'all'
   });
-  assert.ok(!Object.prototype.hasOwnProperty.call(parsedBody, 'products'));
 
   assert.strictEqual(webhook.products, 'all');
-});
-
-test('updateWebhook trata asterisco como escopo global ao atualizar', async () => {
-  let captured: { path: string; init?: RequestInit } | null = null;
-  const client = createMockClient(async (path, init) => {
-    captured = { path, init };
-    return new Response(
-      JSON.stringify({
-        id: 'wh-asterisk',
-        url: 'https://example.com/webhooks',
-        name: 'Atualizado',
-        products: 'all',
-        triggers: ['compra_aprovada']
-      }),
-      { status: 200 }
-    );
-  });
-
-  await updateWebhook(
-    'wh-asterisk',
-    {
-      products: ' * '
-    },
-    client
-  );
-
-  assert.ok(captured, 'expected the request to be captured');
-  assert.strictEqual(captured?.path, '/webhooks/wh-asterisk');
-  const body = captured?.init?.body;
-  assert.ok(typeof body === 'string', 'expected request body to be a string');
-  const parsedBody = JSON.parse(body!);
-  assert.deepStrictEqual(parsedBody, {});
-  assert.ok(!Object.prototype.hasOwnProperty.call(parsedBody, 'products'));
 });
 
 test('updateWebhook alterna entre produto específico e escopo global', async () => {
@@ -266,14 +233,13 @@ test('updateWebhook alterna entre produto específico e escopo global', async ()
   const secondBody = capturedBodies[1];
   assert.ok(typeof secondBody === 'string', 'expected second request body to be a string');
   const secondPayload = JSON.parse(secondBody as string);
-  assert.deepStrictEqual(secondPayload, {});
-  assert.ok(!Object.prototype.hasOwnProperty.call(secondPayload, 'products'));
+  assert.deepStrictEqual(secondPayload, { products: 'all' });
 });
 
-test('updateWebhook mantém mensagem padrão quando a API recusa atualização sem escopo de produtos', async () => {
-  let captured: { path: string; init?: RequestInit } | null = null;
-  const client = createMockClient(async (path, init) => {
-    captured = { path, init };
+test('updateWebhook informa quando a API recusa o escopo global', async () => {
+  let callCount = 0;
+  const client = createMockClient(async () => {
+    callCount += 1;
     return new Response('Product not found', { status: 400 });
   });
 
@@ -288,22 +254,21 @@ test('updateWebhook mantém mensagem padrão quando a API recusa atualização s
       ),
     (error: unknown) => {
       assert.ok(error instanceof Error);
-      assert.match(error.message, /Falha ao atualizar webhook na Kiwify: 400 Product not found/);
+      assert.strictEqual(
+        error.message,
+        'A Kiwify recusou o escopo global "all" ao atualizar o webhook. Confirme com o suporte qual valor deve ser utilizado.'
+      );
       return true;
     }
   );
 
-  assert.ok(captured, 'expected the request to be captured');
-  const body = captured?.init?.body;
-  assert.ok(typeof body === 'string', 'expected request body to be a string');
-  const parsedBody = JSON.parse(body!);
-  assert.deepStrictEqual(parsedBody, {});
+  assert.strictEqual(callCount, 1);
 });
 
-test('updateWebhook mantém mensagem padrão para resposta JSON ao omitir escopo global', async () => {
-  let captured: { path: string; init?: RequestInit } | null = null;
-  const client = createMockClient(async (path, init) => {
-    captured = { path, init };
+test('updateWebhook trata mensagem JSON ao recusar escopo global', async () => {
+  let callCount = 0;
+  const client = createMockClient(async () => {
+    callCount += 1;
     return new Response(
       JSON.stringify({ error: 'validation_error', message: 'Product not found' }),
       { status: 400 }
@@ -321,16 +286,15 @@ test('updateWebhook mantém mensagem padrão para resposta JSON ao omitir escopo
       ),
     (error: unknown) => {
       assert.ok(error instanceof Error);
-      assert.match(error.message, /Falha ao atualizar webhook na Kiwify: 400 \{"error":"validation_error"/);
+      assert.strictEqual(
+        error.message,
+        'A Kiwify recusou o escopo global "all" ao atualizar o webhook. Confirme com o suporte qual valor deve ser utilizado.'
+      );
       return true;
     }
   );
 
-  assert.ok(captured, 'expected the request to be captured');
-  const body = captured?.init?.body;
-  assert.ok(typeof body === 'string', 'expected request body to be a string');
-  const parsedBody = JSON.parse(body!);
-  assert.deepStrictEqual(parsedBody, {});
+  assert.strictEqual(callCount, 1);
 });
 
 test('updateWebhook não envia escopo quando não informado', async () => {

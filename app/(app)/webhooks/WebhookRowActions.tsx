@@ -82,16 +82,7 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
       setMessage('Atualizando webhook na Kiwify...');
       const normalizedName = name.trim();
       const normalizedToken = token.trim();
-      const trimmedProductId = productId.trim();
-      const lowerCasedProductId = trimmedProductId.toLowerCase();
-      const isGlobalProductScope =
-        trimmedProductId.length === 0 ||
-        trimmedProductId === 'all' ||
-        lowerCasedProductId === 'all_products' ||
-        lowerCasedProductId === 'todos' ||
-        lowerCasedProductId === 'todos os produtos' ||
-        lowerCasedProductId === 'all products' ||
-        trimmedProductId === '*';
+      const normalizedProductId = productId === 'all' ? 'all' : productId.trim();
       const updatePayload: Record<string, unknown> = {
         url: normalizedUrl,
         triggers,
@@ -99,8 +90,10 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
         token: normalizedToken.length > 0 ? normalizedToken : null
       };
 
-      if (!isGlobalProductScope) {
-        updatePayload.products = trimmedProductId;
+      if (normalizedProductId === 'all') {
+        updatePayload.products = 'all';
+      } else if (normalizedProductId.length > 0) {
+        updatePayload.products = normalizedProductId;
       }
 
       const response = await fetch(`/api/webhooks/${encodeURIComponent(webhook.id)}`, {
@@ -451,14 +444,7 @@ function normalizeProductScope(value: string | null | undefined): string {
   }
 
   const lowerCased = trimmed.toLowerCase();
-  if (
-    lowerCased === 'all' ||
-    lowerCased === 'all_products' ||
-    lowerCased === 'todos' ||
-    lowerCased === 'todos os produtos' ||
-    lowerCased === 'all products' ||
-    trimmed === '*'
-  ) {
+  if (lowerCased === 'all' || lowerCased === 'all_products') {
     return 'all';
   }
 
