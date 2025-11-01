@@ -236,6 +236,53 @@ test('updateWebhook alterna entre produto específico e escopo global', async ()
   assert.deepStrictEqual(secondPayload, { products: 'all' });
 });
 
+test('updateWebhook tenta novamente com escopo legado quando necessário', async () => {
+  const capturedBodies: unknown[] = [];
+  let callCount = 0;
+  const client = createMockClient(async (path, init) => {
+    capturedBodies.push(init?.body ?? null);
+    callCount += 1;
+
+    if (callCount === 1) {
+      return new Response('Product not found', { status: 400 });
+    }
+
+    return new Response(
+      JSON.stringify({
+        id: 'wh-legacy',
+        url: 'https://example.com/webhooks',
+        name: 'Webhook legado',
+        products: 'all_products',
+        triggers: ['compra_aprovada']
+      }),
+      { status: 200 }
+    );
+  });
+
+  const webhook = await updateWebhook(
+    'wh-legacy',
+    {
+      products: null
+    },
+    client
+  );
+
+  assert.strictEqual(callCount, 2);
+  assert.strictEqual(capturedBodies.length, 2);
+
+  const firstBody = capturedBodies[0];
+  assert.ok(typeof firstBody === 'string', 'expected first request body to be a string');
+  const firstPayload = JSON.parse(firstBody as string);
+  assert.deepStrictEqual(firstPayload, { products: 'all' });
+
+  const secondBody = capturedBodies[1];
+  assert.ok(typeof secondBody === 'string', 'expected second request body to be a string');
+  const secondPayload = JSON.parse(secondBody as string);
+  assert.deepStrictEqual(secondPayload, { products: 'all_products' });
+
+  assert.strictEqual(webhook.products, 'all');
+});
+
 test('updateWebhook não envia escopo quando não informado', async () => {
   let captured: { path: string; init?: RequestInit } | null = null;
   const client = createMockClient(async (path, init) => {
