@@ -28,7 +28,6 @@ export interface UpdateWebhookInput {
   readonly url?: string;
   readonly triggers?: readonly string[];
   readonly name?: string | null;
-  readonly products?: string | null;
   readonly token?: string | null;
 }
 
@@ -238,14 +237,6 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
       payload.name = name;
     } else {
       throw new Error('Informe um nome válido para o webhook.');
-    }
-  }
-
-  if (input.products !== undefined) {
-    const products = normalizeProducts(input.products);
-    const mappedProducts = mapProductsToApi(products);
-    if (mappedProducts !== undefined) {
-      payload.products = mappedProducts;
     }
   }
 
