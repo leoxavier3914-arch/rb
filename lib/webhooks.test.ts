@@ -89,7 +89,7 @@ test('createWebhook normalizes payload before sending to the API', async () => {
   assert.deepStrictEqual(parsedBody, {
     url: 'https://example.com/webhooks',
     triggers: ['compra_aprovada'],
-    products: 'all',
+    products: null,
     name: 'Principal',
     token: 'secret'
   });
@@ -152,7 +152,7 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   assert.strictEqual(webhook.token, null);
 });
 
-test('updateWebhook envia escopo global como all', async () => {
+test('updateWebhook envia escopo global como null', async () => {
   let captured: { path: string; init?: RequestInit } | null = null;
   const client = createMockClient(async (path, init) => {
     captured = { path, init };
@@ -184,7 +184,7 @@ test('updateWebhook envia escopo global como all', async () => {
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
     name: 'Atualizado',
-    products: 'all'
+    products: null
   });
 
   assert.strictEqual(webhook.products, 'all');
@@ -233,7 +233,7 @@ test('updateWebhook alterna entre produto específico e escopo global', async ()
   const secondBody = capturedBodies[1];
   assert.ok(typeof secondBody === 'string', 'expected second request body to be a string');
   const secondPayload = JSON.parse(secondBody as string);
-  assert.deepStrictEqual(secondPayload, { products: 'all' });
+  assert.deepStrictEqual(secondPayload, { products: null });
 });
 
 test('updateWebhook informa quando a API recusa o escopo global', async () => {

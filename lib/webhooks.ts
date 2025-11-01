@@ -175,8 +175,14 @@ async function requestWithGlobalProductsFallback(
     body: serializedPayload
   });
 
-  const products = typeof payload.products === 'string' ? payload.products : null;
-  if (products?.toLowerCase() === GLOBAL_PRODUCTS_API_VALUE && response.status === 400) {
+  const products = payload.products;
+  const isGlobalProductsScope =
+    products === null ||
+    (typeof products === 'string' &&
+      (products.toLowerCase() === GLOBAL_PRODUCTS_API_VALUE ||
+        products.toLowerCase() === LEGACY_GLOBAL_PRODUCTS_API_VALUE));
+
+  if (isGlobalProductsScope && response.status === 400) {
     const responseText = await response.clone().text().catch(() => '');
     const normalizedResponse = responseText.toLowerCase();
     if (normalizedResponse.includes('product not found')) {
@@ -399,11 +405,11 @@ function normalizeProducts(value: unknown): string {
   throw new Error('Informe um escopo de produtos válido para o webhook.');
 }
 
-function mapProductsToApi(value: string | undefined): string | undefined {
+function mapProductsToApi(value: string | undefined): string | null | undefined {
   if (value === undefined) {
     return undefined;
   }
-  return value === GLOBAL_PRODUCTS_SCOPE ? GLOBAL_PRODUCTS_API_VALUE : value;
+  return value === GLOBAL_PRODUCTS_SCOPE ? null : value;
 }
 
 function parseProductsFromApi(value: unknown): string | null {
