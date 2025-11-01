@@ -60,12 +60,39 @@ export async function listWebhooks(client?: KiwifyClient): Promise<readonly Webh
 }
 
 export async function createWebhook(input: CreateWebhookInput, client?: KiwifyClient): Promise<Webhook> {
-  const requestBody = buildWebhookRequestPayload(input, 'create');
-  if (!requestBody) {
-    throw new Error('Falha ao preparar os dados para criar o webhook.');
+  const url = normalizeUrl(input.url);
+  if (!url) {
+    throw new Error('Informe uma URL válida para o webhook.');
   }
 
+  const triggers = normalizeTriggers(input.triggers);
+  if (triggers.length === 0) {
+    throw new Error('Selecione ao menos um gatilho para o webhook.');
+  }
+
+  const name = normalizeOptionalString(input.name);
+  const products = mapProductsToApi(
+    input.products === undefined ? undefined : normalizeProducts(input.products)
+  );
+  const token = normalizeOptionalString(input.token);
+
   const resolvedClient = await ensureClient(client);
+  const requestBody: Record<string, unknown> = {
+    url,
+    triggers
+  };
+
+  if (products !== undefined) {
+    requestBody.products = products;
+  }
+
+  if (name) {
+    requestBody.name = name;
+  }
+
+  if (token) {
+    requestBody.token = token;
+  }
 
   const response = await resolvedClient.request('/webhooks', {
     method: 'POST',
@@ -101,14 +128,14 @@ export async function updateWebhook(
     throw new Error('Informe o identificador do webhook a ser atualizado.');
   }
 
-  const body = buildWebhookRequestPayload(input, 'update');
+  const body = buildUpdatePayload(input);
   if (!body) {
     throw new Error('Nenhum dado informado para atualizar o webhook.');
   }
 
   const resolvedClient = await ensureClient(client);
   const response = await resolvedClient.request(`/webhooks/${encodeURIComponent(normalizedId)}`, {
-    method: 'PATCH',
+    method: 'PUT',
     headers: {
       'content-type': 'application/json'
     },
@@ -148,88 +175,56 @@ export async function deleteWebhook(id: string, client?: KiwifyClient): Promise<
   }
 }
 
-function buildWebhookRequestPayload(
-  input: CreateWebhookInput | UpdateWebhookInput,
-  mode: 'create' | 'update'
-): UnknownRecord | null {
+function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
   const payload: Record<string, unknown> = {};
 
-  if (mode === 'create' || hasOwn(input, 'url')) {
-    const url = normalizeUrl((input as UpdateWebhookInput).url);
-    if (!url) {
-      throw new Error('Informe uma URL válida para o webhook.');
-    }
+  const url = input.url !== undefined ? normalizeUrl(input.url) : undefined;
+  if (url) {
     payload.url = url;
+  } else if (input.url !== undefined && !url) {
+    throw new Error('Informe uma URL válida para o webhook.');
   }
 
-  if (mode === 'create' || hasOwn(input, 'triggers')) {
-    const triggers = normalizeTriggers((input as UpdateWebhookInput).triggers);
+  if (input.triggers !== undefined) {
+    const triggers = normalizeTriggers(input.triggers);
     if (triggers.length === 0) {
       throw new Error('Selecione ao menos um gatilho para o webhook.');
     }
     payload.triggers = triggers;
   }
 
-  if (hasOwn(input, 'name')) {
-    const rawName = (input as UpdateWebhookInput).name;
-    if (rawName === undefined) {
-      // No-op: treat explicit undefined the same as omitted.
-    } else if (rawName === null) {
-      if (mode === 'update') {
-        payload.name = null;
-      }
-    } else if (typeof rawName === 'string') {
-      const name = normalizeOptionalString(rawName);
-      if (name) {
-        payload.name = name;
-      } else if (mode === 'update') {
-        payload.name = null;
-      }
+  if (input.name !== undefined) {
+    if (input.name === null) {
+      payload.name = null;
+    } else if (typeof input.name === 'string') {
+      const name = normalizeOptionalString(input.name);
+      payload.name = name;
     } else {
       throw new Error('Informe um nome válido para o webhook.');
     }
   }
 
-  if (hasOwn(input, 'products')) {
-    const rawProducts = (input as UpdateWebhookInput).products;
-    if (rawProducts === undefined) {
-      // No-op: treat explicit undefined the same as omitted.
+  if (input.products !== undefined) {
+    if (input.products === null) {
+      payload.products = null;
     } else {
-      const normalizedProducts =
-        rawProducts === null ? null : normalizeProducts(rawProducts);
-      const products = mapProductsToApi(normalizedProducts);
-      if (products === undefined) {
-        throw new Error('Informe um escopo de produtos válido para o webhook.');
-      }
-      payload.products = products;
+      const products = normalizeProducts(input.products);
+      payload.products = products === GLOBAL_PRODUCTS_SCOPE ? null : products;
     }
   }
 
-  if (hasOwn(input, 'token')) {
-    const rawToken = (input as UpdateWebhookInput).token;
-    if (rawToken === undefined) {
-      // No-op: treat explicit undefined the same as omitted.
-    } else if (rawToken === null) {
-      if (mode === 'update') {
-        payload.token = null;
-      }
-    } else if (typeof rawToken === 'string') {
-      const token = normalizeOptionalString(rawToken);
-      if (token) {
-        payload.token = token;
-      } else if (mode === 'update') {
-        payload.token = null;
-      }
+  if (input.token !== undefined) {
+    if (input.token === null) {
+      payload.token = null;
+    } else if (typeof input.token === 'string') {
+      const token = normalizeOptionalString(input.token);
+      payload.token = token;
     } else {
       throw new Error('Informe um token válido para o webhook.');
     }
   }
 
-  if (mode === 'update') {
-    return Object.keys(payload).length > 0 ? payload : null;
-  }
-
-  return payload;
+  return Object.keys(payload).length > 0 ? payload : null;
 }
 
 function extractWebhookRecords(payload: unknown): UnknownRecord[] {
@@ -291,10 +286,6 @@ function extractStringArray(value: unknown): string[] {
       .filter((item): item is string => Boolean(item));
   }
   return [];
-}
-
-function hasOwn(object: object, key: PropertyKey): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -374,21 +365,11 @@ function normalizeProducts(value: unknown): string {
   throw new Error('Informe um escopo de produtos válido para o webhook.');
 }
 
-function mapProductsToApi(value: string | null | undefined): string | undefined {
+function mapProductsToApi(value: string | undefined): string | undefined {
   if (value === undefined) {
     return undefined;
   }
-  if (value === null) {
-    return GLOBAL_PRODUCTS_API_VALUE;
-  }
-
-  const trimmed = value.trim();
-  const normalized = trimmed.toLowerCase();
-  if (normalized === GLOBAL_PRODUCTS_SCOPE || normalized === GLOBAL_PRODUCTS_API_VALUE) {
-    return GLOBAL_PRODUCTS_API_VALUE;
-  }
-
-  return trimmed;
+  return value === GLOBAL_PRODUCTS_SCOPE ? GLOBAL_PRODUCTS_API_VALUE : value;
 }
 
 function parseProductsFromApi(value: unknown): string | null {

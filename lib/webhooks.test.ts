@@ -133,7 +133,7 @@ test('updateWebhook accepts partial updates and trims values', async () => {
 
   assert.ok(captured, 'expected the request to be captured');
   assert.strictEqual(captured?.path, '/webhooks/wh-1');
-  assert.strictEqual(captured?.init?.method, 'PATCH');
+  assert.strictEqual(captured?.init?.method, 'PUT');
   const body = captured?.init?.body;
   assert.ok(typeof body === 'string', 'expected request body to be a string');
   const parsedBody = JSON.parse(body!);
@@ -152,7 +152,7 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   assert.strictEqual(webhook.token, null);
 });
 
-test('updateWebhook envia escopo global como all_products', async () => {
+test('updateWebhook envia escopo global como null', async () => {
   let captured: { path: string; init?: RequestInit } | null = null;
   const client = createMockClient(async (path, init) => {
     captured = { path, init };
@@ -184,7 +184,7 @@ test('updateWebhook envia escopo global como all_products', async () => {
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
     name: 'Atualizado',
-    products: 'all_products'
+    products: null
   });
 });
 
@@ -231,7 +231,7 @@ test('updateWebhook alterna entre produto específico e escopo global', async ()
   const secondBody = capturedBodies[1];
   assert.ok(typeof secondBody === 'string', 'expected second request body to be a string');
   const secondPayload = JSON.parse(secondBody as string);
-  assert.deepStrictEqual(secondPayload, { products: 'all_products' });
+  assert.deepStrictEqual(secondPayload, { products: null });
 });
 
 test('updateWebhook não envia escopo quando não informado', async () => {
