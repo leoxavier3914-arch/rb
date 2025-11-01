@@ -21,7 +21,7 @@ test('listWebhooks maps webhook payloads returned by the API', async () => {
         id: 'wh-1',
         name: 'Webhook principal',
         url: 'https://example.com/webhooks',
-        products: 'all_products',
+        products: 'all',
         triggers: ['compra_aprovada', 'chargeback'],
         token: 'abc',
         created_at: '2024-06-01T10:00:00Z',
@@ -60,7 +60,7 @@ test('createWebhook normalizes payload before sending to the API', async () => {
         id: 'wh-new',
         name: 'Webhook Principal',
         url: 'https://example.com/webhooks',
-        products: 'all_products',
+        products: 'all',
         triggers: ['compra_aprovada'],
         token: 'secret',
         created_at: '2024-06-01T10:00:00Z',
@@ -89,7 +89,7 @@ test('createWebhook normalizes payload before sending to the API', async () => {
   assert.deepStrictEqual(parsedBody, {
     url: 'https://example.com/webhooks',
     triggers: ['compra_aprovada'],
-    products: 'all_products',
+    products: 'all',
     name: 'Principal',
     token: 'secret'
   });
