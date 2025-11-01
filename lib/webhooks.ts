@@ -178,7 +178,8 @@ async function requestWithGlobalProductsFallback(
   const products = typeof payload.products === 'string' ? payload.products : null;
   if (products?.toLowerCase() === GLOBAL_PRODUCTS_API_VALUE && response.status === 400) {
     const responseText = await response.clone().text().catch(() => '');
-    if (responseText.includes('Product not found')) {
+    const normalizedResponse = responseText.toLowerCase();
+    if (normalizedResponse.includes('product not found')) {
       throw new Error(
         'A Kiwify recusou o escopo global "all" ao atualizar o webhook. Confirme com o suporte qual valor deve ser utilizado.'
       );

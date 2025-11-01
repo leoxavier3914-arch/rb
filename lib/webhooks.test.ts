@@ -265,6 +265,38 @@ test('updateWebhook informa quando a API recusa o escopo global', async () => {
   assert.strictEqual(callCount, 1);
 });
 
+test('updateWebhook trata mensagem JSON ao recusar escopo global', async () => {
+  let callCount = 0;
+  const client = createMockClient(async () => {
+    callCount += 1;
+    return new Response(
+      JSON.stringify({ error: 'validation_error', message: 'Product not found' }),
+      { status: 400 }
+    );
+  });
+
+  await assert.rejects(
+    () =>
+      updateWebhook(
+        'wh-json',
+        {
+          products: 'all'
+        },
+        client
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.strictEqual(
+        error.message,
+        'A Kiwify recusou o escopo global "all" ao atualizar o webhook. Confirme com o suporte qual valor deve ser utilizado.'
+      );
+      return true;
+    }
+  );
+
+  assert.strictEqual(callCount, 1);
+});
+
 test('updateWebhook não envia escopo quando não informado', async () => {
   let captured: { path: string; init?: RequestInit } | null = null;
   const client = createMockClient(async (path, init) => {
