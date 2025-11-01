@@ -26,7 +26,7 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(webhook.name ?? '');
   const [url, setUrl] = useState(webhook.url);
-  const [productId, setProductId] = useState<string | null>(() => normalizeProductScope(webhook.products));
+  const [productId, setProductId] = useState<string>(() => normalizeProductScope(webhook.products));
   const [triggers, setTriggers] = useState<readonly WebhookTrigger[]>(
     () => normalizeWebhookTriggers(webhook.triggers)
   );
@@ -82,18 +82,19 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
       setMessage('Atualizando webhook na Kiwify...');
       const normalizedName = name.trim();
       const normalizedToken = token.trim();
-      const normalizedProductId =
-        typeof productId === 'string' ? productId.trim() : null;
+      const normalizedProductId = productId === 'all' ? 'all' : productId.trim();
       const updatePayload: Record<string, unknown> = {
         url: normalizedUrl,
         triggers,
         name: normalizedName.length > 0 ? normalizedName : null,
-        token: normalizedToken.length > 0 ? normalizedToken : null,
-        products:
-          normalizedProductId && normalizedProductId.length > 0
-            ? normalizedProductId
-            : null
+        token: normalizedToken.length > 0 ? normalizedToken : null
       };
+
+      if (normalizedProductId === 'all') {
+        updatePayload.products = 'all';
+      } else if (normalizedProductId.length > 0) {
+        updatePayload.products = normalizedProductId;
+      }
 
       const response = await fetch(`/api/webhooks/${encodeURIComponent(webhook.id)}`, {
         method: 'PATCH',
@@ -314,8 +315,10 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
             </label>
             <select
               id={`webhook-products-${webhook.id}`}
-              value={productId ?? ''}
-              onChange={event => setProductId(event.target.value ? event.target.value : null)}
+              value={productId === 'all' ? '' : productId}
+              onChange={event =>
+                setProductId(event.target.value ? event.target.value : 'all')
+              }
               disabled={isFetchingProducts}
               className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
             >
@@ -430,19 +433,19 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
   );
 }
 
-function normalizeProductScope(value: string | null | undefined): string | null {
+function normalizeProductScope(value: string | null | undefined): string {
   if (typeof value !== 'string') {
-    return null;
+    return 'all';
   }
 
   const trimmed = value.trim();
   if (!trimmed) {
-    return null;
+    return 'all';
   }
 
   const lowerCased = trimmed.toLowerCase();
   if (lowerCased === 'all' || lowerCased === 'all_products') {
-    return null;
+    return 'all';
   }
 
   return trimmed;

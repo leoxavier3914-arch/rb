@@ -103,14 +103,14 @@ export async function PATCH(
       }
     }
 
-    let products: string | null | undefined = undefined;
+    let products: string | undefined = undefined;
     if (Object.prototype.hasOwnProperty.call(payload, 'products')) {
       if (payload?.products === null) {
-        products = null;
+        products = 'all';
       } else if (typeof payload?.products === 'string') {
         const trimmed = payload.products.trim();
         if (trimmed.length === 0) {
-          products = null;
+          products = 'all';
         } else {
           const normalized = trimmed.toLowerCase();
           products = normalized === 'all' || normalized === 'all_products' ? 'all' : trimmed;
