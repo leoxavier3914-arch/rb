@@ -1,4 +1,4 @@
-import { createKiwifyClient, type KiwifyClient } from '@/lib/kiwify/client';
+import { createKiwifyClient, listProducts, type KiwifyClient } from '@/lib/kiwify/client';
 import { normalizeWebhookTriggers } from '@/lib/webhooks/triggers';
 
 interface UnknownRecord {
@@ -35,6 +35,8 @@ export interface UpdateWebhookInput {
 const GLOBAL_PRODUCTS_SCOPE = 'all';
 const GLOBAL_PRODUCTS_API_VALUE = 'all';
 const LEGACY_GLOBAL_PRODUCTS_API_VALUE = 'all_products';
+const GLOBAL_PRODUCTS_REJECTION_MESSAGE =
+  'A Kiwify recusou a atualização do webhook mesmo enviando todos os produtos disponíveis. Confirme com o suporte quais identificadores devem ser utilizados.';
 
 async function ensureClient(client?: KiwifyClient): Promise<KiwifyClient> {
   if (client) {
@@ -78,13 +80,14 @@ export async function createWebhook(input: CreateWebhookInput, client?: KiwifyCl
   const token = normalizeOptionalString(input.token);
 
   const resolvedClient = await ensureClient(client);
+  const { value: productsForRequest } = await prepareProductsField(products, resolvedClient);
   const requestBody: Record<string, unknown> = {
     url,
     triggers
   };
 
-  if (products !== undefined) {
-    requestBody.products = products;
+  if (productsForRequest !== undefined) {
+    requestBody.products = productsForRequest;
   }
 
   if (name) {
@@ -135,10 +138,12 @@ export async function updateWebhook(
   }
 
   const resolvedClient = await ensureClient(client);
+  const { payload: preparedPayload, isGlobalScope } = await prepareUpdatePayload(body, resolvedClient);
   const response = await requestWithGlobalProductsFallback(
     resolvedClient,
     `/webhooks/${encodeURIComponent(normalizedId)}`,
-    body
+    preparedPayload,
+    { globalProductsScope: isGlobalScope }
   );
 
   if (!response.ok) {
@@ -160,7 +165,8 @@ export async function updateWebhook(
 async function requestWithGlobalProductsFallback(
   client: KiwifyClient,
   path: string,
-  payload: UnknownRecord
+  payload: UnknownRecord,
+  { globalProductsScope = false }: { globalProductsScope?: boolean } = {}
 ): Promise<Response> {
   const baseInit: RequestInit = {
     method: 'PUT',
@@ -175,17 +181,80 @@ async function requestWithGlobalProductsFallback(
     body: serializedPayload
   });
 
-  const products = typeof payload.products === 'string' ? payload.products : null;
-  if (products?.toLowerCase() === GLOBAL_PRODUCTS_API_VALUE && response.status === 400) {
+  if (globalProductsScope && response.status === 400) {
     const responseText = await response.clone().text().catch(() => '');
-    if (responseText.includes('Product not found')) {
-      throw new Error(
-        'A Kiwify recusou o escopo global "all" ao atualizar o webhook. Confirme com o suporte qual valor deve ser utilizado.'
-      );
+    const normalizedResponse = responseText.toLowerCase();
+    if (normalizedResponse.includes('product not found')) {
+      throw new Error(GLOBAL_PRODUCTS_REJECTION_MESSAGE);
     }
   }
 
   return response;
+}
+
+async function prepareUpdatePayload(
+  payload: UnknownRecord,
+  client: KiwifyClient
+): Promise<{ payload: UnknownRecord; isGlobalScope: boolean }> {
+  if (!Object.prototype.hasOwnProperty.call(payload, 'products')) {
+    return { payload, isGlobalScope: false };
+  }
+
+  const rawProducts = payload.products;
+  if (typeof rawProducts !== 'string') {
+    return { payload, isGlobalScope: false };
+  }
+
+  const { value, isGlobalScope } = await prepareProductsField(rawProducts, client);
+  if (!isGlobalScope || value === rawProducts) {
+    return { payload, isGlobalScope };
+  }
+
+  return {
+    payload: { ...payload, products: value },
+    isGlobalScope
+  };
+}
+
+async function prepareProductsField(
+  products: string | undefined,
+  client: KiwifyClient
+): Promise<{ value: string | readonly string[] | undefined; isGlobalScope: boolean }> {
+  if (products === undefined) {
+    return { value: undefined, isGlobalScope: false };
+  }
+
+  if (!isGlobalProductsValue(products)) {
+    return { value: products, isGlobalScope: false };
+  }
+
+  const identifiers = await fetchAllProductIds(client);
+  if (identifiers.length === 0) {
+    throw new Error(
+      'Nenhum produto foi encontrado na Kiwify para configurar o webhook com todos os produtos.'
+    );
+  }
+
+  return { value: identifiers, isGlobalScope: true };
+}
+
+function isGlobalProductsValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === GLOBAL_PRODUCTS_SCOPE ||
+    normalized === GLOBAL_PRODUCTS_API_VALUE ||
+    normalized === LEGACY_GLOBAL_PRODUCTS_API_VALUE
+  );
+}
+
+async function fetchAllProductIds(client: KiwifyClient): Promise<readonly string[]> {
+  const products = await listProducts(client);
+  const identifiers = products
+    .map(product => product.id)
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+
+  const uniqueIdentifiers = Array.from(new Set(identifiers));
+  return uniqueIdentifiers;
 }
 
 export async function deleteWebhook(id: string, client?: KiwifyClient): Promise<void> {
@@ -406,6 +475,16 @@ function mapProductsToApi(value: string | undefined): string | undefined {
 }
 
 function parseProductsFromApi(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    const identifiers = value
+      .map(toNullableString)
+      .filter((item): item is string => Boolean(item));
+    if (identifiers.length === 0) {
+      return null;
+    }
+    return GLOBAL_PRODUCTS_SCOPE;
+  }
+
   const normalized = toNullableString(value);
   if (!normalized) {
     return null;
