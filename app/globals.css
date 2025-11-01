@@ -11,3 +11,12 @@ body {
   background-color: #f4f5f7;
   color: rgb(15 23 42);
 }
+
+.main-nav-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.main-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
