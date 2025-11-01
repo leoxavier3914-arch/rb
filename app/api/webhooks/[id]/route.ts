@@ -103,17 +103,17 @@ export async function PATCH(
       }
     }
 
-    let products: string | undefined = undefined;
+    let products: string | null | undefined = undefined;
     if (Object.prototype.hasOwnProperty.call(payload, 'products')) {
       if (payload?.products === null) {
-        products = 'all';
+        products = null;
       } else if (typeof payload?.products === 'string') {
         const trimmed = payload.products.trim();
         if (trimmed.length === 0) {
-          products = 'all';
+          products = null;
         } else {
           const normalized = trimmed.toLowerCase();
-          products = normalized === 'all' || normalized === 'all_products' ? 'all' : trimmed;
+          products = normalized === 'all' || normalized === 'all_products' ? null : trimmed;
         }
       } else {
         return NextResponse.json(

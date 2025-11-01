@@ -82,13 +82,17 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
       setMessage('Atualizando webhook na Kiwify...');
       const normalizedName = name.trim();
       const normalizedToken = token.trim();
-      const normalizedProductId = typeof productId === 'string' ? productId.trim() : '';
+      const normalizedProductId =
+        typeof productId === 'string' ? productId.trim() : null;
       const updatePayload: Record<string, unknown> = {
         url: normalizedUrl,
         triggers,
         name: normalizedName.length > 0 ? normalizedName : null,
         token: normalizedToken.length > 0 ? normalizedToken : null,
-        products: normalizedProductId.length > 0 ? normalizedProductId : 'all'
+        products:
+          normalizedProductId && normalizedProductId.length > 0
+            ? normalizedProductId
+            : null
       };
 
       const response = await fetch(`/api/webhooks/${encodeURIComponent(webhook.id)}`, {

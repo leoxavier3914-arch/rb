@@ -205,8 +205,12 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
   }
 
   if (input.products !== undefined) {
-    const products = mapProductsToApi(normalizeProducts(input.products));
-    payload.products = products;
+    if (input.products === null) {
+      payload.products = null;
+    } else {
+      const products = normalizeProducts(input.products);
+      payload.products = products === GLOBAL_PRODUCTS_SCOPE ? null : products;
+    }
   }
 
   if (input.token !== undefined) {
