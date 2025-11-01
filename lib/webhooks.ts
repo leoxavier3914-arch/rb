@@ -33,7 +33,8 @@ export interface UpdateWebhookInput {
 }
 
 const GLOBAL_PRODUCTS_SCOPE = 'all';
-const GLOBAL_PRODUCTS_API_VALUE = 'all_products';
+const GLOBAL_PRODUCTS_API_VALUE = 'all';
+const LEGACY_GLOBAL_PRODUCTS_API_VALUE = 'all_products';
 
 async function ensureClient(client?: KiwifyClient): Promise<KiwifyClient> {
   if (client) {
@@ -356,7 +357,11 @@ function normalizeProducts(value: unknown): string {
       return GLOBAL_PRODUCTS_SCOPE;
     }
     const lowerCased = trimmed.toLowerCase();
-    if (lowerCased === GLOBAL_PRODUCTS_SCOPE || lowerCased === GLOBAL_PRODUCTS_API_VALUE) {
+    if (
+      lowerCased === GLOBAL_PRODUCTS_SCOPE ||
+      lowerCased === GLOBAL_PRODUCTS_API_VALUE ||
+      lowerCased === LEGACY_GLOBAL_PRODUCTS_API_VALUE
+    ) {
       return GLOBAL_PRODUCTS_SCOPE;
     }
     return trimmed;
@@ -379,7 +384,11 @@ function parseProductsFromApi(value: unknown): string | null {
   }
 
   const lowerCased = normalized.toLowerCase();
-  if (lowerCased === GLOBAL_PRODUCTS_SCOPE || lowerCased === GLOBAL_PRODUCTS_API_VALUE) {
+  if (
+    lowerCased === GLOBAL_PRODUCTS_SCOPE ||
+    lowerCased === GLOBAL_PRODUCTS_API_VALUE ||
+    lowerCased === LEGACY_GLOBAL_PRODUCTS_API_VALUE
+  ) {
     return GLOBAL_PRODUCTS_SCOPE;
   }
 
