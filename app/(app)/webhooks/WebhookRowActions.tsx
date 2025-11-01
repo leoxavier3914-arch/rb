@@ -91,7 +91,7 @@ export function WebhookRowActions({ webhook, isActive = false }: Props) {
       };
 
       if (normalizedProductId === 'all') {
-        updatePayload.products = 'all';
+        updatePayload.products = null;
       } else if (normalizedProductId.length > 0) {
         updatePayload.products = normalizedProductId;
       }
