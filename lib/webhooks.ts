@@ -135,13 +135,11 @@ export async function updateWebhook(
   }
 
   const resolvedClient = await ensureClient(client);
-  const response = await resolvedClient.request(`/webhooks/${encodeURIComponent(normalizedId)}`, {
-    method: 'PUT',
-    headers: {
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  });
+  const response = await requestWithGlobalProductsFallback(
+    resolvedClient,
+    `/webhooks/${encodeURIComponent(normalizedId)}`,
+    body
+  );
 
   if (!response.ok) {
     const responseBody = await response.text().catch(() => '');
@@ -157,6 +155,43 @@ export async function updateWebhook(
   }
 
   return webhook;
+}
+
+async function requestWithGlobalProductsFallback(
+  client: KiwifyClient,
+  path: string,
+  payload: UnknownRecord
+): Promise<Response> {
+  const baseInit: RequestInit = {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json'
+    }
+  };
+
+  const serializedPayload = JSON.stringify(payload);
+  const initialResponse = await client.request(path, {
+    ...baseInit,
+    body: serializedPayload
+  });
+
+  const products = typeof payload.products === 'string' ? payload.products : null;
+  if (products === GLOBAL_PRODUCTS_API_VALUE && initialResponse.status === 400) {
+    const responseText = await initialResponse.clone().text().catch(() => '');
+    if (responseText.includes('Product not found')) {
+      const fallbackPayload = {
+        ...payload,
+        products: LEGACY_GLOBAL_PRODUCTS_API_VALUE
+      };
+
+      return client.request(path, {
+        ...baseInit,
+        body: JSON.stringify(fallbackPayload)
+      });
+    }
+  }
+
+  return initialResponse;
 }
 
 export async function deleteWebhook(id: string, client?: KiwifyClient): Promise<void> {
