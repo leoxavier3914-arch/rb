@@ -151,7 +151,7 @@ export function MainNav() {
         <div
           ref={scrollContainerRef}
           className={cn(
-            'flex-1 overflow-x-auto pb-3',
+            'flex-1 overflow-x-auto pb-3 main-nav-scroll',
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           )}
           onPointerDown={handlePointerDown}
