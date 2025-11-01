@@ -236,51 +236,33 @@ test('updateWebhook alterna entre produto específico e escopo global', async ()
   assert.deepStrictEqual(secondPayload, { products: 'all' });
 });
 
-test('updateWebhook tenta novamente com escopo legado quando necessário', async () => {
-  const capturedBodies: unknown[] = [];
+test('updateWebhook informa quando a API recusa o escopo global', async () => {
   let callCount = 0;
-  const client = createMockClient(async (path, init) => {
-    capturedBodies.push(init?.body ?? null);
+  const client = createMockClient(async () => {
     callCount += 1;
-
-    if (callCount === 1) {
-      return new Response('Product not found', { status: 400 });
-    }
-
-    return new Response(
-      JSON.stringify({
-        id: 'wh-legacy',
-        url: 'https://example.com/webhooks',
-        name: 'Webhook legado',
-        products: 'all_products',
-        triggers: ['compra_aprovada']
-      }),
-      { status: 200 }
-    );
+    return new Response('Product not found', { status: 400 });
   });
 
-  const webhook = await updateWebhook(
-    'wh-legacy',
-    {
-      products: null
-    },
-    client
+  await assert.rejects(
+    () =>
+      updateWebhook(
+        'wh-legacy',
+        {
+          products: null
+        },
+        client
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.strictEqual(
+        error.message,
+        'A Kiwify recusou o escopo global "all" ao atualizar o webhook. Confirme com o suporte qual valor deve ser utilizado.'
+      );
+      return true;
+    }
   );
 
-  assert.strictEqual(callCount, 2);
-  assert.strictEqual(capturedBodies.length, 2);
-
-  const firstBody = capturedBodies[0];
-  assert.ok(typeof firstBody === 'string', 'expected first request body to be a string');
-  const firstPayload = JSON.parse(firstBody as string);
-  assert.deepStrictEqual(firstPayload, { products: 'all' });
-
-  const secondBody = capturedBodies[1];
-  assert.ok(typeof secondBody === 'string', 'expected second request body to be a string');
-  const secondPayload = JSON.parse(secondBody as string);
-  assert.deepStrictEqual(secondPayload, { products: 'all_products' });
-
-  assert.strictEqual(webhook.products, 'all');
+  assert.strictEqual(callCount, 1);
 });
 
 test('updateWebhook não envia escopo quando não informado', async () => {
