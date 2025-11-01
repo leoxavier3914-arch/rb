@@ -208,12 +208,10 @@ export async function deleteWebhook(id: string, client?: KiwifyClient): Promise<
 
 function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
   const payload: Record<string, unknown> = {};
-  let touched = false;
 
   const url = input.url !== undefined ? normalizeUrl(input.url) : undefined;
   if (url) {
     payload.url = url;
-    touched = true;
   } else if (input.url !== undefined && !url) {
     throw new Error('Informe uma URL válida para o webhook.');
   }
@@ -224,11 +222,9 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
       throw new Error('Selecione ao menos um gatilho para o webhook.');
     }
     payload.triggers = triggers;
-    touched = true;
   }
 
   if (input.name !== undefined) {
-    touched = true;
     if (input.name === null) {
       payload.name = null;
     } else if (typeof input.name === 'string') {
@@ -240,16 +236,14 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
   }
 
   if (input.products !== undefined) {
-    touched = true;
     const products = normalizeProducts(input.products);
     const mappedProducts = mapProductsToApi(products);
-    if (mappedProducts !== undefined && mappedProducts !== GLOBAL_PRODUCTS_API_VALUE) {
+    if (mappedProducts !== undefined) {
       payload.products = mappedProducts;
     }
   }
 
   if (input.token !== undefined) {
-    touched = true;
     if (input.token === null) {
       payload.token = null;
     } else if (typeof input.token === 'string') {
@@ -260,7 +254,7 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
     }
   }
 
-  return touched ? payload : null;
+  return Object.keys(payload).length > 0 ? payload : null;
 }
 
 function extractWebhookRecords(payload: unknown): UnknownRecord[] {
@@ -391,17 +385,11 @@ function normalizeProducts(value: unknown): string {
     if (!trimmed) {
       return GLOBAL_PRODUCTS_SCOPE;
     }
-    if (trimmed === '*') {
-      return GLOBAL_PRODUCTS_SCOPE;
-    }
     const lowerCased = trimmed.toLowerCase();
     if (
       lowerCased === GLOBAL_PRODUCTS_SCOPE ||
       lowerCased === GLOBAL_PRODUCTS_API_VALUE ||
-      lowerCased === LEGACY_GLOBAL_PRODUCTS_API_VALUE ||
-      lowerCased === 'todos' ||
-      lowerCased === 'todos os produtos' ||
-      lowerCased === 'all products'
+      lowerCased === LEGACY_GLOBAL_PRODUCTS_API_VALUE
     ) {
       return GLOBAL_PRODUCTS_SCOPE;
     }
