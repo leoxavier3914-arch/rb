@@ -170,28 +170,22 @@ async function requestWithGlobalProductsFallback(
   };
 
   const serializedPayload = JSON.stringify(payload);
-  const initialResponse = await client.request(path, {
+  const response = await client.request(path, {
     ...baseInit,
     body: serializedPayload
   });
 
   const products = typeof payload.products === 'string' ? payload.products : null;
-  if (products === GLOBAL_PRODUCTS_API_VALUE && initialResponse.status === 400) {
-    const responseText = await initialResponse.clone().text().catch(() => '');
+  if (products?.toLowerCase() === GLOBAL_PRODUCTS_API_VALUE && response.status === 400) {
+    const responseText = await response.clone().text().catch(() => '');
     if (responseText.includes('Product not found')) {
-      const fallbackPayload = {
-        ...payload,
-        products: LEGACY_GLOBAL_PRODUCTS_API_VALUE
-      };
-
-      return client.request(path, {
-        ...baseInit,
-        body: JSON.stringify(fallbackPayload)
-      });
+      throw new Error(
+        'A Kiwify recusou o escopo global "all" ao atualizar o webhook. Confirme com o suporte qual valor deve ser utilizado.'
+      );
     }
   }
 
-  return initialResponse;
+  return response;
 }
 
 export async function deleteWebhook(id: string, client?: KiwifyClient): Promise<void> {
