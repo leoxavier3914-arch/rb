@@ -46,7 +46,6 @@ export async function PATCH(
           url?: unknown;
           triggers?: unknown;
           name?: unknown;
-          products?: unknown;
           token?: unknown;
         }
       | null;
@@ -56,7 +55,6 @@ export async function PATCH(
       (Object.prototype.hasOwnProperty.call(payload, 'url') ||
         Object.prototype.hasOwnProperty.call(payload, 'triggers') ||
         Object.prototype.hasOwnProperty.call(payload, 'name') ||
-        Object.prototype.hasOwnProperty.call(payload, 'products') ||
         Object.prototype.hasOwnProperty.call(payload, 'token'));
 
     if (!payload || !hasKnownKeys) {
@@ -103,26 +101,6 @@ export async function PATCH(
       }
     }
 
-    let products: string | null | undefined = undefined;
-    if (Object.prototype.hasOwnProperty.call(payload, 'products')) {
-      if (payload?.products === null) {
-        products = null;
-      } else if (typeof payload?.products === 'string') {
-        const trimmed = payload.products.trim();
-        if (trimmed.length === 0) {
-          products = null;
-        } else {
-          const normalized = trimmed.toLowerCase();
-          products = normalized === 'all' || normalized === 'all_products' ? 'all' : trimmed;
-        }
-      } else {
-        return NextResponse.json(
-          { ok: false, error: 'Informe os produtos como uma string válida.' },
-          { status: 400 }
-        );
-      }
-    }
-
     let token: string | null | undefined = undefined;
     if (Object.prototype.hasOwnProperty.call(payload, 'token')) {
       if (payload?.token === null) {
@@ -142,7 +120,6 @@ export async function PATCH(
       url,
       triggers,
       name,
-      products,
       token
     });
     return NextResponse.json({ ok: true, webhook });
