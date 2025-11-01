@@ -52,22 +52,39 @@ test('listWebhooks maps webhook payloads returned by the API', async () => {
 });
 
 test('createWebhook normalizes payload before sending to the API', async () => {
-  let captured: { path: string; init?: RequestInit } | null = null;
+  const requests: { path: string; init?: RequestInit }[] = [];
   const client = createMockClient(async (path, init) => {
-    captured = { path, init };
-    return new Response(
-      JSON.stringify({
-        id: 'wh-new',
-        name: 'Webhook Principal',
-        url: 'https://example.com/webhooks',
-        products: 'all',
-        triggers: ['compra_aprovada'],
-        token: 'secret',
-        created_at: '2024-06-01T10:00:00Z',
-        updated_at: '2024-06-01T10:00:00Z'
-      }),
-      { status: 201 }
-    );
+    requests.push({ path, init });
+
+    if (path === '/products') {
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: 'produto-2', name: 'Produto B' },
+            { id: 'produto-1', name: 'Produto A' }
+          ]
+        }),
+        { status: 200 }
+      );
+    }
+
+    if (path === '/webhooks') {
+      return new Response(
+        JSON.stringify({
+          id: 'wh-new',
+          name: 'Webhook Principal',
+          url: 'https://example.com/webhooks',
+          products: 'all',
+          triggers: ['compra_aprovada'],
+          token: 'secret',
+          created_at: '2024-06-01T10:00:00Z',
+          updated_at: '2024-06-01T10:00:00Z'
+        }),
+        { status: 201 }
+      );
+    }
+
+    throw new Error(`unexpected path: ${path}`);
   });
 
   const webhook = await createWebhook(
@@ -81,15 +98,17 @@ test('createWebhook normalizes payload before sending to the API', async () => {
     client
   );
 
-  assert.ok(captured, 'expected the request to be captured');
-  assert.strictEqual(captured?.path, '/webhooks');
-  const body = captured?.init?.body;
+  assert.strictEqual(requests.length, 2);
+  assert.strictEqual(requests[0]?.path, '/products');
+  assert.strictEqual(requests[1]?.path, '/webhooks');
+
+  const body = requests[1]?.init?.body;
   assert.ok(typeof body === 'string', 'expected request body to be a string');
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
     url: 'https://example.com/webhooks',
     triggers: ['compra_aprovada'],
-    products: 'all',
+    products: ['produto-1', 'produto-2'],
     name: 'Principal',
     token: 'secret'
   });
@@ -152,20 +171,37 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   assert.strictEqual(webhook.token, null);
 });
 
-test('updateWebhook envia escopo global como all', async () => {
-  let captured: { path: string; init?: RequestInit } | null = null;
+test('updateWebhook envia todos os produtos quando escopo global é selecionado', async () => {
+  const requests: { path: string; init?: RequestInit }[] = [];
   const client = createMockClient(async (path, init) => {
-    captured = { path, init };
-    return new Response(
-      JSON.stringify({
-        id: 'wh-2',
-        url: 'https://example.com/webhooks',
-        name: 'Atualizado',
-        products: 'all',
-        triggers: ['compra_aprovada']
-      }),
-      { status: 200 }
-    );
+    requests.push({ path, init });
+
+    if (path === '/products') {
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: 'produto-b', name: 'Produto B' },
+            { id: 'produto-a', name: 'Produto A' }
+          ]
+        }),
+        { status: 200 }
+      );
+    }
+
+    if (path === '/webhooks/wh-2') {
+      return new Response(
+        JSON.stringify({
+          id: 'wh-2',
+          url: 'https://example.com/webhooks',
+          name: 'Atualizado',
+          products: ['produto-a', 'produto-b'],
+          triggers: ['compra_aprovada']
+        }),
+        { status: 200 }
+      );
+    }
+
+    throw new Error(`unexpected path: ${path}`);
   });
 
   const webhook = await updateWebhook(
@@ -177,14 +213,15 @@ test('updateWebhook envia escopo global como all', async () => {
     client
   );
 
-  assert.ok(captured, 'expected the request to be captured');
-  assert.strictEqual(captured?.path, '/webhooks/wh-2');
-  const body = captured?.init?.body;
+  assert.strictEqual(requests.length, 2);
+  assert.strictEqual(requests[0]?.path, '/products');
+  assert.strictEqual(requests[1]?.path, '/webhooks/wh-2');
+  const body = requests[1]?.init?.body;
   assert.ok(typeof body === 'string', 'expected request body to be a string');
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
     name: 'Atualizado',
-    products: 'all'
+    products: ['produto-a', 'produto-b']
   });
 
   assert.strictEqual(webhook.products, 'all');
@@ -192,20 +229,44 @@ test('updateWebhook envia escopo global como all', async () => {
 
 test('updateWebhook alterna entre produto específico e escopo global', async () => {
   const capturedBodies: unknown[] = [];
-  let callCount = 0;
+  let webhookCallCount = 0;
   const client = createMockClient(async (path, init) => {
-    capturedBodies.push(init?.body ?? null);
-    callCount += 1;
-    return new Response(
-      JSON.stringify({
-        id: 'wh-4',
-        url: 'https://example.com/webhooks',
-        name: 'Webhook alternado',
-        products: callCount === 1 ? 'produto-xyz' : 'all_products',
-        triggers: ['compra_aprovada']
-      }),
-      { status: 200 }
-    );
+    if (path === '/products') {
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: 'produto-2', name: 'Produto Dois' },
+            { id: 'produto-1', name: 'Produto Um' }
+          ]
+        }),
+        { status: 200 }
+      );
+    }
+
+    if (path.startsWith('/webhooks')) {
+      capturedBodies.push(init?.body ?? null);
+      webhookCallCount += 1;
+      const responsePayload =
+        webhookCallCount === 1
+          ? {
+              id: 'wh-4',
+              url: 'https://example.com/webhooks',
+              name: 'Webhook alternado',
+              products: 'produto-xyz',
+              triggers: ['compra_aprovada']
+            }
+          : {
+              id: 'wh-4',
+              url: 'https://example.com/webhooks',
+              name: 'Webhook alternado',
+              products: ['produto-1', 'produto-2'],
+              triggers: ['compra_aprovada']
+            };
+
+      return new Response(JSON.stringify(responsePayload), { status: 200 });
+    }
+
+    throw new Error(`unexpected path: ${path}`);
   });
 
   await updateWebhook(
@@ -233,13 +294,20 @@ test('updateWebhook alterna entre produto específico e escopo global', async ()
   const secondBody = capturedBodies[1];
   assert.ok(typeof secondBody === 'string', 'expected second request body to be a string');
   const secondPayload = JSON.parse(secondBody as string);
-  assert.deepStrictEqual(secondPayload, { products: 'all' });
+  assert.deepStrictEqual(secondPayload, { products: ['produto-1', 'produto-2'] });
 });
 
 test('updateWebhook informa quando a API recusa o escopo global', async () => {
-  let callCount = 0;
-  const client = createMockClient(async () => {
-    callCount += 1;
+  let webhookRequests = 0;
+  const client = createMockClient(async (path, init) => {
+    if (path === '/products') {
+      return new Response(
+        JSON.stringify({ data: [{ id: 'produto-1', name: 'Produto Um' }] }),
+        { status: 200 }
+      );
+    }
+
+    webhookRequests += 1;
     return new Response('Product not found', { status: 400 });
   });
 
@@ -256,13 +324,52 @@ test('updateWebhook informa quando a API recusa o escopo global', async () => {
       assert.ok(error instanceof Error);
       assert.strictEqual(
         error.message,
-        'A Kiwify recusou o escopo global "all" ao atualizar o webhook. Confirme com o suporte qual valor deve ser utilizado.'
+        'A Kiwify recusou a atualização do webhook mesmo enviando todos os produtos disponíveis. Confirme com o suporte quais identificadores devem ser utilizados.'
       );
       return true;
     }
   );
 
-  assert.strictEqual(callCount, 1);
+  assert.strictEqual(webhookRequests, 1);
+});
+
+test('updateWebhook trata mensagem JSON ao recusar escopo global', async () => {
+  let webhookRequests = 0;
+  const client = createMockClient(async (path, init) => {
+    if (path === '/products') {
+      return new Response(
+        JSON.stringify({ data: [{ id: 'produto-1', name: 'Produto Um' }] }),
+        { status: 200 }
+      );
+    }
+
+    webhookRequests += 1;
+    return new Response(
+      JSON.stringify({ error: 'validation_error', message: 'Product not found' }),
+      { status: 400 }
+    );
+  });
+
+  await assert.rejects(
+    () =>
+      updateWebhook(
+        'wh-json',
+        {
+          products: 'all'
+        },
+        client
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.strictEqual(
+        error.message,
+        'A Kiwify recusou a atualização do webhook mesmo enviando todos os produtos disponíveis. Confirme com o suporte quais identificadores devem ser utilizados.'
+      );
+      return true;
+    }
+  );
+
+  assert.strictEqual(webhookRequests, 1);
 });
 
 test('updateWebhook trata mensagem JSON ao recusar escopo global', async () => {
