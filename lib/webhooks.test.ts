@@ -233,7 +233,7 @@ test('updateWebhook alterna entre produto específico e escopo global', async ()
   const secondBody = capturedBodies[1];
   assert.ok(typeof secondBody === 'string', 'expected second request body to be a string');
   const secondPayload = JSON.parse(secondBody as string);
-  assert.deepStrictEqual(secondPayload, { products: null });
+  assert.deepStrictEqual(secondPayload, { products: 'all' });
 });
 
 test('updateWebhook não envia escopo quando não informado', async () => {

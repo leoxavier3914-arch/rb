@@ -206,14 +206,10 @@ function buildUpdatePayload(input: UpdateWebhookInput): UnknownRecord | null {
   }
 
   if (input.products !== undefined) {
-    if (input.products === null) {
-      payload.products = null;
-    } else {
-      const products = normalizeProducts(input.products);
-      const mappedProducts = mapProductsToApi(products);
-      if (mappedProducts !== undefined) {
-        payload.products = mappedProducts;
-      }
+    const products = normalizeProducts(input.products);
+    const mappedProducts = mapProductsToApi(products);
+    if (mappedProducts !== undefined) {
+      payload.products = mappedProducts;
     }
   }
 
