@@ -152,7 +152,7 @@ test('updateWebhook accepts partial updates and trims values', async () => {
   assert.strictEqual(webhook.token, null);
 });
 
-test('updateWebhook envia escopo global como "all"', async () => {
+test('updateWebhook envia escopo global como null', async () => {
   let captured: { path: string; init?: RequestInit } | null = null;
   const client = createMockClient(async (path, init) => {
     captured = { path, init };
@@ -184,8 +184,54 @@ test('updateWebhook envia escopo global como "all"', async () => {
   const parsedBody = JSON.parse(body!);
   assert.deepStrictEqual(parsedBody, {
     name: 'Atualizado',
-    products: 'all_products'
+    products: null
   });
+});
+
+test('updateWebhook alterna entre produto específico e escopo global', async () => {
+  const capturedBodies: unknown[] = [];
+  let callCount = 0;
+  const client = createMockClient(async (path, init) => {
+    capturedBodies.push(init?.body ?? null);
+    callCount += 1;
+    return new Response(
+      JSON.stringify({
+        id: 'wh-4',
+        url: 'https://example.com/webhooks',
+        name: 'Webhook alternado',
+        products: callCount === 1 ? 'produto-xyz' : 'all_products',
+        triggers: ['compra_aprovada']
+      }),
+      { status: 200 }
+    );
+  });
+
+  await updateWebhook(
+    'wh-4',
+    {
+      products: 'produto-xyz'
+    },
+    client
+  );
+
+  await updateWebhook(
+    'wh-4',
+    {
+      products: null
+    },
+    client
+  );
+
+  assert.strictEqual(capturedBodies.length, 2);
+  const firstBody = capturedBodies[0];
+  assert.ok(typeof firstBody === 'string', 'expected first request body to be a string');
+  const firstPayload = JSON.parse(firstBody as string);
+  assert.deepStrictEqual(firstPayload, { products: 'produto-xyz' });
+
+  const secondBody = capturedBodies[1];
+  assert.ok(typeof secondBody === 'string', 'expected second request body to be a string');
+  const secondPayload = JSON.parse(secondBody as string);
+  assert.deepStrictEqual(secondPayload, { products: null });
 });
 
 test('updateWebhook não envia escopo quando não informado', async () => {
