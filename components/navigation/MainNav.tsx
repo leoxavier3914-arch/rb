@@ -182,7 +182,7 @@ export function MainNav() {
           onPointerUp={endDragging}
           onPointerCancel={endDragging}
         >
-          <div className="flex min-w-full gap-4">
+          <div className="flex min-w-full items-start gap-4">
             {itemPages.map((pageItems, pageIndex) => (
               <div
                 key={`page-${pageIndex}`}
