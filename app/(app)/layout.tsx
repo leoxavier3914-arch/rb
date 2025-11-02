@@ -7,7 +7,7 @@ export default function AppLayout({ children }: { readonly children: ReactNode }
   const currentYear = new Date().getFullYear();
 
   return (
-    <div className="flex min-h-screen flex-col text-slate-900">
+    <div className="flex min-h-screen flex-col bg-[#f4f5f7] text-slate-900">
       <header className="relative bg-[#0231b1] pb-12 text-white shadow-[0_18px_50px_rgba(2,49,177,0.25)]">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-4 px-4 py-6 sm:px-6">
           <Link href="/dashboard" className="flex items-center gap-3 text-white">
@@ -45,17 +45,12 @@ export default function AppLayout({ children }: { readonly children: ReactNode }
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col bg-[#f4f5f7]">
-        <div className="-mt-16 mx-auto w-full max-w-6xl px-4 sm:px-6">
+      <main className="flex-1 pb-12">
+        <div className="-mt-16 mx-auto w-full max-w-6xl space-y-8 px-4 sm:px-6">
           <MainNav />
+          <div className="space-y-8 pt-2">{children}</div>
         </div>
-
-        <main className="flex-1 pb-12 pt-8">
-          <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-            <div className="space-y-8">{children}</div>
-          </div>
-        </main>
-      </div>
+      </main>
 
       <footer className="mt-auto border-t border-slate-200/70 bg-white/80 py-4">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-6 text-xs text-slate-500 sm:flex-row">
