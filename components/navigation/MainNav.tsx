@@ -38,9 +38,11 @@ const items: NavItem[] = [
   { href: '/configs', label: 'Configs', icon: Settings }
 ];
 
-const PAGE_SIZE = 8;
-const itemPages = Array.from({ length: Math.ceil(items.length / PAGE_SIZE) }, (_, index) =>
-  items.slice(index * PAGE_SIZE, (index + 1) * PAGE_SIZE)
+const SECTION_COUNT = 3;
+const SECTION_SIZE = 8;
+
+const navSections = Array.from({ length: SECTION_COUNT }, (_, index) =>
+  items.slice(index * SECTION_SIZE, (index + 1) * SECTION_SIZE)
 );
 
 export function MainNav() {
@@ -136,7 +138,7 @@ export function MainNav() {
       return;
     }
     const currentPage = Math.round(container.scrollLeft / pageStride);
-    const targetPage = Math.min(Math.max(currentPage + direction, 0), itemPages.length - 1);
+    const targetPage = Math.min(Math.max(currentPage + direction, 0), navSections.length - 1);
     const targetScroll = targetPage * pageStride;
 
     container.scrollTo({ left: targetScroll, behavior: 'smooth' });
@@ -221,11 +223,14 @@ export function MainNav() {
           onPointerUp={endDragging}
           onPointerCancel={endDragging}
         >
-          <div className="flex min-w-full items-start gap-4">
-            {itemPages.map((pageItems, pageIndex) => (
+          <div className="flex min-w-full items-start">
+            {navSections.map((pageItems, pageIndex) => (
               <div
                 key={`page-${pageIndex}`}
-                className="grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4"
+                className={cn(
+                  'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4',
+                  pageIndex < navSections.length - 1 && 'mr-8 sm:mr-10'
+                )}
               >
                 {pageItems.map(item => {
                   const active = pathname ? pathname.startsWith(item.href) : item.href === '/dashboard';
