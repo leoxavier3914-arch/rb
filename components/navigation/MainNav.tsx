@@ -38,6 +38,11 @@ const items: NavItem[] = [
   { href: '/configs', label: 'Configs', icon: Settings }
 ];
 
+const PAGE_SIZE = 8;
+const itemPages = Array.from({ length: Math.ceil(items.length / PAGE_SIZE) }, (_, index) =>
+  items.slice(index * PAGE_SIZE, (index + 1) * PAGE_SIZE)
+);
+
 export function MainNav() {
   const pathname = usePathname();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -84,6 +89,18 @@ export function MainNav() {
     if (typeof window !== 'undefined') {
       window.requestAnimationFrame(() => updateScrollControls());
     }
+  };
+
+  const scrollByPage = (direction: -1 | 1) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const wrapper = container.firstElementChild as HTMLElement | null;
+    const pageWidth = container.clientWidth;
+    const gapValue = wrapper ? window.getComputedStyle(wrapper).columnGap || '0' : '0';
+    const gap = Number.parseFloat(gapValue) || 0;
+
+    scrollByAmount((pageWidth + gap) * direction);
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -144,7 +161,7 @@ export function MainNav() {
         <button
           type="button"
           aria-label="Deslocar para a esquerda"
-          onClick={() => scrollByAmount(-240)}
+          onClick={() => scrollByPage(-1)}
           disabled={!canScrollLeft}
           className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 sm:flex"
         >
@@ -162,39 +179,46 @@ export function MainNav() {
           onPointerUp={endDragging}
           onPointerCancel={endDragging}
         >
-          <div className="grid min-w-full grid-cols-2 gap-4 sm:min-w-0 sm:grid-cols-4 xl:grid-cols-8">
-            {items.map(item => {
-              const active = pathname ? pathname.startsWith(item.href) : item.href === '/dashboard';
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    'group flex h-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
-                    active
-                      ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
-                      : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
-                      active ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
-                    )}
-                  >
-                    <Icon className="h-6 w-6" />
-                  </span>
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-        </div>
+          <div className="flex min-w-full gap-4">
+            {itemPages.map((pageItems, pageIndex) => (
+              <div
+                key={`page-${pageIndex}`}
+                className="grid w-full flex-none grid-cols-2 gap-4 sm:grid-cols-4"
+              >
+                {pageItems.map(item => {
+                  const active = pathname ? pathname.startsWith(item.href) : item.href === '/dashboard';
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        'group flex h-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
+                        active
+                          ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
+                          : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
+                          active ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
+                        )}
+                      >
+                        <Icon className="h-6 w-6" />
+                      </span>
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
         <button
           type="button"
           aria-label="Deslocar para a direita"
-          onClick={() => scrollByAmount(240)}
+          onClick={() => scrollByPage(1)}
           disabled={!canScrollRight}
           className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 sm:flex"
         >
