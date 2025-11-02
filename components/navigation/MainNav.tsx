@@ -102,8 +102,17 @@ export function MainNav() {
     const contentWidth = container.clientWidth - paddingLeft - paddingRight;
     const gapValue = wrapper ? window.getComputedStyle(wrapper).columnGap || '0' : '0';
     const gap = Number.parseFloat(gapValue) || 0;
+    const firstPage = wrapper?.firstElementChild as HTMLElement | null;
+    const pageWidth = firstPage ? firstPage.getBoundingClientRect().width : contentWidth;
+    const pageStride = pageWidth + gap;
+    const currentPage = Math.round(container.scrollLeft / pageStride);
+    const targetPage = Math.min(Math.max(currentPage + direction, 0), itemPages.length - 1);
+    const targetScroll = targetPage * pageStride;
 
-    scrollByAmount((contentWidth + gap) * direction);
+    container.scrollTo({ left: targetScroll, behavior: 'smooth' });
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => updateScrollControls());
+    }
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
