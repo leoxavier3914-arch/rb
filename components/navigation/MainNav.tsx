@@ -128,6 +128,10 @@ export function MainNav() {
       pageStride = pageWidth + gap;
     }
 
+    if (pageStride !== null) {
+      pageStride = Math.max(pageStride, contentWidth);
+    }
+
     if (pageStride === null || pageStride <= 0) {
       return;
     }
@@ -221,7 +225,7 @@ export function MainNav() {
             {itemPages.map((pageItems, pageIndex) => (
               <div
                 key={`page-${pageIndex}`}
-                className="grid w-full flex-none grid-cols-2 gap-4 sm:grid-cols-4"
+                className="grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4"
               >
                 {pageItems.map(item => {
                   const active = pathname ? pathname.startsWith(item.href) : item.href === '/dashboard';
