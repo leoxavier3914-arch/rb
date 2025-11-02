@@ -96,11 +96,14 @@ export function MainNav() {
     if (!container) return;
 
     const wrapper = container.firstElementChild as HTMLElement | null;
-    const pageWidth = container.clientWidth;
+    const computedStyle = window.getComputedStyle(container);
+    const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0;
+    const paddingRight = Number.parseFloat(computedStyle.paddingRight) || 0;
+    const contentWidth = container.clientWidth - paddingLeft - paddingRight;
     const gapValue = wrapper ? window.getComputedStyle(wrapper).columnGap || '0' : '0';
     const gap = Number.parseFloat(gapValue) || 0;
 
-    scrollByAmount((pageWidth + gap) * direction);
+    scrollByAmount((contentWidth + gap) * direction);
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
