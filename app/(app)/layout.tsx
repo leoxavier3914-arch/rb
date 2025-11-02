@@ -45,15 +45,17 @@ export default function AppLayout({ children }: { readonly children: ReactNode }
         </div>
       </header>
 
-      <div className="-mt-16 mx-auto w-full max-w-6xl px-4 sm:px-6">
-        <MainNav />
-      </div>
-
-      <main className="flex-1 bg-[#f4f5f7] pb-12 pt-8">
-        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-          <div className="space-y-8">{children}</div>
+      <div className="flex flex-1 flex-col bg-[#f4f5f7]">
+        <div className="-mt-16 mx-auto w-full max-w-6xl px-4 sm:px-6">
+          <MainNav />
         </div>
-      </main>
+
+        <main className="flex-1 pb-12 pt-8">
+          <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+            <div className="space-y-8">{children}</div>
+          </div>
+        </main>
+      </div>
 
       <footer className="mt-auto border-t border-slate-200/70 bg-white/80 py-4">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-6 text-xs text-slate-500 sm:flex-row">
