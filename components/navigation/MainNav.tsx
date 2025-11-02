@@ -100,11 +100,37 @@ export function MainNav() {
     const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0;
     const paddingRight = Number.parseFloat(computedStyle.paddingRight) || 0;
     const contentWidth = container.clientWidth - paddingLeft - paddingRight;
-    const gapValue = wrapper ? window.getComputedStyle(wrapper).columnGap || '0' : '0';
-    const gap = Number.parseFloat(gapValue) || 0;
     const firstPage = wrapper?.firstElementChild as HTMLElement | null;
-    const pageWidth = firstPage ? firstPage.getBoundingClientRect().width : contentWidth;
-    const pageStride = pageWidth + gap;
+
+    let pageStride: number | null = null;
+
+    if (firstPage && firstPage.nextElementSibling instanceof HTMLElement) {
+      const secondPage = firstPage.nextElementSibling;
+      const offsetDifference = secondPage.offsetLeft - firstPage.offsetLeft;
+      if (offsetDifference > 0) {
+        pageStride = offsetDifference;
+      } else {
+        const firstRect = firstPage.getBoundingClientRect();
+        const secondRect = secondPage.getBoundingClientRect();
+        const rectDifference = secondRect.left - firstRect.left;
+        if (rectDifference > 0) {
+          pageStride = rectDifference;
+        }
+      }
+    }
+
+    if (pageStride === null) {
+      const wrapperStyle = wrapper ? window.getComputedStyle(wrapper) : null;
+      const gapValue =
+        wrapperStyle?.gap || wrapperStyle?.columnGap || wrapperStyle?.rowGap || '0';
+      const gap = Number.parseFloat(gapValue) || 0;
+      const pageWidth = firstPage ? firstPage.getBoundingClientRect().width : contentWidth;
+      pageStride = pageWidth + gap;
+    }
+
+    if (pageStride === null || pageStride <= 0) {
+      return;
+    }
     const currentPage = Math.round(container.scrollLeft / pageStride);
     const targetPage = Math.min(Math.max(currentPage + direction, 0), itemPages.length - 1);
     const targetScroll = targetPage * pageStride;
