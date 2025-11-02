@@ -47,10 +47,7 @@ export default function AppLayout({ children }: { readonly children: ReactNode }
 
       <main className="flex-1 pb-12">
         <div className="-mt-16 mx-auto w-full max-w-6xl space-y-8 px-4 sm:px-6">
-          <div className="relative isolate">
-            <div className="pointer-events-none absolute inset-0 -z-10 bg-[#f4f5f7]" />
-            <MainNav />
-          </div>
+          <MainNav />
           <div className="space-y-8 pt-2">{children}</div>
         </div>
       </main>
