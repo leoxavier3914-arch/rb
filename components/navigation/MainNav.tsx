@@ -205,7 +205,7 @@ export function MainNav() {
       <div
         ref={scrollContainerRef}
         className={cn(
-          'overflow-x-auto pb-16 sm:pb-20 main-nav-scroll -mx-8 px-8 sm:-mx-12 sm:px-12 scroll-smooth snap-x snap-mandatory',
+          'overflow-x-auto pb-16 sm:pb-20 main-nav-scroll -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 scroll-smooth snap-x snap-mandatory',
           isDragging ? 'cursor-grabbing' : 'cursor-grab'
         )}
         onPointerDown={handlePointerDown}
