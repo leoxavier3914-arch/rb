@@ -10,6 +10,13 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  FileArchive,
+  FileBarChart,
+  FileBox,
+  FileCog,
+  FileOutput,
+  FileStack,
+  FileType,
   LayoutDashboard,
   Package,
   Receipt,
@@ -35,7 +42,14 @@ const items: NavItem[] = [
   { href: '/pendentes', label: 'Pendentes', icon: ShoppingBag },
   { href: '/reembolsados', label: 'Reembolsados', icon: CreditCard },
   { href: '/recusados', label: 'Recusados', icon: Users2 },
-  { href: '/configs', label: 'Configs', icon: Settings }
+  { href: '/configs', label: 'Configs', icon: Settings },
+  { href: '/teste-1', label: 'Teste 1', icon: FileArchive },
+  { href: '/teste-2', label: 'Teste 2', icon: FileBarChart },
+  { href: '/teste-3', label: 'Teste 3', icon: FileBox },
+  { href: '/teste-4', label: 'Teste 4', icon: FileCog },
+  { href: '/teste-5', label: 'Teste 5', icon: FileStack },
+  { href: '/teste-6', label: 'Teste 6', icon: FileType },
+  { href: '/teste-7', label: 'Teste 7', icon: FileOutput }
 ];
 
 const SECTION_COUNT = 3;
