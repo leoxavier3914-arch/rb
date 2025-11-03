@@ -103,20 +103,27 @@ export function MainNav() {
     const paddingRight = Number.parseFloat(computedStyle.paddingRight) || 0;
     const contentWidth = container.clientWidth - paddingLeft - paddingRight;
     const firstPage = wrapper?.firstElementChild as HTMLElement | null;
+    const firstPageStyle = firstPage ? window.getComputedStyle(firstPage) : null;
+    const parseSpacing = (value: string | null | undefined) => Number.parseFloat(value ?? '') || 0;
+    const firstPageHorizontalMargins = firstPageStyle
+      ? parseSpacing(firstPageStyle.marginLeft) + parseSpacing(firstPageStyle.marginRight)
+      : 0;
 
     let pageStride: number | null = null;
 
     if (firstPage && firstPage.nextElementSibling instanceof HTMLElement) {
       const secondPage = firstPage.nextElementSibling;
+      const secondPageStyle = window.getComputedStyle(secondPage);
+      const secondPageMarginLeft = parseSpacing(secondPageStyle.marginLeft);
       const offsetDifference = secondPage.offsetLeft - firstPage.offsetLeft;
       if (offsetDifference > 0) {
-        pageStride = offsetDifference;
+        pageStride = offsetDifference + firstPageHorizontalMargins + secondPageMarginLeft;
       } else {
         const firstRect = firstPage.getBoundingClientRect();
         const secondRect = secondPage.getBoundingClientRect();
         const rectDifference = secondRect.left - firstRect.left;
         if (rectDifference > 0) {
-          pageStride = rectDifference;
+          pageStride = rectDifference + firstPageHorizontalMargins + secondPageMarginLeft;
         }
       }
     }
@@ -127,7 +134,8 @@ export function MainNav() {
         wrapperStyle?.gap || wrapperStyle?.columnGap || wrapperStyle?.rowGap || '0';
       const gap = Number.parseFloat(gapValue) || 0;
       const pageWidth = firstPage ? firstPage.getBoundingClientRect().width : contentWidth;
-      pageStride = pageWidth + gap;
+      // Include horizontal margins so the stride covers visual gaps between pages.
+      pageStride = pageWidth + gap + firstPageHorizontalMargins;
     }
 
     if (pageStride !== null) {
