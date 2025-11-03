@@ -63,6 +63,7 @@ const navSections = Array.from({ length: sectionCount }, (_, index) =>
 export function MainNav() {
   const pathname = usePathname();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const dragStateRef = useRef({
     isPointerDown: false,
     hasDragged: false,
@@ -73,6 +74,7 @@ export function MainNav() {
   const [isDragging, setIsDragging] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [activeSection, setActiveSection] = useState(0);
 
   const updateScrollControls = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -80,6 +82,28 @@ export function MainNav() {
     const { scrollLeft, scrollWidth, clientWidth } = container;
     setCanScrollLeft(scrollLeft > 1);
     setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 1);
+
+    const pages = pageRefs.current;
+    if (!pages.length) {
+      setActiveSection(0);
+      return;
+    }
+
+    const containerCenter = scrollLeft + clientWidth / 2;
+    let closestIndex = 0;
+    let smallestDistance = Number.POSITIVE_INFINITY;
+
+    pages.forEach((page, index) => {
+      if (!page) return;
+      const pageCenter = page.offsetLeft + page.offsetWidth / 2;
+      const distance = Math.abs(containerCenter - pageCenter);
+      if (distance < smallestDistance) {
+        smallestDistance = distance;
+        closestIndex = index;
+      }
+    });
+
+    setActiveSection(prev => (prev === closestIndex ? prev : closestIndex));
   }, []);
 
   useEffect(() => {
@@ -99,75 +123,30 @@ export function MainNav() {
     };
   }, [updateScrollControls]);
 
-  const scrollByAmount = (amount: number) => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    container.scrollBy({ left: amount, behavior: 'smooth' });
-    if (typeof window !== 'undefined') {
-      window.requestAnimationFrame(() => updateScrollControls());
-    }
-  };
+  const scrollToSection = useCallback(
+    (index: number) => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+
+      const clampedIndex = Math.min(Math.max(index, 0), navSections.length - 1);
+      const targetPage = pageRefs.current[clampedIndex];
+      if (!targetPage) return;
+
+      container.scrollTo({ left: targetPage.offsetLeft, behavior: 'smooth' });
+      setActiveSection(prev => (prev === clampedIndex ? prev : clampedIndex));
+      if (typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => updateScrollControls());
+      }
+    },
+    [updateScrollControls]
+  );
 
   const scrollByPage = (direction: -1 | 1) => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const wrapper = container.firstElementChild as HTMLElement | null;
-    const computedStyle = window.getComputedStyle(container);
-    const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0;
-    const paddingRight = Number.parseFloat(computedStyle.paddingRight) || 0;
-    const contentWidth = container.clientWidth - paddingLeft - paddingRight;
-    const firstPage = wrapper?.firstElementChild as HTMLElement | null;
-    const firstPageStyle = firstPage ? window.getComputedStyle(firstPage) : null;
-    const parseSpacing = (value: string | null | undefined) => Number.parseFloat(value ?? '') || 0;
-    const firstPageHorizontalMargins = firstPageStyle
-      ? parseSpacing(firstPageStyle.marginLeft) + parseSpacing(firstPageStyle.marginRight)
-      : 0;
-
-    let pageStride: number | null = null;
-
-    if (firstPage && firstPage.nextElementSibling instanceof HTMLElement) {
-      const secondPage = firstPage.nextElementSibling;
-      const secondPageStyle = window.getComputedStyle(secondPage);
-      const secondPageMarginLeft = parseSpacing(secondPageStyle.marginLeft);
-      const offsetDifference = secondPage.offsetLeft - firstPage.offsetLeft;
-      if (offsetDifference > 0) {
-        pageStride = offsetDifference + firstPageHorizontalMargins + secondPageMarginLeft;
-      } else {
-        const firstRect = firstPage.getBoundingClientRect();
-        const secondRect = secondPage.getBoundingClientRect();
-        const rectDifference = secondRect.left - firstRect.left;
-        if (rectDifference > 0) {
-          pageStride = rectDifference + firstPageHorizontalMargins + secondPageMarginLeft;
-        }
-      }
-    }
-
-    if (pageStride === null) {
-      const wrapperStyle = wrapper ? window.getComputedStyle(wrapper) : null;
-      const gapValue =
-        wrapperStyle?.gap || wrapperStyle?.columnGap || wrapperStyle?.rowGap || '0';
-      const gap = Number.parseFloat(gapValue) || 0;
-      const pageWidth = firstPage ? firstPage.getBoundingClientRect().width : contentWidth;
-      // Include horizontal margins so the stride covers visual gaps between pages.
-      pageStride = pageWidth + gap + firstPageHorizontalMargins;
-    }
-
-    if (pageStride !== null) {
-      pageStride = Math.max(pageStride, contentWidth);
-    }
-
-    if (pageStride === null || pageStride <= 0) {
-      return;
-    }
-    const currentPage = Math.round(container.scrollLeft / pageStride);
-    const targetPage = Math.min(Math.max(currentPage + direction, 0), navSections.length - 1);
-    const targetScroll = targetPage * pageStride;
-
-    container.scrollTo({ left: targetScroll, behavior: 'smooth' });
-    if (typeof window !== 'undefined') {
-      window.requestAnimationFrame(() => updateScrollControls());
-    }
+    const targetIndex = Math.min(
+      Math.max(activeSection + direction, 0),
+      navSections.length - 1
+    );
+    scrollToSection(targetIndex);
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -237,7 +216,7 @@ export function MainNav() {
         <div
           ref={scrollContainerRef}
           className={cn(
-            'flex-1 overflow-x-auto pb-14 sm:pb-16 main-nav-scroll -mx-8 px-8 sm:-mx-12 sm:px-12',
+            'flex-1 overflow-x-auto pb-16 sm:pb-20 main-nav-scroll -mx-8 px-8 sm:-mx-12 sm:px-12 scroll-smooth snap-x snap-mandatory',
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           )}
           onPointerDown={handlePointerDown}
@@ -251,9 +230,12 @@ export function MainNav() {
               <div
                 key={`page-${pageIndex}`}
                 className={cn(
-                  'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4',
+                  'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4 snap-start',
                   pageIndex < navSections.length - 1 && SECTION_GAP_CLASSES
                 )}
+                ref={element => {
+                  pageRefs.current[pageIndex] = element;
+                }}
               >
                 {pageItems.map(item => {
                   const active = pathname ? pathname.startsWith(item.href) : item.href === '/dashboard';
@@ -295,6 +277,24 @@ export function MainNav() {
           <ChevronRight className="h-5 w-5" />
         </button>
       </div>
+      {navSections.length > 1 ? (
+        <div className="mt-6 flex justify-center gap-2">
+          {navSections.map((_, index) => (
+            <button
+              key={`section-indicator-${index}`}
+              type="button"
+              aria-label={`Ir para a sessão ${index + 1}`}
+              onClick={() => scrollToSection(index)}
+              className={cn(
+                'h-2.5 w-2.5 rounded-full transition-colors',
+                activeSection === index
+                  ? 'bg-[#0231b1]'
+                  : 'bg-slate-200 hover:bg-slate-300'
+              )}
+            />
+          ))}
+        </div>
+      ) : null}
     </nav>
   );
 }
