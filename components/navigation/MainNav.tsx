@@ -137,12 +137,13 @@ export function MainNav() {
       const pageCenter = pageRect.left + pageRect.width / 2;
       const difference = pageCenter - containerCenter;
       const maxScrollLeft = container.scrollWidth - container.clientWidth;
-      const targetScrollLeft = Math.min(
-        Math.max(container.scrollLeft + difference, 0),
-        maxScrollLeft
+      const targetScrollLeft = Math.max(
+        0,
+        Math.min(container.scrollLeft + difference, maxScrollLeft)
       );
 
       container.scrollTo({ left: targetScrollLeft, behavior: 'smooth' });
+      closestSectionRef.current = clampedIndex;
       setActiveSection(prev => (prev === clampedIndex ? prev : clampedIndex));
       if (typeof window !== 'undefined') {
         const ensureUpdate = () => {
