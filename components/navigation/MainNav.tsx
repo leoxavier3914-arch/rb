@@ -3,7 +3,15 @@
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type WheelEvent as ReactWheelEvent
+} from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   BadgeDollarSign,
@@ -31,7 +39,9 @@ type NavItem = {
   icon: LucideIcon;
 };
 
-const items: NavItem[] = [
+type NavSection = (NavItem | null)[];
+
+const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
   { href: '/financeiro', label: 'Financeiro', icon: BadgeDollarSign },
@@ -51,237 +61,194 @@ const items: NavItem[] = [
 ];
 
 const SECTION_SIZE = 8;
+const SECTION_GAP_IN_PX = 32;
 
-const sectionCount = Math.ceil(items.length / SECTION_SIZE);
-const navSections = Array.from({ length: sectionCount }, (_, index) =>
-  items.slice(index * SECTION_SIZE, (index + 1) * SECTION_SIZE)
-).filter(section => section.length > 0);
+const NAV_SECTIONS = createNavSections(NAV_ITEMS, SECTION_SIZE);
+
+function createNavSections(items: NavItem[], size: number): NavSection[] {
+  const sections: NavSection[] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    const slice: NavSection = items.slice(index, index + size);
+
+    if (!slice.length) {
+      continue;
+    }
+
+    while (slice.length < size) {
+      slice.push(null);
+    }
+
+    sections.push(slice);
+  }
+
+  return sections;
+}
 
 export function MainNav() {
   const pathname = usePathname();
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const closestSectionRef = useRef(0);
-  const dragStateRef = useRef({
-    isPointerDown: false,
-    hasDragged: false,
-    startX: 0,
-    scrollLeft: 0,
-    pointerId: null as number | null
-  });
-  const [isDragging, setIsDragging] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
+  const hasMultipleSections = NAV_SECTIONS.length > 1;
+  const wheelLockRef = useRef(false);
+  const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const updateScrollControls = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container) {
-      return closestSectionRef.current;
-    }
-    const pages = pageRefs.current;
-    if (!pages.length) {
-      closestSectionRef.current = 0;
-      setActiveSection(0);
-      return closestSectionRef.current;
-    }
-
-    const containerRect = container.getBoundingClientRect();
-    const containerScrollCenter = container.scrollLeft + container.clientWidth / 2;
-    let closestIndex = closestSectionRef.current;
-    let smallestDistance = Number.POSITIVE_INFINITY;
-
-    pages.forEach((page, index) => {
-      if (!page) return;
-      const pageRect = page.getBoundingClientRect();
-      const relativeLeft = pageRect.left - containerRect.left;
-      const pageCenterInScrollSpace =
-        container.scrollLeft + relativeLeft + pageRect.width / 2;
-      const distance = Math.abs(containerScrollCenter - pageCenterInScrollSpace);
-      if (distance < smallestDistance) {
-        smallestDistance = distance;
-        closestIndex = index;
+  const goToSection = useCallback(
+    (index: number, { lockWheel = false }: { lockWheel?: boolean } = {}) => {
+      if (!hasMultipleSections) {
+        return;
       }
-    });
 
-    closestSectionRef.current = closestIndex;
-    setActiveSection(prev => (prev === closestIndex ? prev : closestIndex));
-    return closestIndex;
-  }, []);
+      setActiveSection(prev => {
+        const clampedIndex = Math.min(Math.max(index, 0), NAV_SECTIONS.length - 1);
+        if (prev === clampedIndex) {
+          return prev;
+        }
 
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    updateScrollControls();
-    const handleScroll = () => updateScrollControls();
-    container.addEventListener('scroll', handleScroll, { passive: true });
-
-    const resizeObserver = new ResizeObserver(() => updateScrollControls());
-    resizeObserver.observe(container);
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      resizeObserver.disconnect();
-    };
-  }, [updateScrollControls]);
-
-  const scrollToSection = useCallback(
-    (index: number) => {
-      const container = scrollContainerRef.current;
-      if (!container) return;
-
-      const clampedIndex = Math.min(Math.max(index, 0), navSections.length - 1);
-      const targetPage = pageRefs.current[clampedIndex];
-      if (!targetPage) return;
-
-      const containerRect = container.getBoundingClientRect();
-      const pageRect = targetPage.getBoundingClientRect();
-      const relativeLeft = pageRect.left - containerRect.left;
-      const pageCenterInScrollSpace =
-        container.scrollLeft + relativeLeft + pageRect.width / 2;
-      const desiredScrollLeft = pageCenterInScrollSpace - container.clientWidth / 2;
-      const maxScrollLeft = container.scrollWidth - container.clientWidth;
-      const targetScrollLeft = Math.min(Math.max(desiredScrollLeft, 0), maxScrollLeft);
-
-      container.scrollTo({ left: targetScrollLeft, behavior: 'smooth' });
-      closestSectionRef.current = clampedIndex;
-      setActiveSection(prev => (prev === clampedIndex ? prev : clampedIndex));
-      if (typeof window !== 'undefined') {
-        const ensureUpdate = () => {
-          updateScrollControls();
-          const distance = Math.abs(container.scrollLeft - targetScrollLeft);
-          if (distance > 1) {
-            window.requestAnimationFrame(ensureUpdate);
+        if (lockWheel) {
+          wheelLockRef.current = true;
+          if (wheelTimeoutRef.current) {
+            clearTimeout(wheelTimeoutRef.current);
           }
-        };
+          wheelTimeoutRef.current = setTimeout(() => {
+            wheelLockRef.current = false;
+            wheelTimeoutRef.current = null;
+          }, 500);
+        }
 
-        window.requestAnimationFrame(ensureUpdate);
-      }
+        return clampedIndex;
+      });
     },
-    [updateScrollControls]
+    [hasMultipleSections]
   );
 
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    dragStateRef.current = {
-      isPointerDown: true,
-      hasDragged: false,
-      startX: event.clientX,
-      scrollLeft: container.scrollLeft,
-      pointerId: event.pointerId
-    };
-
-    container.setPointerCapture(event.pointerId);
-  };
-
-  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const container = scrollContainerRef.current;
-    const dragState = dragStateRef.current;
-    if (!container || !dragState.isPointerDown) return;
-
-    const deltaX = event.clientX - dragState.startX;
-    if (!dragState.hasDragged && Math.abs(deltaX) < 4) {
+  useEffect(() => {
+    if (!pathname) {
       return;
     }
 
-    dragState.hasDragged = true;
-    setIsDragging(true);
-    event.preventDefault();
-    container.scrollLeft = dragState.scrollLeft - deltaX;
-    updateScrollControls();
-  };
+    const sectionIndex = NAV_SECTIONS.findIndex(section =>
+      section.some(item => item && pathname.startsWith(item.href))
+    );
 
-  const endDragging = (_event: PointerEvent<HTMLDivElement>) => {
-    const container = scrollContainerRef.current;
-    const dragState = dragStateRef.current;
-    if (!container || !dragState.isPointerDown) return;
-
-    if (dragState.pointerId !== null && container.hasPointerCapture(dragState.pointerId)) {
-      container.releasePointerCapture(dragState.pointerId);
+    if (sectionIndex >= 0 && sectionIndex !== activeSection) {
+      setActiveSection(sectionIndex);
     }
+  }, [pathname, activeSection]);
 
-    const { hasDragged } = dragState;
-    const nearestSection = updateScrollControls();
-
-    dragStateRef.current = {
-      isPointerDown: false,
-      hasDragged: false,
-      startX: 0,
-      scrollLeft: 0,
-      pointerId: null
+  useEffect(() => {
+    return () => {
+      if (wheelTimeoutRef.current) {
+        clearTimeout(wheelTimeoutRef.current);
+      }
     };
-    setIsDragging(false);
-    if (hasDragged) {
-      const targetSection =
-        typeof nearestSection === 'number' ? nearestSection : closestSectionRef.current;
-      scrollToSection(targetSection);
+  }, []);
+
+  const sliderStyles = useMemo<CSSProperties>(() => {
+    const styles: CSSProperties = {
+      gap: `${SECTION_GAP_IN_PX}px`
+    };
+
+    if (hasMultipleSections) {
+      styles.transform = `translate3d(calc(-${activeSection} * (100% + ${SECTION_GAP_IN_PX}px)), 0, 0)`;
     }
-  };
+
+    return styles;
+  }, [activeSection, hasMultipleSections]);
+
+  const handleWheel = useCallback(
+    (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (!hasMultipleSections || wheelLockRef.current) {
+        return;
+      }
+
+      const direction = Math.sign(Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY);
+
+      if (direction === 0) {
+        return;
+      }
+
+      const nextIndex = activeSection + (direction > 0 ? 1 : -1);
+
+      if (nextIndex < 0 || nextIndex >= NAV_SECTIONS.length) {
+        return;
+      }
+
+      event.preventDefault();
+      goToSection(nextIndex, { lockWheel: true });
+    },
+    [activeSection, goToSection, hasMultipleSections]
+  );
 
   return (
     <nav className="relative z-10">
-      <div
-        ref={scrollContainerRef}
-        className={cn(
-          'overflow-x-auto pb-16 sm:pb-20 main-nav-scroll -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 scroll-smooth snap-x snap-mandatory',
-          isDragging ? 'cursor-grabbing' : 'cursor-grab'
-        )}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerLeave={endDragging}
-        onPointerUp={endDragging}
-        onPointerCancel={endDragging}
-      >
-        <div className="flex min-w-full items-start gap-x-8 sm:gap-x-12">
-          {navSections.map((pageItems, pageIndex) => (
+      <div className="-mx-4 overflow-hidden px-4 pb-16 sm:-mx-6 sm:px-6 sm:pb-20 lg:-mx-8 lg:px-8">
+        <div
+          className={cn(
+            'flex w-full justify-center transition-transform duration-500 ease-out',
+            hasMultipleSections ? 'will-change-transform' : 'transform-none'
+          )}
+          style={sliderStyles}
+          onWheel={handleWheel}
+          role={hasMultipleSections ? 'list' : undefined}
+        >
+          {NAV_SECTIONS.map((pageItems, pageIndex) => (
             <div
               key={`page-${pageIndex}`}
-              className={cn(
-                'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4 snap-center'
-              )}
-              ref={element => {
-                pageRefs.current[pageIndex] = element;
-              }}
+              className="flex w-full shrink-0 basis-full justify-center"
+              aria-hidden={hasMultipleSections ? activeSection !== pageIndex : undefined}
             >
-              {pageItems.map(item => {
-                const active = pathname ? pathname.startsWith(item.href) : item.href === '/dashboard';
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      'group flex h-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
-                      active
-                        ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
-                        : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
-                    )}
-                  >
-                    <span
+              <div className="grid w-full max-w-4xl grid-cols-4 grid-rows-2 gap-4">
+                {pageItems.map((item, itemIndex) => {
+                  if (!item) {
+                    return (
+                      <span
+                        key={`placeholder-${itemIndex}`}
+                        aria-hidden
+                        className="block rounded-3xl opacity-0"
+                      />
+                    );
+                  }
+
+                  const active = pathname
+                    ? pathname.startsWith(item.href)
+                    : item.href === '/dashboard';
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
                       className={cn(
-                        'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
-                        active ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
+                        'group flex h-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
+                        active
+                          ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
+                          : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
                       )}
                     >
-                      <Icon className="h-6 w-6" />
-                    </span>
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
+                      <span
+                        className={cn(
+                          'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
+                          active ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
+                        )}
+                      >
+                        <Icon className="h-6 w-6" />
+                      </span>
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           ))}
         </div>
       </div>
-      {navSections.length > 1 ? (
+      {hasMultipleSections ? (
         <div className="mt-6 flex justify-center gap-2">
-          {navSections.map((_, index) => (
+          {NAV_SECTIONS.map((_, index) => (
             <button
               key={`section-indicator-${index}`}
               type="button"
               aria-label={`Ir para a sessão ${index + 1}`}
-              onClick={() => scrollToSection(index)}
+              onClick={() => goToSection(index)}
               className={cn(
                 'h-2.5 w-2.5 rounded-full transition-colors',
                 activeSection === index
