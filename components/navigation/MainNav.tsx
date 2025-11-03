@@ -124,10 +124,25 @@ export function MainNav() {
       const targetPage = pageRefs.current[clampedIndex];
       if (!targetPage) return;
 
-      container.scrollTo({ left: targetPage.offsetLeft, behavior: 'smooth' });
+      const offsetAdjustment = (container.clientWidth - targetPage.offsetWidth) / 2;
+      const maxScrollLeft = container.scrollWidth - container.clientWidth;
+      const targetScrollLeft = Math.min(
+        Math.max(targetPage.offsetLeft - offsetAdjustment, 0),
+        maxScrollLeft
+      );
+
+      container.scrollTo({ left: targetScrollLeft, behavior: 'smooth' });
       setActiveSection(prev => (prev === clampedIndex ? prev : clampedIndex));
       if (typeof window !== 'undefined') {
-        window.requestAnimationFrame(() => updateScrollControls());
+        const ensureUpdate = () => {
+          updateScrollControls();
+          const distance = Math.abs(container.scrollLeft - targetScrollLeft);
+          if (distance > 1) {
+            window.requestAnimationFrame(ensureUpdate);
+          }
+        };
+
+        window.requestAnimationFrame(ensureUpdate);
       }
     },
     [updateScrollControls]
@@ -204,7 +219,7 @@ export function MainNav() {
             <div
               key={`page-${pageIndex}`}
               className={cn(
-                'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4 snap-start'
+                'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4 snap-center'
               )}
               ref={element => {
                 pageRefs.current[pageIndex] = element;
