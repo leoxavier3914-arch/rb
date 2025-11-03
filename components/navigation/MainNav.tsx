@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent
 } from 'react';
 import type { LucideIcon } from 'lucide-react';
@@ -88,9 +89,20 @@ function createNavSections(items: NavItem[], size: number): NavSection[] {
 export function MainNav() {
   const pathname = usePathname();
   const [activeSection, setActiveSection] = useState(0);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const hasMultipleSections = NAV_SECTIONS.length > 1;
   const wheelLockRef = useRef(false);
   const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragStateRef = useRef<{
+    pointerId: number | null;
+    startX: number;
+    dragging: boolean;
+  }>({
+    pointerId: null,
+    startX: 0,
+    dragging: false
+  });
 
   const goToSection = useCallback(
     (index: number, { lockWheel = false }: { lockWheel?: boolean } = {}) => {
@@ -149,11 +161,16 @@ export function MainNav() {
     };
 
     if (hasMultipleSections) {
-      styles.transform = `translate3d(calc(-${activeSection} * (100% + ${SECTION_GAP_IN_PX}px)), 0, 0)`;
+      const baseTranslate = `calc(-${activeSection} * (100% + ${SECTION_GAP_IN_PX}px))`;
+      if (dragOffset !== 0) {
+        styles.transform = `translate3d(calc(${baseTranslate} + ${dragOffset}px), 0, 0)`;
+      } else {
+        styles.transform = `translate3d(${baseTranslate}, 0, 0)`;
+      }
     }
 
     return styles;
-  }, [activeSection, hasMultipleSections]);
+  }, [activeSection, dragOffset, hasMultipleSections]);
 
   const handleWheel = useCallback(
     (event: ReactWheelEvent<HTMLDivElement>) => {
@@ -179,16 +196,109 @@ export function MainNav() {
     [activeSection, goToSection, hasMultipleSections]
   );
 
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!hasMultipleSections) {
+        return;
+      }
+
+      dragStateRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        dragging: false
+      };
+      setIsDragging(false);
+      setDragOffset(0);
+    },
+    [hasMultipleSections]
+  );
+
+  const handlePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!hasMultipleSections) {
+        return;
+      }
+
+      const state = dragStateRef.current;
+      if (state.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const deltaX = event.clientX - state.startX;
+
+      if (!state.dragging && Math.abs(deltaX) > 10) {
+        state.dragging = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setIsDragging(true);
+      }
+
+      if (!state.dragging) {
+        return;
+      }
+
+      event.preventDefault();
+      setDragOffset(deltaX);
+    },
+    [hasMultipleSections]
+  );
+
+  const handlePointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!hasMultipleSections) {
+        return;
+      }
+
+      const state = dragStateRef.current;
+      if (state.pointerId !== event.pointerId) {
+        return;
+      }
+
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      const deltaX = event.clientX - state.startX;
+      const threshold = 80;
+      let targetSection = activeSection;
+
+      if (Math.abs(deltaX) > threshold) {
+        const nextSection = activeSection + (deltaX > 0 ? -1 : 1);
+        if (nextSection >= 0 && nextSection < NAV_SECTIONS.length) {
+          targetSection = nextSection;
+        }
+      }
+
+      dragStateRef.current = {
+        pointerId: null,
+        startX: 0,
+        dragging: false
+      };
+
+      setDragOffset(0);
+      setIsDragging(false);
+
+      if (targetSection !== activeSection) {
+        goToSection(targetSection, { lockWheel: true });
+      }
+    },
+    [activeSection, goToSection, hasMultipleSections]
+  );
+
   return (
     <nav className="relative z-10">
       <div className="-mx-4 overflow-hidden px-4 pb-16 sm:-mx-6 sm:px-6 sm:pb-20 lg:-mx-8 lg:px-8">
         <div
           className={cn(
             'flex w-full justify-center transition-transform duration-500 ease-out',
-            hasMultipleSections ? 'will-change-transform' : 'transform-none'
+            hasMultipleSections ? 'will-change-transform' : 'transform-none',
+            isDragging ? 'transition-none' : null
           )}
           style={sliderStyles}
           onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerEnd}
+          onPointerCancel={handlePointerEnd}
           role={hasMultipleSections ? 'list' : undefined}
         >
           {NAV_SECTIONS.map((pageItems, pageIndex) => (
@@ -197,14 +307,14 @@ export function MainNav() {
               className="flex w-full shrink-0 basis-full justify-center"
               aria-hidden={hasMultipleSections ? activeSection !== pageIndex : undefined}
             >
-              <div className="grid w-full max-w-4xl grid-cols-4 grid-rows-2 gap-4">
+              <div className="grid w-full max-w-4xl grid-cols-4 grid-rows-2 gap-6">
                 {pageItems.map((item, itemIndex) => {
                   if (!item) {
                     return (
                       <span
                         key={`placeholder-${itemIndex}`}
                         aria-hidden
-                        className="block rounded-3xl opacity-0"
+                        className="block h-full w-full rounded-3xl opacity-0"
                       />
                     );
                   }
@@ -218,7 +328,7 @@ export function MainNav() {
                       key={item.href}
                       href={item.href}
                       className={cn(
-                        'group flex h-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
+                        'group flex h-full w-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
                         active
                           ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
                           : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
