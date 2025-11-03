@@ -77,7 +77,6 @@ export function MainNav() {
     if (!container) {
       return closestSectionRef.current;
     }
-    const { scrollLeft, clientWidth } = container;
     const pages = pageRefs.current;
     if (!pages.length) {
       closestSectionRef.current = 0;
@@ -85,13 +84,15 @@ export function MainNav() {
       return closestSectionRef.current;
     }
 
-    const containerCenter = scrollLeft + clientWidth / 2;
+    const containerRect = container.getBoundingClientRect();
+    const containerCenter = containerRect.left + containerRect.width / 2;
     let closestIndex = closestSectionRef.current;
     let smallestDistance = Number.POSITIVE_INFINITY;
 
     pages.forEach((page, index) => {
       if (!page) return;
-      const pageCenter = page.offsetLeft + page.offsetWidth / 2;
+      const pageRect = page.getBoundingClientRect();
+      const pageCenter = pageRect.left + pageRect.width / 2;
       const distance = Math.abs(containerCenter - pageCenter);
       if (distance < smallestDistance) {
         smallestDistance = distance;
@@ -130,10 +131,14 @@ export function MainNav() {
       const targetPage = pageRefs.current[clampedIndex];
       if (!targetPage) return;
 
-      const offsetAdjustment = (container.clientWidth - targetPage.offsetWidth) / 2;
+      const containerRect = container.getBoundingClientRect();
+      const pageRect = targetPage.getBoundingClientRect();
+      const containerCenter = containerRect.left + containerRect.width / 2;
+      const pageCenter = pageRect.left + pageRect.width / 2;
+      const difference = pageCenter - containerCenter;
       const maxScrollLeft = container.scrollWidth - container.clientWidth;
       const targetScrollLeft = Math.min(
-        Math.max(targetPage.offsetLeft - offsetAdjustment, 0),
+        Math.max(container.scrollLeft + difference, 0),
         maxScrollLeft
       );
 
