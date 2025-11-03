@@ -7,8 +7,10 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
-  type CSSProperties
+  type CSSProperties,
+  type WheelEvent as ReactWheelEvent
 } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -37,6 +39,8 @@ type NavItem = {
   icon: LucideIcon;
 };
 
+type NavSection = (NavItem | null)[];
+
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
@@ -61,14 +65,23 @@ const SECTION_GAP_IN_PX = 32;
 
 const NAV_SECTIONS = createNavSections(NAV_ITEMS, SECTION_SIZE);
 
-function createNavSections(items: NavItem[], size: number): NavItem[][] {
-  const sections: NavItem[][] = [];
+function createNavSections(items: NavItem[], size: number): NavSection[] {
+  const sections: NavSection[] = [];
+
   for (let index = 0; index < items.length; index += size) {
-    const slice = items.slice(index, index + size);
-    if (slice.length) {
-      sections.push(slice);
+    const slice: NavSection = items.slice(index, index + size);
+
+    if (!slice.length) {
+      continue;
     }
+
+    while (slice.length < size) {
+      slice.push(null);
+    }
+
+    sections.push(slice);
   }
+
   return sections;
 }
 
@@ -76,17 +89,37 @@ export function MainNav() {
   const pathname = usePathname();
   const [activeSection, setActiveSection] = useState(0);
   const hasMultipleSections = NAV_SECTIONS.length > 1;
+  const wheelLockRef = useRef(false);
+  const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const goToSection = useCallback((index: number) => {
-    if (!hasMultipleSections) {
-      return;
-    }
+  const goToSection = useCallback(
+    (index: number, { lockWheel = false }: { lockWheel?: boolean } = {}) => {
+      if (!hasMultipleSections) {
+        return;
+      }
 
-    setActiveSection(prev => {
-      const clampedIndex = Math.min(Math.max(index, 0), NAV_SECTIONS.length - 1);
-      return prev === clampedIndex ? prev : clampedIndex;
-    });
-  }, [hasMultipleSections]);
+      setActiveSection(prev => {
+        const clampedIndex = Math.min(Math.max(index, 0), NAV_SECTIONS.length - 1);
+        if (prev === clampedIndex) {
+          return prev;
+        }
+
+        if (lockWheel) {
+          wheelLockRef.current = true;
+          if (wheelTimeoutRef.current) {
+            clearTimeout(wheelTimeoutRef.current);
+          }
+          wheelTimeoutRef.current = setTimeout(() => {
+            wheelLockRef.current = false;
+            wheelTimeoutRef.current = null;
+          }, 500);
+        }
+
+        return clampedIndex;
+      });
+    },
+    [hasMultipleSections]
+  );
 
   useEffect(() => {
     if (!pathname) {
@@ -94,13 +127,21 @@ export function MainNav() {
     }
 
     const sectionIndex = NAV_SECTIONS.findIndex(section =>
-      section.some(item => pathname.startsWith(item.href))
+      section.some(item => item && pathname.startsWith(item.href))
     );
 
     if (sectionIndex >= 0 && sectionIndex !== activeSection) {
       setActiveSection(sectionIndex);
     }
   }, [pathname, activeSection]);
+
+  useEffect(() => {
+    return () => {
+      if (wheelTimeoutRef.current) {
+        clearTimeout(wheelTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const sliderStyles = useMemo<CSSProperties>(() => {
     const styles: CSSProperties = {
@@ -114,15 +155,41 @@ export function MainNav() {
     return styles;
   }, [activeSection, hasMultipleSections]);
 
+  const handleWheel = useCallback(
+    (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (!hasMultipleSections || wheelLockRef.current) {
+        return;
+      }
+
+      const direction = Math.sign(Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY);
+
+      if (direction === 0) {
+        return;
+      }
+
+      const nextIndex = activeSection + (direction > 0 ? 1 : -1);
+
+      if (nextIndex < 0 || nextIndex >= NAV_SECTIONS.length) {
+        return;
+      }
+
+      event.preventDefault();
+      goToSection(nextIndex, { lockWheel: true });
+    },
+    [activeSection, goToSection, hasMultipleSections]
+  );
+
   return (
     <nav className="relative z-10">
-      <div className="-mx-4 px-4 pb-16 sm:-mx-6 sm:px-6 sm:pb-20 lg:-mx-8 lg:px-8">
+      <div className="-mx-4 overflow-hidden px-4 pb-16 sm:-mx-6 sm:px-6 sm:pb-20 lg:-mx-8 lg:px-8">
         <div
           className={cn(
             'flex w-full justify-center transition-transform duration-500 ease-out',
             hasMultipleSections ? 'will-change-transform' : 'transform-none'
           )}
           style={sliderStyles}
+          onWheel={handleWheel}
+          role={hasMultipleSections ? 'list' : undefined}
         >
           {NAV_SECTIONS.map((pageItems, pageIndex) => (
             <div
@@ -130,8 +197,18 @@ export function MainNav() {
               className="flex w-full shrink-0 basis-full justify-center"
               aria-hidden={hasMultipleSections ? activeSection !== pageIndex : undefined}
             >
-              <div className="grid w-full max-w-4xl grid-cols-2 gap-4 sm:grid-cols-4">
-                {pageItems.map(item => {
+              <div className="grid w-full max-w-4xl grid-cols-4 grid-rows-2 gap-4">
+                {pageItems.map((item, itemIndex) => {
+                  if (!item) {
+                    return (
+                      <span
+                        key={`placeholder-${itemIndex}`}
+                        aria-hidden
+                        className="block rounded-3xl opacity-0"
+                      />
+                    );
+                  }
+
                   const active = pathname
                     ? pathname.startsWith(item.href)
                     : item.href === '/dashboard';
