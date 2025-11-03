@@ -85,15 +85,17 @@ export function MainNav() {
     }
 
     const containerRect = container.getBoundingClientRect();
-    const containerCenter = containerRect.left + containerRect.width / 2;
+    const containerScrollCenter = container.scrollLeft + container.clientWidth / 2;
     let closestIndex = closestSectionRef.current;
     let smallestDistance = Number.POSITIVE_INFINITY;
 
     pages.forEach((page, index) => {
       if (!page) return;
       const pageRect = page.getBoundingClientRect();
-      const pageCenter = pageRect.left + pageRect.width / 2;
-      const distance = Math.abs(containerCenter - pageCenter);
+      const relativeLeft = pageRect.left - containerRect.left;
+      const pageCenterInScrollSpace =
+        container.scrollLeft + relativeLeft + pageRect.width / 2;
+      const distance = Math.abs(containerScrollCenter - pageCenterInScrollSpace);
       if (distance < smallestDistance) {
         smallestDistance = distance;
         closestIndex = index;
@@ -133,14 +135,12 @@ export function MainNav() {
 
       const containerRect = container.getBoundingClientRect();
       const pageRect = targetPage.getBoundingClientRect();
-      const containerCenter = containerRect.left + containerRect.width / 2;
-      const pageCenter = pageRect.left + pageRect.width / 2;
-      const difference = pageCenter - containerCenter;
+      const relativeLeft = pageRect.left - containerRect.left;
+      const pageCenterInScrollSpace =
+        container.scrollLeft + relativeLeft + pageRect.width / 2;
+      const desiredScrollLeft = pageCenterInScrollSpace - container.clientWidth / 2;
       const maxScrollLeft = container.scrollWidth - container.clientWidth;
-      const targetScrollLeft = Math.max(
-        0,
-        Math.min(container.scrollLeft + difference, maxScrollLeft)
-      );
+      const targetScrollLeft = Math.min(Math.max(desiredScrollLeft, 0), maxScrollLeft);
 
       container.scrollTo({ left: targetScrollLeft, behavior: 'smooth' });
       closestSectionRef.current = clampedIndex;
