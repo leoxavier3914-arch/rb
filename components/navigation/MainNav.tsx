@@ -52,13 +52,13 @@ const items: NavItem[] = [
   { href: '/teste-7', label: 'Teste 7', icon: FileOutput }
 ];
 
-const SECTION_COUNT = 3;
 const SECTION_SIZE = 8;
 const SECTION_GAP_CLASSES = 'mr-16 sm:mr-20';
 
-const navSections = Array.from({ length: SECTION_COUNT }, (_, index) =>
+const sectionCount = Math.ceil(items.length / SECTION_SIZE);
+const navSections = Array.from({ length: sectionCount }, (_, index) =>
   items.slice(index * SECTION_SIZE, (index + 1) * SECTION_SIZE)
-);
+).filter(section => section.length > 0);
 
 export function MainNav() {
   const pathname = usePathname();
