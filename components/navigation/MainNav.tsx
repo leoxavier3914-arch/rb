@@ -61,6 +61,7 @@ export function MainNav() {
   const pathname = usePathname();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const closestSectionRef = useRef(0);
   const dragStateRef = useRef({
     isPointerDown: false,
     hasDragged: false,
@@ -73,16 +74,19 @@ export function MainNav() {
 
   const updateScrollControls = useCallback(() => {
     const container = scrollContainerRef.current;
-    if (!container) return;
+    if (!container) {
+      return closestSectionRef.current;
+    }
     const { scrollLeft, clientWidth } = container;
     const pages = pageRefs.current;
     if (!pages.length) {
+      closestSectionRef.current = 0;
       setActiveSection(0);
-      return;
+      return closestSectionRef.current;
     }
 
     const containerCenter = scrollLeft + clientWidth / 2;
-    let closestIndex = 0;
+    let closestIndex = closestSectionRef.current;
     let smallestDistance = Number.POSITIVE_INFINITY;
 
     pages.forEach((page, index) => {
@@ -95,7 +99,9 @@ export function MainNav() {
       }
     });
 
+    closestSectionRef.current = closestIndex;
     setActiveSection(prev => (prev === closestIndex ? prev : closestIndex));
+    return closestIndex;
   }, []);
 
   useEffect(() => {
@@ -189,6 +195,9 @@ export function MainNav() {
       container.releasePointerCapture(dragState.pointerId);
     }
 
+    const { hasDragged } = dragState;
+    const nearestSection = updateScrollControls();
+
     dragStateRef.current = {
       isPointerDown: false,
       hasDragged: false,
@@ -197,7 +206,11 @@ export function MainNav() {
       pointerId: null
     };
     setIsDragging(false);
-    updateScrollControls();
+    if (hasDragged) {
+      const targetSection =
+        typeof nearestSection === 'number' ? nearestSection : closestSectionRef.current;
+      scrollToSection(targetSection);
+    }
   };
 
   return (
