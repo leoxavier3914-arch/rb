@@ -40,6 +40,7 @@ const items: NavItem[] = [
 
 const SECTION_COUNT = 3;
 const SECTION_SIZE = 8;
+const SECTION_GAP_CLASSES = 'mr-16 sm:mr-20';
 
 const navSections = Array.from({ length: SECTION_COUNT }, (_, index) =>
   items.slice(index * SECTION_SIZE, (index + 1) * SECTION_SIZE)
@@ -237,7 +238,7 @@ export function MainNav() {
                 key={`page-${pageIndex}`}
                 className={cn(
                   'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4',
-                  pageIndex < navSections.length - 1 && 'mr-8 sm:mr-10'
+                  pageIndex < navSections.length - 1 && SECTION_GAP_CLASSES
                 )}
               >
                 {pageItems.map(item => {
