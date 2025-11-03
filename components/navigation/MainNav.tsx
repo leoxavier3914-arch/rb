@@ -51,7 +51,6 @@ const items: NavItem[] = [
 ];
 
 const SECTION_SIZE = 8;
-const SECTION_GAP_CLASSES = 'mr-16 sm:mr-20';
 
 const sectionCount = Math.ceil(items.length / SECTION_SIZE);
 const navSections = Array.from({ length: sectionCount }, (_, index) =>
@@ -200,13 +199,12 @@ export function MainNav() {
         onPointerUp={endDragging}
         onPointerCancel={endDragging}
       >
-        <div className="flex min-w-full items-start">
+        <div className="flex min-w-full items-start gap-x-8 sm:gap-x-12">
           {navSections.map((pageItems, pageIndex) => (
             <div
               key={`page-${pageIndex}`}
               className={cn(
-                'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4 snap-start',
-                pageIndex < navSections.length - 1 && SECTION_GAP_CLASSES
+                'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4 snap-start'
               )}
               ref={element => {
                 pageRefs.current[pageIndex] = element;
