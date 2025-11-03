@@ -7,8 +7,6 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'rea
 import type { LucideIcon } from 'lucide-react';
 import {
   BadgeDollarSign,
-  ChevronLeft,
-  ChevronRight,
   CreditCard,
   FileArchive,
   FileBarChart,
@@ -72,17 +70,12 @@ export function MainNav() {
     pointerId: null as number | null
   });
   const [isDragging, setIsDragging] = useState(false);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
 
   const updateScrollControls = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const { scrollLeft, scrollWidth, clientWidth } = container;
-    setCanScrollLeft(scrollLeft > 1);
-    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 1);
-
+    const { scrollLeft, clientWidth } = container;
     const pages = pageRefs.current;
     if (!pages.length) {
       setActiveSection(0);
@@ -141,14 +134,6 @@ export function MainNav() {
     [updateScrollControls]
   );
 
-  const scrollByPage = (direction: -1 | 1) => {
-    const targetIndex = Math.min(
-      Math.max(activeSection + direction, 0),
-      navSections.length - 1
-    );
-    scrollToSection(targetIndex);
-  };
-
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -203,79 +188,59 @@ export function MainNav() {
 
   return (
     <nav className="relative z-10">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          aria-label="Deslocar para a esquerda"
-          onClick={() => scrollByPage(-1)}
-          disabled={!canScrollLeft}
-          className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 sm:flex"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <div
-          ref={scrollContainerRef}
-          className={cn(
-            'flex-1 overflow-x-auto pb-16 sm:pb-20 main-nav-scroll -mx-8 px-8 sm:-mx-12 sm:px-12 scroll-smooth snap-x snap-mandatory',
-            isDragging ? 'cursor-grabbing' : 'cursor-grab'
-          )}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerLeave={endDragging}
-          onPointerUp={endDragging}
-          onPointerCancel={endDragging}
-        >
-          <div className="flex min-w-full items-start">
-            {navSections.map((pageItems, pageIndex) => (
-              <div
-                key={`page-${pageIndex}`}
-                className={cn(
-                  'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4 snap-start',
-                  pageIndex < navSections.length - 1 && SECTION_GAP_CLASSES
-                )}
-                ref={element => {
-                  pageRefs.current[pageIndex] = element;
-                }}
-              >
-                {pageItems.map(item => {
-                  const active = pathname ? pathname.startsWith(item.href) : item.href === '/dashboard';
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
+      <div
+        ref={scrollContainerRef}
+        className={cn(
+          'overflow-x-auto pb-16 sm:pb-20 main-nav-scroll -mx-8 px-8 sm:-mx-12 sm:px-12 scroll-smooth snap-x snap-mandatory',
+          isDragging ? 'cursor-grabbing' : 'cursor-grab'
+        )}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={endDragging}
+        onPointerUp={endDragging}
+        onPointerCancel={endDragging}
+      >
+        <div className="flex min-w-full items-start">
+          {navSections.map((pageItems, pageIndex) => (
+            <div
+              key={`page-${pageIndex}`}
+              className={cn(
+                'grid w-full min-w-full flex-none basis-full grid-cols-2 gap-4 sm:grid-cols-4 snap-start',
+                pageIndex < navSections.length - 1 && SECTION_GAP_CLASSES
+              )}
+              ref={element => {
+                pageRefs.current[pageIndex] = element;
+              }}
+            >
+              {pageItems.map(item => {
+                const active = pathname ? pathname.startsWith(item.href) : item.href === '/dashboard';
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'group flex h-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
+                      active
+                        ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
+                        : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
+                    )}
+                  >
+                    <span
                       className={cn(
-                        'group flex h-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
-                        active
-                          ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
-                          : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
+                        'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
+                        active ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
                       )}
                     >
-                      <span
-                        className={cn(
-                          'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
-                          active ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
-                        )}
-                      >
-                        <Icon className="h-6 w-6" />
-                      </span>
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
+                      <Icon className="h-6 w-6" />
+                    </span>
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </div>
-        <button
-          type="button"
-          aria-label="Deslocar para a direita"
-          onClick={() => scrollByPage(1)}
-          disabled={!canScrollRight}
-          className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 sm:flex"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
       </div>
       {navSections.length > 1 ? (
         <div className="mt-6 flex justify-center gap-2">
