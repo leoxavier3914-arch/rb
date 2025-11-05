@@ -12,7 +12,8 @@ import {
   Receipt,
   ShoppingBag,
   ShoppingCart,
-  Users2
+  Users2,
+  Settings
 } from 'lucide-react';
 import { cn } from '@/lib/ui/classnames';
 
@@ -30,7 +31,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/webhooks', label: 'Webhooks', icon: Receipt },
   { href: '/pendentes', label: 'Pendentes', icon: ShoppingBag },
   { href: '/reembolsados', label: 'Reembolsados', icon: CreditCard },
-  { href: '/recusados', label: 'Recusados', icon: Users2 }
+  { href: '/recusados', label: 'Recusados', icon: Users2 },
+  { href: '/configs', label: 'Configs', icon: Settings }
 ];
 
 export function MainNav() {
