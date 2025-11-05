@@ -62,21 +62,23 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const SECTION_SIZE = 8;
+const ITEMS_PER_ROW = 4;
 const SECTION_GAP_IN_PX = 32;
+const DRAG_THRESHOLD_IN_PX = 80;
 
 const NAV_SECTIONS = createNavSections(NAV_ITEMS, SECTION_SIZE);
 
-function createNavSections(items: NavItem[], size: number): NavSection[] {
+function createNavSections(items: NavItem[], sectionSize: number): NavSection[] {
   const sections: NavSection[] = [];
 
-  for (let index = 0; index < items.length; index += size) {
-    const slice: NavSection = items.slice(index, index + size);
+  for (let index = 0; index < items.length; index += sectionSize) {
+    const slice: NavSection = items.slice(index, index + sectionSize);
 
     if (!slice.length) {
       continue;
     }
 
-    while (slice.length < size) {
+    while (slice.length < sectionSize) {
       slice.push(null);
     }
 
@@ -91,9 +93,6 @@ export function MainNav() {
   const [activeSection, setActiveSection] = useState(0);
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const hasMultipleSections = NAV_SECTIONS.length > 1;
-  const wheelLockRef = useRef(false);
-  const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStateRef = useRef<{
     pointerId: number | null;
     startX: number;
@@ -103,6 +102,9 @@ export function MainNav() {
     startX: 0,
     dragging: false
   });
+  const hasMultipleSections = NAV_SECTIONS.length > 1;
+  const wheelLockRef = useRef(false);
+  const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const goToSection = useCallback(
     (index: number, { lockWheel = false }: { lockWheel?: boolean } = {}) => {
@@ -110,10 +112,14 @@ export function MainNav() {
         return;
       }
 
-      setActiveSection(prev => {
-        const clampedIndex = Math.min(Math.max(index, 0), NAV_SECTIONS.length - 1);
-        if (prev === clampedIndex) {
-          return prev;
+      setActiveSection(previousSection => {
+        const nextSection = Math.min(
+          Math.max(index, 0),
+          NAV_SECTIONS.length - 1
+        );
+
+        if (previousSection === nextSection) {
+          return previousSection;
         }
 
         if (lockWheel) {
@@ -127,7 +133,7 @@ export function MainNav() {
           }, 500);
         }
 
-        return clampedIndex;
+        return nextSection;
       });
     },
     [hasMultipleSections]
@@ -162,11 +168,7 @@ export function MainNav() {
 
     if (hasMultipleSections) {
       const baseTranslate = `calc(-${activeSection} * (100% + ${SECTION_GAP_IN_PX}px))`;
-      if (dragOffset !== 0) {
-        styles.transform = `translate3d(calc(${baseTranslate} + ${dragOffset}px), 0, 0)`;
-      } else {
-        styles.transform = `translate3d(${baseTranslate}, 0, 0)`;
-      }
+      styles.transform = `translate3d(calc(${baseTranslate} + ${dragOffset}px), 0, 0)`;
     }
 
     return styles;
@@ -178,14 +180,16 @@ export function MainNav() {
         return;
       }
 
-      const direction = Math.sign(Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY);
+      const dominantAxis = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+        ? event.deltaX
+        : event.deltaY;
+      const direction = Math.sign(dominantAxis);
 
       if (direction === 0) {
         return;
       }
 
       const nextIndex = activeSection + (direction > 0 ? 1 : -1);
-
       if (nextIndex < 0 || nextIndex >= NAV_SECTIONS.length) {
         return;
       }
@@ -219,20 +223,20 @@ export function MainNav() {
         return;
       }
 
-      const state = dragStateRef.current;
-      if (state.pointerId !== event.pointerId) {
+      const dragState = dragStateRef.current;
+      if (dragState.pointerId !== event.pointerId) {
         return;
       }
 
-      const deltaX = event.clientX - state.startX;
+      const deltaX = event.clientX - dragState.startX;
 
-      if (!state.dragging && Math.abs(deltaX) > 10) {
-        state.dragging = true;
+      if (!dragState.dragging && Math.abs(deltaX) > 10) {
+        dragState.dragging = true;
         event.currentTarget.setPointerCapture(event.pointerId);
         setIsDragging(true);
       }
 
-      if (!state.dragging) {
+      if (!dragState.dragging) {
         return;
       }
 
@@ -248,8 +252,8 @@ export function MainNav() {
         return;
       }
 
-      const state = dragStateRef.current;
-      if (state.pointerId !== event.pointerId) {
+      const dragState = dragStateRef.current;
+      if (dragState.pointerId !== event.pointerId) {
         return;
       }
 
@@ -257,14 +261,13 @@ export function MainNav() {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
 
-      const deltaX = event.clientX - state.startX;
-      const threshold = 80;
+      const deltaX = event.clientX - dragState.startX;
       let targetSection = activeSection;
 
-      if (Math.abs(deltaX) > threshold) {
-        const nextSection = activeSection + (deltaX > 0 ? -1 : 1);
-        if (nextSection >= 0 && nextSection < NAV_SECTIONS.length) {
-          targetSection = nextSection;
+      if (Math.abs(deltaX) > DRAG_THRESHOLD_IN_PX) {
+        const candidate = activeSection + (deltaX > 0 ? -1 : 1);
+        if (candidate >= 0 && candidate < NAV_SECTIONS.length) {
+          targetSection = candidate;
         }
       }
 
@@ -289,7 +292,7 @@ export function MainNav() {
       <div className="-mx-4 overflow-hidden px-4 pb-16 sm:-mx-6 sm:px-6 sm:pb-20 lg:-mx-8 lg:px-8">
         <div
           className={cn(
-            'flex w-full justify-center transition-transform duration-500 ease-out',
+            'flex w-full touch-pan-y select-none justify-center transition-transform duration-500 ease-out',
             hasMultipleSections ? 'will-change-transform' : 'transform-none',
             isDragging ? 'transition-none' : null
           )}
@@ -301,60 +304,69 @@ export function MainNav() {
           onPointerCancel={handlePointerEnd}
           role={hasMultipleSections ? 'list' : undefined}
         >
-          {NAV_SECTIONS.map((pageItems, pageIndex) => (
-            <div
-              key={`page-${pageIndex}`}
-              className="flex w-full shrink-0 basis-full justify-center"
-              aria-hidden={hasMultipleSections ? activeSection !== pageIndex : undefined}
-            >
-              <div className="flex w-full max-w-4xl flex-col gap-6">
-                {[pageItems.slice(0, 4), pageItems.slice(4, 8)].map((rowItems, rowIndex) => (
-                  <div key={`page-${pageIndex}-row-${rowIndex}`} className="grid grid-cols-4 gap-6">
-                    {rowItems.map((item, itemIndex) => {
-                      if (!item) {
-                        return (
-                          <span
-                            key={`placeholder-${pageIndex}-${rowIndex}-${itemIndex}`}
-                            aria-hidden
-                            className="block h-full w-full rounded-3xl opacity-0"
-                          />
-                        );
-                      }
+          {NAV_SECTIONS.map((sectionItems, sectionIndex) => {
+            const rows = [
+              sectionItems.slice(0, ITEMS_PER_ROW),
+              sectionItems.slice(ITEMS_PER_ROW, SECTION_SIZE)
+            ];
 
-                      const active = pathname
-                        ? pathname.startsWith(item.href)
-                        : item.href === '/dashboard';
-                      const Icon = item.icon;
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          className={cn(
-                            'group flex h-full w-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
-                            active
-                              ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
-                              : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
-                          )}
-                        >
-                          <span
+            return (
+              <div
+                key={`section-${sectionIndex}`}
+                className="flex w-full shrink-0 basis-full justify-center"
+                aria-hidden={hasMultipleSections ? activeSection !== sectionIndex : undefined}
+              >
+                <div className="flex w-full max-w-4xl flex-col gap-6">
+                  {rows.map((rowItems, rowIndex) => (
+                    <div key={`section-${sectionIndex}-row-${rowIndex}`} className="grid grid-cols-4 gap-6">
+                      {rowItems.map((item, itemIndex) => {
+                        if (!item) {
+                          return (
+                            <span
+                              key={`placeholder-${sectionIndex}-${rowIndex}-${itemIndex}`}
+                              aria-hidden
+                              className="block h-full w-full rounded-3xl opacity-0"
+                            />
+                          );
+                        }
+
+                        const Icon = item.icon;
+                        const isActive = pathname
+                          ? pathname.startsWith(item.href)
+                          : item.href === '/dashboard';
+
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
                             className={cn(
-                              'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
-                              active ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
+                              'group flex h-full w-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
+                              isActive
+                                ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
+                                : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
                             )}
                           >
-                            <Icon className="h-6 w-6" />
-                          </span>
-                          <span>{item.label}</span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ))}
+                            <span
+                              className={cn(
+                                'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
+                                isActive ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
+                              )}
+                            >
+                              <Icon className="h-6 w-6" />
+                            </span>
+                            <span>{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
       {hasMultipleSections ? (
         <div className="mt-6 flex justify-center gap-2">
           {NAV_SECTIONS.map((_, index) => (
@@ -362,6 +374,7 @@ export function MainNav() {
               key={`section-indicator-${index}`}
               type="button"
               aria-label={`Ir para a sessão ${index + 1}`}
+              aria-pressed={activeSection === index}
               onClick={() => goToSection(index)}
               className={cn(
                 'h-2.5 w-2.5 rounded-full transition-colors',
