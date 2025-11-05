@@ -307,45 +307,49 @@ export function MainNav() {
               className="flex w-full shrink-0 basis-full justify-center"
               aria-hidden={hasMultipleSections ? activeSection !== pageIndex : undefined}
             >
-              <div className="grid w-full max-w-4xl grid-cols-4 grid-rows-2 gap-6">
-                {pageItems.map((item, itemIndex) => {
-                  if (!item) {
-                    return (
-                      <span
-                        key={`placeholder-${itemIndex}`}
-                        aria-hidden
-                        className="block h-full w-full rounded-3xl opacity-0"
-                      />
-                    );
-                  }
+              <div className="flex w-full max-w-4xl flex-col gap-6">
+                {[pageItems.slice(0, 4), pageItems.slice(4, 8)].map((rowItems, rowIndex) => (
+                  <div key={`page-${pageIndex}-row-${rowIndex}`} className="grid grid-cols-4 gap-6">
+                    {rowItems.map((item, itemIndex) => {
+                      if (!item) {
+                        return (
+                          <span
+                            key={`placeholder-${pageIndex}-${rowIndex}-${itemIndex}`}
+                            aria-hidden
+                            className="block h-full w-full rounded-3xl opacity-0"
+                          />
+                        );
+                      }
 
-                  const active = pathname
-                    ? pathname.startsWith(item.href)
-                    : item.href === '/dashboard';
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        'group flex h-full w-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
-                        active
-                          ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
-                          : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
-                          active ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
-                        )}
-                      >
-                        <Icon className="h-6 w-6" />
-                      </span>
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
+                      const active = pathname
+                        ? pathname.startsWith(item.href)
+                        : item.href === '/dashboard';
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={cn(
+                            'group flex h-full w-full flex-col items-center justify-center gap-3 rounded-3xl border bg-white p-5 text-center text-sm font-semibold shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all',
+                            active
+                              ? 'border-[#0231b1] text-[#0231b1] shadow-[0_24px_50px_rgba(2,49,177,0.25)]'
+                              : 'border-transparent text-slate-500 hover:-translate-y-0.5 hover:text-slate-700'
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors',
+                              active ? 'bg-[#0231b1]/10 text-[#0231b1]' : 'group-hover:bg-slate-200'
+                            )}
+                          >
+                            <Icon className="h-6 w-6" />
+                          </span>
+                          <span>{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             </div>
           ))}
