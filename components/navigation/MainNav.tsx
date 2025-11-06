@@ -49,14 +49,15 @@ export function MainNav() {
 
   return (
     <nav className="relative z-10">
-      <div className="mx-auto max-w-4xl overflow-x-auto overflow-y-hidden px-4 pb-16 snap-x snap-mandatory sm:px-6 sm:pb-20 lg:px-8">
-        <div className="flex min-w-full flex-nowrap">
-          {pages.map((pageItems, pageIndex) => (
-            <div
-              key={pageIndex}
-              className="grid min-w-full basis-full flex-shrink-0 grid-cols-2 gap-4 snap-start px-3 py-1 sm:grid-cols-4 sm:gap-6"
-            >
-              {pageItems.map(item => {
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+        <div className="overflow-x-auto overflow-y-hidden scroll-px-4 pb-16 snap-x snap-mandatory sm:scroll-px-6 sm:pb-20 lg:scroll-px-8">
+          <div className="flex min-w-full flex-nowrap">
+            {pages.map((pageItems, pageIndex) => (
+              <div
+                key={pageIndex}
+                className="grid w-full flex-none snap-start snap-always grid-cols-2 gap-4 py-1 sm:grid-cols-4 sm:gap-6"
+              >
+                {pageItems.map(item => {
                 const Icon = item.icon;
                 const isActive = pathname
                   ? pathname.startsWith(item.href)
@@ -87,6 +88,7 @@ export function MainNav() {
               })}
             </div>
           ))}
+          </div>
         </div>
       </div>
     </nav>
