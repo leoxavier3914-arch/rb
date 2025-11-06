@@ -49,8 +49,8 @@ export function MainNav() {
 
   return (
     <nav className="relative z-10">
-      <div className="-mx-4 overflow-x-auto overflow-y-hidden px-4 pb-16 snap-x snap-mandatory sm:-mx-6 sm:px-6 sm:pb-20 lg:-mx-8 lg:px-8">
-        <div className="flex w-full max-w-4xl flex-nowrap lg:mx-auto">
+      <div className="mx-auto max-w-4xl overflow-x-auto overflow-y-hidden px-4 pb-16 snap-x snap-mandatory sm:px-6 sm:pb-20 lg:px-8">
+        <div className="flex min-w-full flex-nowrap">
           {pages.map((pageItems, pageIndex) => (
             <div
               key={pageIndex}
