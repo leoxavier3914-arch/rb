@@ -12,6 +12,19 @@ body {
   color: rgb(15 23 42);
 }
 
+.client-hero-wrapper {
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: var(--font-family);
+  font-size: var(--base-font-size);
+  opacity: 0;
+  transition: opacity 0.25s ease-out;
+}
+
+.client-hero-wrapper.client-hero-ready {
+  opacity: 1;
+}
+
 .main-nav-scroll {
   -ms-overflow-style: none;
   scrollbar-width: none;
